@@ -23,11 +23,11 @@ import sys
 import subprocess
 import os
 
+os.environ['PKG_CONFIG_PATH'] = '/usr/local/lib/pkgconfig'
 os.chdir(os.path.join(os.path.dirname(__file__), ".."))
 
 log = sys.stderr.write
 dev_null = open('/dev/null', 'r')
-
 CCACHE_DIR = '/usr/lib/ccache'
 if os.path.isdir(CCACHE_DIR):
     log("Enabling ccache\n")
