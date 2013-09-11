@@ -356,6 +356,8 @@ void ind_ovs_fwd_result_reset(struct ind_ovs_fwd_result *result);
 void ind_ovs_fwd_result_cleanup(struct ind_ovs_fwd_result *result);
 indigo_error_t ind_fwd_pkt_in(of_port_no_t of_port_num, uint8_t *data, unsigned int len, unsigned reason, of_match_t *match);
 
+indigo_error_t ind_ovs_pipeline_process(const struct ind_ovs_parsed_key *pkey, struct ind_ovs_fwd_result *result);
+
 /*
  * Synchronization of the flow table between the main thread and upcall
  * threads. Only the main thread is allowed to mutate the flowtable, and when
