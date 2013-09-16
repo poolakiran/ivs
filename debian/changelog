@@ -1,3 +1,9 @@
+ivs (0.4-prototype) unstable; urgency=low
+
+  * Added prototype packet pipeline.
+
+ -- Rich Lane <rlane@bigswitch.com>  Thu, 12 Sep 2013 16:22:23 -0700
+
 ivs (0.4) unstable; urgency=low
 
   * New upstream version.

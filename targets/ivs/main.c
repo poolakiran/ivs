@@ -41,6 +41,7 @@
 #include <arpa/inet.h>
 #include <signal.h>
 #include <sys/eventfd.h>
+#include <stdbool.h>
 
 #define AIM_LOG_MODULE_NAME ivs
 #include <AIM/aim_log.h>
@@ -175,6 +176,7 @@ parse_options(int argc, char **argv)
             OPT_TUNNEL,
             OPT_VERSION,
             OPT_MAX_FLOWS,
+            OPT_PIPELINE,
         };
 
         static struct option long_options[] = {
@@ -193,6 +195,7 @@ parse_options(int argc, char **argv)
             {"max-flows",   required_argument, 0,  OPT_MAX_FLOWS },
             {"config-file", required_argument, 0,  'f' },
             {"openflow-version", required_argument, 0, 'V' },
+            {"pipeline",    no_argument,       0,  OPT_PIPELINE },
             {0,             0,                 0,  0 }
         };
 
@@ -255,6 +258,12 @@ parse_options(int argc, char **argv)
         case OPT_MAX_FLOWS:
             core_cfg.max_flowtable_entries = strtoll(optarg, NULL, 0);
             AIM_LOG_MSG("Setting max flows to %d", core_cfg.max_flowtable_entries);
+            break;
+
+        case OPT_PIPELINE:
+            AIM_LOG_MSG("Enabling experimental pipeline");
+            extern bool ind_ovs_use_experimental_pipeline;
+            ind_ovs_use_experimental_pipeline = true;
             break;
 
         case 'h':

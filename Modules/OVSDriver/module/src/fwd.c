@@ -40,6 +40,8 @@ static pthread_rwlock_t ind_ovs_fwd_rwlock;
 
 static aim_ratelimiter_t ind_ovs_pktin_limiter;
 
+bool ind_ovs_use_experimental_pipeline = false;
+
 /**
  * Stats for packet in
  */
@@ -609,6 +611,10 @@ indigo_error_t
 ind_ovs_fwd_process(const struct ind_ovs_parsed_key *pkey,
                     struct ind_ovs_fwd_result *result)
 {
+    if (ind_ovs_use_experimental_pipeline) {
+        return ind_ovs_pipeline_process(pkey, result);
+    }
+
     struct flowtable_entry *fte;
     uint8_t table_id = 0;
 
