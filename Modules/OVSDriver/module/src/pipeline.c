@@ -27,6 +27,8 @@ enum table_id {
     TABLE_ID_EGR_VLAN_XLATE = 4,
 };
 
+static const bool flood_on_dlf = true;
+
 static indigo_error_t lookup_l2(uint16_t vlan_vid, const uint8_t *eth_addr, uint32_t *port_no);
 static indigo_error_t check_vlan(uint16_t vlan_vid, uint32_t in_port, bool *tagged);
 static indigo_error_t flood_vlan(uint16_t vlan_vid, uint32_t in_port, struct ind_ovs_fwd_result *result);
@@ -93,7 +95,13 @@ ind_ovs_pipeline_process(const struct ind_ovs_parsed_key *pkey,
     uint32_t dst_port_no = -1;
     if (lookup_l2(vlan_vid, pkey->ethernet.eth_dst, &dst_port_no) < 0) {
         LOG_VERBOSE("miss in destination l2table lookup (destination lookup failure)");
-        pktin(result, BSN_PACKET_IN_REASON_DESTINATION_LOOKUP_FAILURE);
+        if (flood_on_dlf) {
+            if (flood_vlan(vlan_vid, pkey->in_port, result) < 0) {
+                LOG_WARN("missing VLAN entry for vlan %u", vlan_vid);
+            }
+        } else {
+            pktin(result, BSN_PACKET_IN_REASON_DESTINATION_LOOKUP_FAILURE);
+        }
         return INDIGO_ERROR_NONE;
     }
 
