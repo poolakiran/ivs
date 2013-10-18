@@ -20,8 +20,15 @@
 #ifndef OVSDRIVER_PIPELINE_SUPPORT_H
 #define OVSDRIVER_PIPELINE_SUPPORT_H
 
-#include "ovs_driver_int.h"
-#include "ivs/actions.h"
+#include <stdlib.h>
+#include <arpa/inet.h>
+
+#include <xbuf/xbuf.h>
+#include <ivs/ivs.h>
+#include <ivs/actions.h>
+#include <loci/loci.h>
+#include <indigo/error.h>
+#include <pipeline/pipeline.h>
 
 #define UNUSED __attribute__((unused))
 
@@ -71,25 +78,6 @@ set_vlan_pcp(struct pipeline_result *result, uint8_t vlan_pcp)
 {
     xbuf_append_attr(&result->actions, IND_OVS_ACTION_SET_VLAN_PCP,
                      &vlan_pcp, sizeof(vlan_pcp));
-}
-
-static struct ind_ovs_flow *
-lookup(int table_id, const struct ind_ovs_cfr *cfr)
-{
-    struct ind_ovs_table *table = &ind_ovs_tables[table_id];
-
-#ifndef NDEBUG
-    LOG_VERBOSE("Looking up flow in table %d (%s)", table_id, table->name);
-    ind_ovs_dump_cfr(cfr);
-#endif
-
-    struct flowtable_entry *fte = flowtable_match(table->ft, (const struct flowtable_key *)cfr);
-    if (fte == NULL) {
-        return NULL;
-    }
-
-    struct ind_ovs_flow *flow = container_of(fte, fte, struct ind_ovs_flow);
-    return flow;
 }
 
 #endif
