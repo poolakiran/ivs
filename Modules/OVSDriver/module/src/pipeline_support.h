@@ -21,7 +21,7 @@
 #define OVSDRIVER_PIPELINE_SUPPORT_H
 
 #include "ovs_driver_int.h"
-#include "actions.h"
+#include "ivs/actions.h"
 
 #define UNUSED __attribute__((unused))
 
@@ -33,41 +33,41 @@ enum bsn_pktin_reason {
 };
 
 static void
-pktin(struct ind_ovs_fwd_result *result, uint8_t reason)
+pktin(struct pipeline_result *result, uint8_t reason)
 {
     xbuf_append_attr(&result->actions, IND_OVS_ACTION_CONTROLLER,
                      &reason, sizeof(reason));
 }
 
 static void
-output(struct ind_ovs_fwd_result *result, uint32_t port_no)
+output(struct pipeline_result *result, uint32_t port_no)
 {
     xbuf_append_attr(&result->actions, IND_OVS_ACTION_OUTPUT,
                      &port_no, sizeof(port_no));
 }
 
 static void UNUSED
-push_vlan(struct ind_ovs_fwd_result *result, uint16_t ethertype)
+push_vlan(struct pipeline_result *result, uint16_t ethertype)
 {
     xbuf_append_attr(&result->actions, IND_OVS_ACTION_PUSH_VLAN,
                      &ethertype, sizeof(ethertype));
 }
 
 static void UNUSED
-pop_vlan(struct ind_ovs_fwd_result *result)
+pop_vlan(struct pipeline_result *result)
 {
     xbuf_append_attr(&result->actions, IND_OVS_ACTION_POP_VLAN, NULL, 0);
 }
 
 static void UNUSED
-set_vlan_vid(struct ind_ovs_fwd_result *result, uint16_t vlan_vid)
+set_vlan_vid(struct pipeline_result *result, uint16_t vlan_vid)
 {
     xbuf_append_attr(&result->actions, IND_OVS_ACTION_SET_VLAN_VID,
                      &vlan_vid, sizeof(vlan_vid));
 }
 
 static void UNUSED
-set_vlan_pcp(struct ind_ovs_fwd_result *result, uint8_t vlan_pcp)
+set_vlan_pcp(struct pipeline_result *result, uint8_t vlan_pcp)
 {
     xbuf_append_attr(&result->actions, IND_OVS_ACTION_SET_VLAN_PCP,
                      &vlan_pcp, sizeof(vlan_pcp));

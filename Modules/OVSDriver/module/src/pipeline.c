@@ -31,14 +31,14 @@ static const bool flood_on_dlf = true;
 
 static indigo_error_t lookup_l2(uint16_t vlan_vid, const uint8_t *eth_addr, uint32_t *port_no);
 static indigo_error_t check_vlan(uint16_t vlan_vid, uint32_t in_port, bool *tagged);
-static indigo_error_t flood_vlan(uint16_t vlan_vid, uint32_t in_port, struct ind_ovs_fwd_result *result);
+static indigo_error_t flood_vlan(uint16_t vlan_vid, uint32_t in_port, struct pipeline_result *result);
 static indigo_error_t lookup_port(uint32_t port_no, uint16_t *default_vlan_vid);
 static indigo_error_t lookup_vlan_xlate(uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t lookup_egr_vlan_xlate(uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 
 indigo_error_t
 ind_ovs_pipeline_process(const struct ind_ovs_parsed_key *pkey,
-                         struct ind_ovs_fwd_result *result)
+                         struct pipeline_result *result)
 {
     uint16_t default_vlan_vid = 0;
     if (lookup_port(pkey->in_port, &default_vlan_vid) < 0) {
@@ -182,7 +182,7 @@ check_vlan(uint16_t vlan_vid, uint32_t in_port, bool *tagged)
 }
 
 static indigo_error_t
-flood_vlan(uint16_t vlan_vid, uint32_t in_port, struct ind_ovs_fwd_result *result)
+flood_vlan(uint16_t vlan_vid, uint32_t in_port, struct pipeline_result *result)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
