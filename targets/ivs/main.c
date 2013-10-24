@@ -262,8 +262,8 @@ parse_options(int argc, char **argv)
 
         case OPT_PIPELINE:
             AIM_LOG_MSG("Enabling experimental pipeline");
-            extern bool ind_ovs_use_experimental_pipeline;
-            ind_ovs_use_experimental_pipeline = true;
+            extern bool pipeline_experimental;
+            pipeline_experimental = true;
             break;
 
         case 'h':

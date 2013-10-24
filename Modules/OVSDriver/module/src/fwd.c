@@ -39,8 +39,6 @@ static pthread_rwlock_t ind_ovs_fwd_rwlock;
 
 static aim_ratelimiter_t ind_ovs_pktin_limiter;
 
-bool ind_ovs_use_experimental_pipeline = false;
-
 /**
  * Stats for packet in
  */

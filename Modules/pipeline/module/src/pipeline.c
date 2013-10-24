@@ -32,6 +32,8 @@ struct pipeline {
 
 void ind_ovs_fwd_update_cfr(struct ind_ovs_cfr *cfr, struct xbuf *actions);
 
+bool pipeline_experimental = false;
+
 struct pipeline *
 pipeline_create(int openflow_version, pipeline_lookup_f lookup)
 {
@@ -55,6 +57,11 @@ pipeline_process(struct pipeline *pipeline,
                  struct ind_ovs_cfr *cfr,
                  struct pipeline_result *result)
 {
+    if (pipeline_experimental) {
+        extern indigo_error_t t6_pipeline_process(struct pipeline *pipeline, struct ind_ovs_cfr *cfr, struct pipeline_result *result);
+        return t6_pipeline_process(pipeline, cfr, result);
+    }
+
     uint8_t table_id = 0;
 
     while (table_id != (uint8_t)-1) {
