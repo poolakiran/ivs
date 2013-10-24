@@ -36,8 +36,6 @@ else:
     log("Install ccache for faster builds\n")
 
 os.environ['ROOT'] = os.path.join(os.getcwd())
-os.environ['INDIGO'] = os.path.join(os.getcwd(), 'indigo')
-os.environ['BUILDER'] = os.path.join(os.getcwd(), 'indigo', 'Builder', 'unix')
 
 try:
     os.mkdir('testlogs')
@@ -63,7 +61,7 @@ build('targets/upcall-latency-benchmark')
 
 # Unit tests
 utestsdir = 'targets/utests'
-utests = ['flowtable', 'l2table', 'xbuf']
+utests = ['flowtable', 'l2table', 'xbuf', 'pipeline']
 for utest in utests:
     build(os.path.join(utestsdir, utest), toolchains=['gcc-local'])
     test(utest, "make -C %s" % os.path.join(utestsdir, utest))

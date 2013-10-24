@@ -17,7 +17,17 @@
  *
  ****************************************************************/
 
-#include "pipeline_support.h"
+#include "t6_pipeline_support.h"
+
+#define AIM_LOG_MODULE_NAME pipeline
+#include <AIM/aim_log.h>
+
+AIM_LOG_STRUCT_DEFINE(AIM_LOG_OPTIONS_DEFAULT, AIM_LOG_BITS_DEFAULT, NULL, 0);
+
+struct pipeline {
+    int openflow_version;
+    pipeline_lookup_f lookup;
+};
 
 enum table_id {
     TABLE_ID_L2 = 0,
@@ -29,28 +39,29 @@ enum table_id {
 
 static const bool flood_on_dlf = true;
 
-static indigo_error_t lookup_l2(uint16_t vlan_vid, const uint8_t *eth_addr, uint32_t *port_no);
-static indigo_error_t check_vlan(uint16_t vlan_vid, uint32_t in_port, bool *tagged);
-static indigo_error_t flood_vlan(uint16_t vlan_vid, uint32_t in_port, struct ind_ovs_fwd_result *result);
-static indigo_error_t lookup_port(uint32_t port_no, uint16_t *default_vlan_vid);
-static indigo_error_t lookup_vlan_xlate(uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
-static indigo_error_t lookup_egr_vlan_xlate(uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
+static indigo_error_t lookup_l2(struct pipeline *pipeline, uint16_t vlan_vid, const uint8_t *eth_addr, uint32_t *port_no);
+static indigo_error_t check_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, bool *tagged);
+static indigo_error_t flood_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, struct pipeline_result *result);
+static indigo_error_t lookup_port(struct pipeline *pipeline, uint32_t port_no, uint16_t *default_vlan_vid);
+static indigo_error_t lookup_vlan_xlate(struct pipeline *pipeline, uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
+static indigo_error_t lookup_egr_vlan_xlate(struct pipeline *pipeline, uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 
 indigo_error_t
-ind_ovs_pipeline_process(const struct ind_ovs_parsed_key *pkey,
-                         struct ind_ovs_fwd_result *result)
+t6_pipeline_process(struct pipeline *pipeline,
+                    struct ind_ovs_cfr *cfr,
+                    struct pipeline_result *result)
 {
     uint16_t default_vlan_vid = 0;
-    if (lookup_port(pkey->in_port, &default_vlan_vid) < 0) {
-        LOG_WARN("port %u not found", pkey->in_port);
+    if (lookup_port(pipeline, cfr->in_port, &default_vlan_vid) < 0) {
+        AIM_LOG_WARN("port %u not found", cfr->in_port);
         return INDIGO_ERROR_NONE;
     }
 
     uint16_t vlan_vid;
-    if (ATTR_BITMAP_TEST(pkey->populated, OVS_KEY_ATTR_VLAN)) {
-        vlan_vid = VLAN_VID(ntohs(pkey->vlan));
+    if (cfr->dl_vlan & htons(VLAN_CFI_BIT)) {
+        vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan));
         uint16_t new_vlan_vid;
-        if (lookup_vlan_xlate(pkey->in_port, vlan_vid, &new_vlan_vid) == 0) {
+        if (lookup_vlan_xlate(pipeline, cfr->in_port, vlan_vid, &new_vlan_vid) == 0) {
             vlan_vid = new_vlan_vid;
             set_vlan_vid(result, vlan_vid);
         }
@@ -61,43 +72,43 @@ ind_ovs_pipeline_process(const struct ind_ovs_parsed_key *pkey,
     }
 
     UNUSED bool in_port_tagged;
-    if (check_vlan(vlan_vid, pkey->in_port, &in_port_tagged) < 0) {
-        LOG_VERBOSE("port %u not allowed on vlan %u (bad VLAN)", pkey->in_port, vlan_vid);
+    if (check_vlan(pipeline, vlan_vid, cfr->in_port, &in_port_tagged) < 0) {
+        AIM_LOG_VERBOSE("port %u not allowed on vlan %u (bad VLAN)", cfr->in_port, vlan_vid);
         pktin(result, BSN_PACKET_IN_REASON_BAD_VLAN);
         return INDIGO_ERROR_NONE;
     }
 
     /* Source lookup */
     uint32_t src_port_no = -1;
-    if (lookup_l2(vlan_vid, pkey->ethernet.eth_src, &src_port_no) < 0) {
-        LOG_VERBOSE("miss in source l2table lookup (new host)");
+    if (lookup_l2(pipeline, vlan_vid, cfr->dl_src, &src_port_no) < 0) {
+        AIM_LOG_VERBOSE("miss in source l2table lookup (new host)");
         pktin(result, BSN_PACKET_IN_REASON_NEW_HOST);
         return INDIGO_ERROR_NONE;
     }
 
-    LOG_VERBOSE("hit in source l2table lookup, src_port_no=%u", src_port_no);
+    AIM_LOG_VERBOSE("hit in source l2table lookup, src_port_no=%u", src_port_no);
 
-    if (src_port_no != pkey->in_port) {
-        LOG_VERBOSE("incorrect port in source l2table lookup (station move)");
+    if (src_port_no != cfr->in_port) {
+        AIM_LOG_VERBOSE("incorrect port in source l2table lookup (station move)");
         pktin(result, BSN_PACKET_IN_REASON_STATION_MOVE);
         return INDIGO_ERROR_NONE;
     }
 
     /* Check for broadcast/multicast */
-    if (pkey->ethernet.eth_dst[0] & 1) {
-        if (flood_vlan(vlan_vid, pkey->in_port, result) < 0) {
-            LOG_WARN("missing VLAN entry for vlan %u", vlan_vid);
+    if (cfr->dl_dst[0] & 1) {
+        if (flood_vlan(pipeline, vlan_vid, cfr->in_port, result) < 0) {
+            AIM_LOG_WARN("missing VLAN entry for vlan %u", vlan_vid);
         }
         return INDIGO_ERROR_NONE;
     }
 
     /* Destination lookup */
     uint32_t dst_port_no = -1;
-    if (lookup_l2(vlan_vid, pkey->ethernet.eth_dst, &dst_port_no) < 0) {
-        LOG_VERBOSE("miss in destination l2table lookup (destination lookup failure)");
+    if (lookup_l2(pipeline, vlan_vid, cfr->dl_dst, &dst_port_no) < 0) {
+        AIM_LOG_VERBOSE("miss in destination l2table lookup (destination lookup failure)");
         if (flood_on_dlf) {
-            if (flood_vlan(vlan_vid, pkey->in_port, result) < 0) {
-                LOG_WARN("missing VLAN entry for vlan %u", vlan_vid);
+            if (flood_vlan(pipeline, vlan_vid, cfr->in_port, result) < 0) {
+                AIM_LOG_WARN("missing VLAN entry for vlan %u", vlan_vid);
             }
         } else {
             pktin(result, BSN_PACKET_IN_REASON_DESTINATION_LOOKUP_FAILURE);
@@ -105,11 +116,11 @@ ind_ovs_pipeline_process(const struct ind_ovs_parsed_key *pkey,
         return INDIGO_ERROR_NONE;
     }
 
-    LOG_VERBOSE("hit in destination l2table lookup, dst_port_no=%u", dst_port_no);
+    AIM_LOG_VERBOSE("hit in destination l2table lookup, dst_port_no=%u", dst_port_no);
 
     bool out_port_tagged;
-    if (check_vlan(vlan_vid, dst_port_no, &out_port_tagged) < 0) {
-        LOG_WARN("output port %u not allowed on vlan %u", dst_port_no, vlan_vid);
+    if (check_vlan(pipeline, vlan_vid, dst_port_no, &out_port_tagged) < 0) {
+        AIM_LOG_WARN("output port %u not allowed on vlan %u", dst_port_no, vlan_vid);
         return INDIGO_ERROR_NONE;
     }
 
@@ -117,7 +128,7 @@ ind_ovs_pipeline_process(const struct ind_ovs_parsed_key *pkey,
         pop_vlan(result);
     } else {
         uint16_t new_vlan_vid;
-        if (lookup_egr_vlan_xlate(dst_port_no, vlan_vid, &new_vlan_vid) == 0) {
+        if (lookup_egr_vlan_xlate(pipeline, dst_port_no, vlan_vid, &new_vlan_vid) == 0) {
             vlan_vid = new_vlan_vid;
             set_vlan_vid(result, vlan_vid);
         }
@@ -128,7 +139,7 @@ ind_ovs_pipeline_process(const struct ind_ovs_parsed_key *pkey,
 }
 
 static indigo_error_t
-lookup_l2(uint16_t vlan_vid, const uint8_t *eth_addr, uint32_t *port_no)
+lookup_l2(struct pipeline *pipeline, uint16_t vlan_vid, const uint8_t *eth_addr, uint32_t *port_no)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
@@ -136,13 +147,14 @@ lookup_l2(uint16_t vlan_vid, const uint8_t *eth_addr, uint32_t *port_no)
     cfr.dl_vlan = htons(VLAN_TCI(vlan_vid, 0) | VLAN_CFI_BIT);
     memcpy(&cfr.dl_dst, eth_addr, sizeof(cfr.dl_dst));
 
-    struct ind_ovs_flow *flow = lookup(TABLE_ID_L2, &cfr);
-    if (flow == NULL) {
+    struct ind_ovs_flow_effects *effects =
+        pipeline->lookup(TABLE_ID_L2, &cfr, NULL);
+    if (effects == NULL) {
         return INDIGO_ERROR_NOT_FOUND;
     }
 
     struct nlattr *attr;
-    XBUF_FOREACH2(&flow->effects.apply_actions, attr) {
+    XBUF_FOREACH2(&effects->apply_actions, attr) {
         if (attr->nla_type == IND_OVS_ACTION_OUTPUT) {
             *port_no = *XBUF_PAYLOAD(attr, uint32_t);
         }
@@ -152,22 +164,23 @@ lookup_l2(uint16_t vlan_vid, const uint8_t *eth_addr, uint32_t *port_no)
 }
 
 static indigo_error_t
-check_vlan(uint16_t vlan_vid, uint32_t in_port, bool *tagged)
+check_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, bool *tagged)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
 
     cfr.dl_vlan = htons(VLAN_TCI(vlan_vid, 0) | VLAN_CFI_BIT);
 
-    struct ind_ovs_flow *flow = lookup(TABLE_ID_VLAN, &cfr);
-    if (flow == NULL) {
+    struct ind_ovs_flow_effects *effects =
+        pipeline->lookup(TABLE_ID_VLAN, &cfr, NULL);
+    if (effects == NULL) {
         return INDIGO_ERROR_NOT_FOUND;
     }
 
     *tagged = true;
 
     struct nlattr *attr;
-    XBUF_FOREACH2(&flow->effects.apply_actions, attr) {
+    XBUF_FOREACH2(&effects->apply_actions, attr) {
         if (attr->nla_type == IND_OVS_ACTION_OUTPUT) {
             uint32_t port_no = *XBUF_PAYLOAD(attr, uint32_t);
             if (port_no == in_port) {
@@ -182,26 +195,27 @@ check_vlan(uint16_t vlan_vid, uint32_t in_port, bool *tagged)
 }
 
 static indigo_error_t
-flood_vlan(uint16_t vlan_vid, uint32_t in_port, struct ind_ovs_fwd_result *result)
+flood_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, struct pipeline_result *result)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
 
     cfr.dl_vlan = htons(VLAN_TCI(vlan_vid, 0) | VLAN_CFI_BIT);
 
-    struct ind_ovs_flow *flow = lookup(TABLE_ID_VLAN, &cfr);
-    if (flow == NULL) {
+    struct ind_ovs_flow_effects *effects =
+        pipeline->lookup(TABLE_ID_VLAN, &cfr, NULL);
+    if (effects == NULL) {
         return INDIGO_ERROR_NOT_FOUND;
     }
 
     bool tagged = true;
     struct nlattr *attr;
-    XBUF_FOREACH2(&flow->effects.apply_actions, attr) {
+    XBUF_FOREACH2(&effects->apply_actions, attr) {
         if (attr->nla_type == IND_OVS_ACTION_OUTPUT) {
             uint32_t port_no = *XBUF_PAYLOAD(attr, uint32_t);
             if (port_no != in_port) {
                 uint16_t new_vlan_vid;
-                if (tagged && lookup_egr_vlan_xlate(port_no, vlan_vid, &new_vlan_vid) == 0) {
+                if (tagged && lookup_egr_vlan_xlate(pipeline, port_no, vlan_vid, &new_vlan_vid) == 0) {
                     set_vlan_vid(result, new_vlan_vid);
                     output(result, port_no);
                     set_vlan_vid(result, vlan_vid);
@@ -219,20 +233,21 @@ flood_vlan(uint16_t vlan_vid, uint32_t in_port, struct ind_ovs_fwd_result *resul
 }
 
 static indigo_error_t
-lookup_port(uint32_t port_no, uint16_t *default_vlan_vid)
+lookup_port(struct pipeline *pipeline, uint32_t port_no, uint16_t *default_vlan_vid)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
 
     cfr.in_port = port_no;
 
-    struct ind_ovs_flow *flow = lookup(TABLE_ID_PORT, &cfr);
-    if (flow == NULL) {
+    struct ind_ovs_flow_effects *effects =
+        pipeline->lookup(TABLE_ID_PORT, &cfr, NULL);
+    if (effects == NULL) {
         return INDIGO_ERROR_NOT_FOUND;
     }
 
     struct nlattr *attr;
-    XBUF_FOREACH2(&flow->effects.apply_actions, attr) {
+    XBUF_FOREACH2(&effects->apply_actions, attr) {
         if (attr->nla_type == IND_OVS_ACTION_SET_VLAN_VID) {
             *default_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
         }
@@ -242,7 +257,7 @@ lookup_port(uint32_t port_no, uint16_t *default_vlan_vid)
 }
 
 static indigo_error_t
-lookup_vlan_xlate(uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid)
+lookup_vlan_xlate(struct pipeline *pipeline, uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
@@ -250,13 +265,14 @@ lookup_vlan_xlate(uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid)
     cfr.in_port = port_no;
     cfr.dl_vlan = htons(VLAN_TCI(vlan_vid, 0) | VLAN_CFI_BIT);
 
-    struct ind_ovs_flow *flow = lookup(TABLE_ID_VLAN_XLATE, &cfr);
-    if (flow == NULL) {
+    struct ind_ovs_flow_effects *effects =
+        pipeline->lookup(TABLE_ID_VLAN_XLATE, &cfr, NULL);
+    if (effects == NULL) {
         return INDIGO_ERROR_NOT_FOUND;
     }
 
     struct nlattr *attr;
-    XBUF_FOREACH2(&flow->effects.apply_actions, attr) {
+    XBUF_FOREACH2(&effects->apply_actions, attr) {
         if (attr->nla_type == IND_OVS_ACTION_SET_VLAN_VID) {
             *new_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
             return INDIGO_ERROR_NONE;
@@ -267,7 +283,7 @@ lookup_vlan_xlate(uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid)
 }
 
 static indigo_error_t
-lookup_egr_vlan_xlate(uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid)
+lookup_egr_vlan_xlate(struct pipeline *pipeline, uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
@@ -275,13 +291,14 @@ lookup_egr_vlan_xlate(uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vi
     cfr.in_port = port_no;
     cfr.dl_vlan = htons(VLAN_TCI(vlan_vid, 0) | VLAN_CFI_BIT);
 
-    struct ind_ovs_flow *flow = lookup(TABLE_ID_EGR_VLAN_XLATE, &cfr);
-    if (flow == NULL) {
+    struct ind_ovs_flow_effects *effects =
+        pipeline->lookup(TABLE_ID_EGR_VLAN_XLATE, &cfr, NULL);
+    if (effects == NULL) {
         return INDIGO_ERROR_NOT_FOUND;
     }
 
     struct nlattr *attr;
-    XBUF_FOREACH2(&flow->effects.apply_actions, attr) {
+    XBUF_FOREACH2(&effects->apply_actions, attr) {
         if (attr->nla_type == IND_OVS_ACTION_SET_VLAN_VID) {
             *new_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
             return INDIGO_ERROR_NONE;

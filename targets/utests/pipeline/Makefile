@@ -19,47 +19,27 @@
 
 ###############################################################################
 #
-# BigCode Unit Tests
+#  pipeline Unit Testing Module Makefile
 #
-# Common Make and build settings for all unit tests.
+#
 #
 ###############################################################################
-ifndef MODULE
-$(error Need to define $$MODULE)
-endif
+MODULE := pipeline_utest
+NOMODULEMAKE := 1
+TEST_MODULE :=  pipeline
+DEPENDMODULES := AIM indigo xbuf loci ivs_common
+GLOBAL_CFLAGS += -DAIM_CONFIG_INCLUDE_POSIX=1
+GLOBAL_CFLAGS += -DAIM_CONFIG_INCLUDE_MAIN=1
+GLOBAL_CFLAGS += -DINDIGO_LINUX_LOGGING
+GLOBAL_CFLAGS += -DINDIGO_LINUX_TIME
+GLOBAL_CFLAGS += -DINDIGO_FAULT_ON_ASSERT
+GLOBAL_CFLAGS += -DINDIGO_MEM_STDLIB
+GLOBAL_CFLAGS += -DAIM_CONFIG_INCLUDE_MODULES_INIT=1
+GLOBAL_CFLAGS += -DAIM_CONFIG_INCLUDE_MAIN=1
+GLOBAL_CFLAGS += -DAIM_CONFIG_INCLUDE_PVS_SYSLOG=1
+GLOBAL_CFLAGS += -DAIM_CONFIG_LOG_INCLUDE_ENV_VARIABLES=0
+GLOBAL_CFLAGS += -D_BSD_SOURCE
+OS_MAKE_CONFIG_AUTOSELECT := 1
+#PEDANTIC := 1
 
-ifndef ROOT
-ROOT := $(dir $(lastword $(MAKEFILE_LIST)))/../../..
-endif
-
-ifndef INFRA
-INFRA := $(ROOT)/submodules/infra
-endif
-
-ifndef BIGCODE
-BIGCODE := $(ROOT)/submodules/bigcode
-endif
-
-ifndef INDIGO
-INDIGO := $(ROOT)/submodules/indigo
-endif
-
-ifndef BUILDER
-BUILDER := $(INFRA)/builder/unix
-endif
-
-#
-# Default to Builder in BigCode
-#
-ifndef BUILDER
-export BUILDER := $(INDIGO)/Builder/unix
-endif
-
-#
-# Default to local build directory
-#
-ifndef BUILD_DIR
-export BUILD_DIR := ./build
-endif
-
-GLOBAL_CFLAGS += -DOF_WIRE_BUFFER_DEBUG
+include ../make/utestmodule.mk
