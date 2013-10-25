@@ -41,6 +41,7 @@ static const bool flood_on_dlf = true;
 
 static indigo_error_t lookup_l2(struct pipeline *pipeline, uint16_t vlan_vid, const uint8_t *eth_addr, uint32_t *port_no);
 static indigo_error_t check_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, bool *tagged);
+static bool is_vlan_configured(struct pipeline *pipeline, uint16_t vlan_vid);
 static indigo_error_t flood_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, struct pipeline_result *result);
 static indigo_error_t lookup_port(struct pipeline *pipeline, uint32_t port_no, uint16_t *default_vlan_vid);
 static indigo_error_t lookup_vlan_xlate(struct pipeline *pipeline, uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
@@ -71,10 +72,16 @@ t6_pipeline_process(struct pipeline *pipeline,
         set_vlan_vid(result, vlan_vid);
     }
 
+    /* Generate packet-in if packet received on unconfigured VLAN */
+    if (is_vlan_configured(pipeline, vlan_vid) == false) {
+        AIM_LOG_VERBOSE("Packet received on unconfigured vlan %u (bad VLAN)", vlan_vid);
+        pktin(result, BSN_PACKET_IN_REASON_BAD_VLAN);
+        return INDIGO_ERROR_NONE;
+    }
+
     UNUSED bool in_port_tagged;
     if (check_vlan(pipeline, vlan_vid, cfr->in_port, &in_port_tagged) < 0) {
-        AIM_LOG_VERBOSE("port %u not allowed on vlan %u (bad VLAN)", cfr->in_port, vlan_vid);
-        pktin(result, BSN_PACKET_IN_REASON_BAD_VLAN);
+        AIM_LOG_VERBOSE("port %u not allowed on vlan %u", cfr->in_port, vlan_vid);
         return INDIGO_ERROR_NONE;
     }
 
@@ -161,6 +168,23 @@ lookup_l2(struct pipeline *pipeline, uint16_t vlan_vid, const uint8_t *eth_addr,
     }
 
     return INDIGO_ERROR_NONE;
+}
+
+static bool
+is_vlan_configured(struct pipeline *pipeline, uint16_t vlan_vid)
+{
+    struct ind_ovs_cfr cfr;
+    memset(&cfr, 0, sizeof(cfr));
+
+    cfr.dl_vlan = htons(VLAN_TCI(vlan_vid, 0) | VLAN_CFI_BIT);
+
+    struct ind_ovs_flow_effects *effects =
+        pipeline->lookup(TABLE_ID_VLAN, &cfr, NULL);
+    if (effects != NULL) {
+        return true;
+    }
+
+    return false;
 }
 
 static indigo_error_t
