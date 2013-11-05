@@ -301,9 +301,8 @@ ind_ovs_port_deleted(uint32_t port_no)
     ind_ovs_kflow_invalidate_all();
 }
 
-void indigo_port_modify(
-    of_port_mod_t *port_mod,
-    indigo_cookie_t callback_cookie)
+indigo_error_t
+indigo_port_modify(of_port_mod_t *port_mod)
 {
     of_port_no_t port_no;
     of_port_mod_port_no_get(port_mod, &port_no);
@@ -314,15 +313,14 @@ void indigo_port_modify(
 
     struct ind_ovs_port *port = ind_ovs_port_lookup(port_no);
     if (port == NULL) {
-        indigo_core_port_modify_callback(INDIGO_ERROR_NOT_FOUND, callback_cookie);
-        return;
+        return INDIGO_ERROR_NOT_FOUND;
     }
 
     port->config = (port->config & ~mask) | (config & mask);
     /* TODO change other configuration? */
     ind_ovs_kflow_invalidate_all();
 
-    indigo_core_port_modify_callback(INDIGO_ERROR_NONE, callback_cookie);
+    return INDIGO_ERROR_NONE;
 }
 
 static int
@@ -404,9 +402,10 @@ port_stats_iterator(struct nl_msg *msg, void *arg)
     return NL_OK;
 }
 
-void indigo_port_stats_get(
+indigo_error_t
+indigo_port_stats_get(
     of_port_stats_request_t *port_stats_request,
-    indigo_cookie_t callback_cookie)
+    of_port_stats_reply_t **port_stats_reply_ptr)
 {
     of_port_no_t req_of_port_num;
     of_port_stats_reply_t *port_stats_reply;
@@ -454,7 +453,9 @@ out:
         of_port_stats_reply_delete(port_stats_reply);
         port_stats_reply = NULL;
     }
-    indigo_core_port_stats_get_callback(err, port_stats_reply, callback_cookie);
+
+    *port_stats_reply_ptr = port_stats_reply;
+    return err;
 }
 
 indigo_error_t indigo_port_desc_stats_get(
@@ -508,38 +509,40 @@ indigo_error_t indigo_port_desc_stats_get(
 }
 
 /* Currently returns an empty reply */
-void indigo_port_queue_config_get(
+indigo_error_t
+indigo_port_queue_config_get(
     of_queue_get_config_request_t *request,
-    indigo_cookie_t callback_cookie)
+    of_queue_get_config_reply_t **reply_ptr)
 {
     of_queue_get_config_reply_t *reply;
-    indigo_error_t result = INDIGO_ERROR_NONE;
 
     reply = of_queue_get_config_reply_new(request->version);
     if (reply == NULL) {
-        result = INDIGO_ERROR_RESOURCE;
         LOG_ERROR("Could not allocate queue config reply");
+        return INDIGO_ERROR_RESOURCE;
     }
 
-    indigo_core_queue_config_get_callback(result, reply, callback_cookie);
+    *reply_ptr = reply;
+    return INDIGO_ERROR_NONE;
 }
 
 /* Currently returns an empty reply */
-void indigo_port_queue_stats_get(
+indigo_error_t
+indigo_port_queue_stats_get(
     of_queue_stats_request_t *queue_stats_request,
-    indigo_cookie_t callback_cookie)
+    of_queue_stats_reply_t **queue_stats_reply_ptr)
 {
     of_queue_stats_reply_t *queue_stats_reply = of_queue_stats_reply_new(queue_stats_request->version);
     if (queue_stats_reply == NULL) {
-        indigo_core_queue_stats_get_callback(INDIGO_ERROR_RESOURCE, NULL, callback_cookie);
-        return;
+        return INDIGO_ERROR_RESOURCE;
     }
 
     uint32_t xid;
     of_queue_stats_request_xid_get(queue_stats_request, &xid);
     of_queue_stats_reply_xid_set(queue_stats_reply, xid);
 
-    indigo_core_queue_stats_get_callback(INDIGO_ERROR_NONE, queue_stats_reply, callback_cookie);
+    *queue_stats_reply_ptr = queue_stats_reply;
+    return INDIGO_ERROR_NONE;
 }
 
 static indigo_error_t
@@ -548,9 +551,14 @@ port_status_notify(of_port_no_t of_port_num, unsigned reason)
     indigo_error_t   result = INDIGO_ERROR_NONE;
     of_port_desc_t   *of_port_desc   = 0;
     of_port_status_t *of_port_status = 0;
+    of_version_t ctrlr_of_version;
 
-    /* Don't know the cxn this is going to, so use configured version */
-    if ((of_port_desc = of_port_desc_new(ind_ovs_version)) == 0) {
+    if (indigo_cxn_get_async_version(&ctrlr_of_version) != INDIGO_ERROR_NONE) {
+        LOG_TRACE("No active controller connection");
+        return INDIGO_ERROR_NONE;
+    }
+
+    if ((of_port_desc = of_port_desc_new(ctrlr_of_version)) == 0) {
         LOG_ERROR("of_port_desc_new() failed");
         result = INDIGO_ERROR_UNKNOWN;
         goto done;
@@ -558,7 +566,7 @@ port_status_notify(of_port_no_t of_port_num, unsigned reason)
 
     port_desc_set(of_port_desc, of_port_num);
 
-    if ((of_port_status = of_port_status_new(ind_ovs_version)) == 0) {
+    if ((of_port_status = of_port_status_new(ctrlr_of_version)) == 0) {
         LOG_ERROR("of_port_status_new() failed");
         result = INDIGO_ERROR_UNKNOWN;
         goto done;
