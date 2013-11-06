@@ -47,7 +47,7 @@ static const bool flood_on_dlf = true;
 static indigo_error_t lookup_l2(struct pipeline *pipeline, uint16_t vlan_vid, const uint8_t *eth_addr, uint32_t *port_no, uint32_t *group_id);
 static indigo_error_t check_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, bool *tagged);
 static bool is_vlan_configured(struct pipeline *pipeline, uint16_t vlan_vid);
-static indigo_error_t flood_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, struct pipeline_result *result);
+static indigo_error_t flood_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash, struct pipeline_result *result);
 static indigo_error_t lookup_port(struct pipeline *pipeline, uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id);
 static indigo_error_t lookup_vlan_xlate(struct pipeline *pipeline, uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t lookup_egr_vlan_xlate(struct pipeline *pipeline, uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
@@ -58,6 +58,8 @@ t6_pipeline_process(struct pipeline *pipeline,
                     struct ind_ovs_cfr *cfr,
                     struct pipeline_result *result)
 {
+    uint32_t hash = murmur_hash(cfr, sizeof(*cfr), 0);
+
     uint16_t default_vlan_vid;
     uint32_t lag_id;
     if (lookup_port(pipeline, cfr->in_port, &default_vlan_vid, &lag_id) < 0) {
@@ -111,7 +113,7 @@ t6_pipeline_process(struct pipeline *pipeline,
 
     /* Check for broadcast/multicast */
     if (cfr->dl_dst[0] & 1) {
-        if (flood_vlan(pipeline, vlan_vid, cfr->in_port, lag_id, result) < 0) {
+        if (flood_vlan(pipeline, vlan_vid, cfr->in_port, lag_id, hash, result) < 0) {
             AIM_LOG_WARN("missing VLAN entry for vlan %u", vlan_vid);
         }
         return INDIGO_ERROR_NONE;
@@ -122,7 +124,7 @@ t6_pipeline_process(struct pipeline *pipeline,
     if (lookup_l2(pipeline, vlan_vid, cfr->dl_dst, &dst_port_no, &dst_group_id) < 0) {
         AIM_LOG_VERBOSE("miss in destination l2table lookup (destination lookup failure)");
         if (flood_on_dlf) {
-            if (flood_vlan(pipeline, vlan_vid, cfr->in_port, lag_id, result) < 0) {
+            if (flood_vlan(pipeline, vlan_vid, cfr->in_port, lag_id, hash, result) < 0) {
                 AIM_LOG_WARN("missing VLAN entry for vlan %u", vlan_vid);
             }
         } else {
@@ -134,7 +136,6 @@ t6_pipeline_process(struct pipeline *pipeline,
     AIM_LOG_VERBOSE("hit in destination l2table lookup, dst_port_no=%u dst_group_id=%u", dst_port_no, dst_group_id);
 
     if (dst_group_id != OF_GROUP_ANY) {
-        uint32_t hash = murmur_hash(cfr, sizeof(*cfr), 0);
         if (select_lag_port(pipeline, dst_group_id, hash, &dst_port_no) < 0) {
             return INDIGO_ERROR_NONE;
         }
@@ -242,7 +243,7 @@ check_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, bool 
 
 static indigo_error_t
 flood_vlan(struct pipeline *pipeline,
-           uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id,
+           uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash,
            struct pipeline_result *result)
 {
     struct ind_ovs_cfr cfr;
@@ -259,8 +260,21 @@ flood_vlan(struct pipeline *pipeline,
     uint16_t tag = vlan_vid;
     struct nlattr *attr;
     XBUF_FOREACH2(&effects->apply_actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_OUTPUT) {
-            uint32_t port_no = *XBUF_PAYLOAD(attr, uint32_t);
+        if (attr->nla_type == IND_OVS_ACTION_OUTPUT ||
+                attr->nla_type == IND_OVS_ACTION_GROUP) {
+            uint32_t port_no;
+
+            if (attr->nla_type == IND_OVS_ACTION_OUTPUT) {
+                port_no = *XBUF_PAYLOAD(attr, uint32_t);
+            } else {
+                uint32_t group_id = *XBUF_PAYLOAD(attr, uint32_t);
+                if (select_lag_port(pipeline, group_id, hash, &port_no) < 0) {
+                    AIM_LOG_VERBOSE("LAG %u is empty", group_id);
+                    continue;
+                }
+                AIM_LOG_VERBOSE("selected LAG %u port %u", group_id, port_no);
+            }
+
             bool tagged;
             if (check_vlan(pipeline, vlan_vid, port_no, &tagged) < 0) {
                 AIM_LOG_VERBOSE("not flooding vlan %u to port %u", vlan_vid, port_no);
