@@ -200,6 +200,20 @@ indigo_fwd_group_stats_get(uint32_t id, of_group_stats_entry_t *entry)
     of_group_stats_entry_byte_count_set(entry, total_bytes);
 }
 
+indigo_error_t
+ind_ovs_group_select(uint32_t id, uint32_t hash, struct xbuf **actions)
+{
+    struct ind_ovs_group *group = ind_ovs_group_lookup(id);
+    if (group == NULL) {
+        return INDIGO_ERROR_NOT_FOUND;
+    } else if (group->type != OF_GROUP_TYPE_SELECT) {
+        return INDIGO_ERROR_COMPAT;
+    }
+
+    *actions = &group->buckets[hash % group->num_buckets].actions;
+    return INDIGO_ERROR_NONE;
+}
+
 void
 ind_ovs_group_module_init(void)
 {
