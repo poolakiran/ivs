@@ -67,6 +67,8 @@ t6_pipeline_process(struct pipeline *pipeline,
         return INDIGO_ERROR_NONE;
     }
 
+    AIM_LOG_VERBOSE("hit in port table lookup, default_vlan_vid=%u lag_id=%u", default_vlan_vid, lag_id);
+
     uint16_t vlan_vid;
     if (cfr->dl_vlan & htons(VLAN_CFI_BIT)) {
         vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan));
@@ -104,9 +106,12 @@ t6_pipeline_process(struct pipeline *pipeline,
 
     AIM_LOG_VERBOSE("hit in source l2table lookup, src_port_no=%u src_group_id=%u", src_port_no, src_group_id);
 
-    /* TODO fix station move with LAG */
-    if (src_group_id == OF_GROUP_ANY && src_port_no != cfr->in_port) {
+    if (src_port_no != OF_PORT_DEST_NONE && src_port_no != cfr->in_port) {
         AIM_LOG_VERBOSE("incorrect port in source l2table lookup (station move)");
+        pktin(result, BSN_PACKET_IN_REASON_STATION_MOVE);
+        return INDIGO_ERROR_NONE;
+    } else if (src_group_id != OF_GROUP_ANY && src_group_id != lag_id) {
+        AIM_LOG_VERBOSE("incorrect lag_id in source l2table lookup (station move)");
         pktin(result, BSN_PACKET_IN_REASON_STATION_MOVE);
         return INDIGO_ERROR_NONE;
     }
