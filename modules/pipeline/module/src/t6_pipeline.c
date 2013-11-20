@@ -23,7 +23,7 @@
 #define AIM_LOG_MODULE_NAME pipeline
 #include <AIM/aim_log.h>
 
-AIM_LOG_STRUCT_DEFINE(AIM_LOG_OPTIONS_DEFAULT, AIM_LOG_BITS_DEFAULT/*|AIM_LOG_BIT_VERBOSE*/, NULL, 0);
+AIM_LOG_STRUCT_DEFINE(AIM_LOG_OPTIONS_DEFAULT, AIM_LOG_BITS_DEFAULT|AIM_LOG_BIT_VERBOSE, NULL, 0);
 
 /* TODO add group lookup interface to pipeline struct in mainline */
 indigo_error_t ind_ovs_group_select(uint32_t, uint32_t, struct xbuf **);
