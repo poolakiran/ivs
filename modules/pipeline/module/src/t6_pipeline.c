@@ -23,7 +23,7 @@
 #define AIM_LOG_MODULE_NAME pipeline
 #include <AIM/aim_log.h>
 
-AIM_LOG_STRUCT_DEFINE(AIM_LOG_OPTIONS_DEFAULT, AIM_LOG_BITS_DEFAULT/*|AIM_LOG_BIT_VERBOSE*/, NULL, 0);
+AIM_LOG_STRUCT_DEFINE(AIM_LOG_OPTIONS_DEFAULT, AIM_LOG_BITS_DEFAULT|AIM_LOG_BIT_VERBOSE, NULL, 0);
 
 /* TODO add group lookup interface to pipeline struct in mainline */
 indigo_error_t ind_ovs_group_select(uint32_t, uint32_t, struct xbuf **);
@@ -59,6 +59,12 @@ t6_pipeline_process(struct pipeline *pipeline,
                     struct pipeline_result *result)
 {
     uint32_t hash = murmur_hash(cfr, sizeof(*cfr), 0);
+
+    if (cfr->dl_type == htons(0x88cc)) {
+        AIM_LOG_VERBOSE("sending ethertype %#x directly to controller", ntohs(cfr->dl_type));
+        pktin(result, OF_PACKET_IN_REASON_ACTION);
+        return INDIGO_ERROR_NONE;
+    }
 
     uint16_t default_vlan_vid;
     uint32_t lag_id;
