@@ -292,9 +292,20 @@ flood_vlan(struct pipeline *pipeline,
                 continue;
             }
 
-            /* TODO also check lag_id */
             if (port_no == in_port) {
                 AIM_LOG_VERBOSE("not flooding vlan %u to ingress port %u", vlan_vid, port_no);
+                continue;
+            }
+
+            uint16_t out_default_vlan_vid;
+            uint32_t out_lag_id;
+            if (lookup_port(pipeline, port_no, &out_default_vlan_vid, &out_lag_id) < 0) {
+                AIM_LOG_WARN("port %u not found during flood", port_no);
+                continue;
+            }
+
+            if (out_lag_id != OF_GROUP_ANY && out_lag_id == lag_id) {
+                AIM_LOG_VERBOSE("skipping ingress LAG %u", lag_id);
                 continue;
             }
 
