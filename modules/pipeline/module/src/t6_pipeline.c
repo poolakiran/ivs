@@ -48,7 +48,7 @@ static indigo_error_t lookup_l2(struct pipeline *pipeline, uint16_t vlan_vid, co
 static indigo_error_t check_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, bool *tagged);
 static bool is_vlan_configured(struct pipeline *pipeline, uint16_t vlan_vid);
 static indigo_error_t flood_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash, struct pipeline_result *result);
-static indigo_error_t lookup_port(struct pipeline *pipeline, uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id);
+static indigo_error_t lookup_port(struct pipeline *pipeline, uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id, bool *disable_src_mac_check);
 static indigo_error_t lookup_vlan_xlate(struct pipeline *pipeline, uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t lookup_egr_vlan_xlate(struct pipeline *pipeline, uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t select_lag_port(struct pipeline *pipeline, uint32_t group_id, uint32_t hash, uint32_t *port_no);
@@ -68,7 +68,8 @@ t6_pipeline_process(struct pipeline *pipeline,
 
     uint16_t default_vlan_vid;
     uint32_t lag_id;
-    if (lookup_port(pipeline, cfr->in_port, &default_vlan_vid, &lag_id) < 0) {
+    bool disable_src_mac_check;
+    if (lookup_port(pipeline, cfr->in_port, &default_vlan_vid, &lag_id, &disable_src_mac_check) < 0) {
         AIM_LOG_WARN("port %u not found", cfr->in_port);
         return INDIGO_ERROR_NONE;
     }
@@ -112,14 +113,16 @@ t6_pipeline_process(struct pipeline *pipeline,
 
     AIM_LOG_VERBOSE("hit in source l2table lookup, src_port_no=%u src_group_id=%u", src_port_no, src_group_id);
 
-    if (src_port_no != OF_PORT_DEST_NONE && src_port_no != cfr->in_port) {
-        AIM_LOG_VERBOSE("incorrect port in source l2table lookup (station move)");
-        pktin(result, BSN_PACKET_IN_REASON_STATION_MOVE);
-        return INDIGO_ERROR_NONE;
-    } else if (src_group_id != OF_GROUP_ANY && src_group_id != lag_id) {
-        AIM_LOG_VERBOSE("incorrect lag_id in source l2table lookup (station move)");
-        pktin(result, BSN_PACKET_IN_REASON_STATION_MOVE);
-        return INDIGO_ERROR_NONE;
+    if (!disable_src_mac_check) {
+        if (src_port_no != OF_PORT_DEST_NONE && src_port_no != cfr->in_port) {
+            AIM_LOG_VERBOSE("incorrect port in source l2table lookup (station move)");
+            pktin(result, BSN_PACKET_IN_REASON_STATION_MOVE);
+            return INDIGO_ERROR_NONE;
+        } else if (src_group_id != OF_GROUP_ANY && src_group_id != lag_id) {
+            AIM_LOG_VERBOSE("incorrect lag_id in source l2table lookup (station move)");
+            pktin(result, BSN_PACKET_IN_REASON_STATION_MOVE);
+            return INDIGO_ERROR_NONE;
+        }
     }
 
     /* Check for broadcast/multicast */
@@ -299,7 +302,8 @@ flood_vlan(struct pipeline *pipeline,
 
             uint16_t out_default_vlan_vid;
             uint32_t out_lag_id;
-            if (lookup_port(pipeline, port_no, &out_default_vlan_vid, &out_lag_id) < 0) {
+            bool out_disable_src_mac_check;
+            if (lookup_port(pipeline, port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check) < 0) {
                 AIM_LOG_WARN("port %u not found during flood", port_no);
                 continue;
             }
@@ -339,7 +343,8 @@ flood_vlan(struct pipeline *pipeline,
 
 static indigo_error_t
 lookup_port(struct pipeline *pipeline, uint32_t port_no,
-            uint16_t *default_vlan_vid, uint32_t *lag_id)
+            uint16_t *default_vlan_vid, uint32_t *lag_id,
+            bool *disable_src_mac_check)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
@@ -348,6 +353,7 @@ lookup_port(struct pipeline *pipeline, uint32_t port_no,
 
     *default_vlan_vid = 0;
     *lag_id = OF_GROUP_ANY;
+    *disable_src_mac_check = false;
 
     struct ind_ovs_flow_effects *effects =
         pipeline->lookup(TABLE_ID_PORT, &cfr, NULL);
@@ -363,6 +369,8 @@ lookup_port(struct pipeline *pipeline, uint32_t port_no,
             *lag_id = *XBUF_PAYLOAD(attr, uint32_t);
         }
     }
+
+    *disable_src_mac_check = effects->disable_src_mac_check;
 
     return INDIGO_ERROR_NONE;
 }
