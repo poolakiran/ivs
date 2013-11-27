@@ -60,7 +60,7 @@ t6_pipeline_process(struct pipeline *pipeline,
 {
     uint32_t hash = murmur_hash(cfr, sizeof(*cfr), 0);
 
-    if (cfr->dl_type == htons(0x88cc)) {
+    if (cfr->dl_type == htons(0x88cc) || cfr->dl_type == htons(0x8809)) {
         AIM_LOG_VERBOSE("sending ethertype %#x directly to controller", ntohs(cfr->dl_type));
         pktin(result, OF_PACKET_IN_REASON_ACTION);
         return INDIGO_ERROR_NONE;
