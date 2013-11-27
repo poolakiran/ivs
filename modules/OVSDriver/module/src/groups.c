@@ -208,6 +208,8 @@ ind_ovs_group_select(uint32_t id, uint32_t hash, struct xbuf **actions)
         return INDIGO_ERROR_NOT_FOUND;
     } else if (group->type != OF_GROUP_TYPE_SELECT) {
         return INDIGO_ERROR_COMPAT;
+    } else if (group->num_buckets == 0) {
+        return INDIGO_ERROR_NOT_FOUND;
     }
 
     *actions = &group->buckets[hash % group->num_buckets].actions;
