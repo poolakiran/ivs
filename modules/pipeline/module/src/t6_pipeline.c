@@ -39,11 +39,13 @@ enum table_id {
     TABLE_ID_PORT = 2,
     TABLE_ID_VLAN_XLATE = 3,
     TABLE_ID_EGR_VLAN_XLATE = 4,
+    TABLE_ID_MY_STATION = 5,
     TABLE_ID_FLOOD = 11,
 };
 
 static const bool flood_on_dlf = true;
 
+static indigo_error_t process_l3(struct pipeline *pipeline, struct ind_ovs_cfr *cfr, uint32_t hash, struct pipeline_result *result);
 static indigo_error_t lookup_l2(struct pipeline *pipeline, uint16_t vlan_vid, const uint8_t *eth_addr, uint32_t *port_no, uint32_t *group_id);
 static indigo_error_t check_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, bool *tagged);
 static bool is_vlan_configured(struct pipeline *pipeline, uint16_t vlan_vid);
@@ -52,6 +54,7 @@ static indigo_error_t lookup_port(struct pipeline *pipeline, uint32_t port_no, u
 static indigo_error_t lookup_vlan_xlate(struct pipeline *pipeline, uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t lookup_egr_vlan_xlate(struct pipeline *pipeline, uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t select_lag_port(struct pipeline *pipeline, uint32_t group_id, uint32_t hash, uint32_t *port_no);
+static indigo_error_t lookup_my_station(struct pipeline *pipeline, const uint8_t *eth_addr);
 
 indigo_error_t
 t6_pipeline_process(struct pipeline *pipeline,
@@ -133,6 +136,11 @@ t6_pipeline_process(struct pipeline *pipeline,
         return INDIGO_ERROR_NONE;
     }
 
+    if (lookup_my_station(pipeline, cfr->dl_dst) == 0) {
+        AIM_LOG_VERBOSE("hit in MyStation table, entering L3 processing");
+        return process_l3(pipeline, cfr, hash, result);
+    }
+
     /* Destination lookup */
     uint32_t dst_port_no, dst_group_id;
     if (lookup_l2(pipeline, vlan_vid, cfr->dl_dst, &dst_port_no, &dst_group_id) < 0) {
@@ -173,6 +181,17 @@ t6_pipeline_process(struct pipeline *pipeline,
     }
 
     output(result, dst_port_no);
+    return INDIGO_ERROR_NONE;
+}
+
+static indigo_error_t
+process_l3(struct pipeline *pipeline,
+           struct ind_ovs_cfr *cfr,
+           uint32_t hash,
+           struct pipeline_result *result)
+{
+    AIM_LOG_VERBOSE("no route to host");
+    pktin(result, BSN_PACKET_IN_REASON_NO_ROUTE);
     return INDIGO_ERROR_NONE;
 }
 
@@ -449,4 +468,21 @@ select_lag_port(struct pipeline *pipeline, uint32_t group_id, uint32_t hash, uin
 
     AIM_LOG_WARN("no output action found in group %u bucket", group_id);
     return INDIGO_ERROR_NOT_FOUND;
+}
+
+static indigo_error_t
+lookup_my_station(struct pipeline *pipeline, const uint8_t *eth_addr)
+{
+    struct ind_ovs_cfr cfr;
+    memset(&cfr, 0, sizeof(cfr));
+
+    memcpy(&cfr.dl_dst, eth_addr, sizeof(cfr.dl_dst));
+
+    struct ind_ovs_flow_effects *effects =
+        pipeline->lookup(TABLE_ID_MY_STATION, &cfr, NULL);
+    if (effects == NULL) {
+        return INDIGO_ERROR_NOT_FOUND;
+    }
+
+    return INDIGO_ERROR_NONE;
 }
