@@ -103,17 +103,17 @@ t6_pipeline_process(struct pipeline *pipeline,
         return INDIGO_ERROR_NONE;
     }
 
-    /* Source lookup */
-    uint32_t src_port_no, src_group_id;
-    if (lookup_l2(pipeline, vlan_vid, cfr->dl_src, &src_port_no, &src_group_id) < 0) {
-        AIM_LOG_VERBOSE("miss in source l2table lookup (new host)");
-        pktin(result, BSN_PACKET_IN_REASON_NEW_HOST);
-        return INDIGO_ERROR_NONE;
-    }
-
-    AIM_LOG_VERBOSE("hit in source l2table lookup, src_port_no=%u src_group_id=%u", src_port_no, src_group_id);
-
     if (!disable_src_mac_check) {
+        /* Source lookup */
+        uint32_t src_port_no, src_group_id;
+        if (lookup_l2(pipeline, vlan_vid, cfr->dl_src, &src_port_no, &src_group_id) < 0) {
+            AIM_LOG_VERBOSE("miss in source l2table lookup (new host)");
+            pktin(result, BSN_PACKET_IN_REASON_NEW_HOST);
+            return INDIGO_ERROR_NONE;
+        }
+
+        AIM_LOG_VERBOSE("hit in source l2table lookup, src_port_no=%u src_group_id=%u", src_port_no, src_group_id);
+
         if (src_port_no != OF_PORT_DEST_NONE && src_port_no != cfr->in_port) {
             AIM_LOG_VERBOSE("incorrect port in source l2table lookup (station move)");
             pktin(result, BSN_PACKET_IN_REASON_STATION_MOVE);
