@@ -61,7 +61,7 @@ static indigo_error_t lookup_vlan_xlate(struct pipeline *pipeline, uint32_t port
 static indigo_error_t lookup_egr_vlan_xlate(struct pipeline *pipeline, uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t select_lag_port(struct pipeline *pipeline, uint32_t group_id, uint32_t hash, uint32_t *port_no);
 static indigo_error_t lookup_my_station(struct pipeline *pipeline, const uint8_t *eth_addr);
-static indigo_error_t lookup_l3_route(struct pipeline *pipeline, uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *out_port);
+static indigo_error_t lookup_l3_route(struct pipeline *pipeline, uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, bool global_vrf_allowed, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *out_port);
 static indigo_error_t lookup_l3_host_route(struct pipeline *pipeline, uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *out_port);
 
 indigo_error_t
@@ -211,7 +211,7 @@ process_l3(struct pipeline *pipeline,
     uint16_t new_vlan_vid;
     uint32_t lag_id;
 
-    if (lookup_l3_route(pipeline, hash, cfr->vrf, cfr->nw_dst,
+    if (lookup_l3_route(pipeline, hash, cfr->vrf, cfr->nw_dst, cfr->global_vrf_allowed,
                         &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id) < 0) {
         AIM_LOG_VERBOSE("no route to host");
         pktin(result, BSN_PACKET_IN_REASON_NO_ROUTE);
@@ -552,20 +552,29 @@ lookup_my_station(struct pipeline *pipeline, const uint8_t *eth_addr)
 
 static indigo_error_t
 lookup_l3_route(struct pipeline *pipeline, uint32_t hash,
-                uint32_t vrf, uint32_t ipv4_dst,
+                uint32_t vrf, uint32_t ipv4_dst, bool global_vrf_allowed,
                 of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst,
                 uint16_t *new_vlan_vid, uint32_t *lag_id)
 {
     indigo_error_t ret;
 
-    AIM_LOG_VERBOSE("looking up route for VRF=%u ip="FORMAT_IPV4,
-                    vrf, VALUE_IPV4((uint8_t *)&ipv4_dst));
+    AIM_LOG_VERBOSE("looking up route for VRF=%u ip="FORMAT_IPV4" global_vrf_allowed=%u",
+                    vrf, VALUE_IPV4((uint8_t *)&ipv4_dst), global_vrf_allowed);
 
     if ((ret = lookup_l3_host_route(
         pipeline, hash, vrf, ipv4_dst,
         new_eth_src, new_eth_dst, new_vlan_vid, lag_id)) == 0) {
         AIM_LOG_VERBOSE("hit in host route table");
         return INDIGO_ERROR_NONE;
+    }
+
+    if (global_vrf_allowed) {
+        if ((ret = lookup_l3_host_route(
+            pipeline, hash, 0, ipv4_dst,
+            new_eth_src, new_eth_dst, new_vlan_vid, lag_id)) == 0) {
+            AIM_LOG_VERBOSE("hit in global host route table");
+            return INDIGO_ERROR_NONE;
+        }
     }
 
     return INDIGO_ERROR_NOT_FOUND;
