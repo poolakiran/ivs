@@ -81,4 +81,18 @@ set_vlan_pcp(struct pipeline_result *result, uint8_t vlan_pcp)
                      &vlan_pcp, sizeof(vlan_pcp));
 }
 
+static void
+set_eth_src(struct pipeline_result *result, of_mac_addr_t mac)
+{
+    xbuf_append_attr(&result->actions, IND_OVS_ACTION_SET_ETH_SRC,
+                     mac.addr, OF_MAC_ADDR_BYTES);
+}
+
+static void
+set_eth_dst(struct pipeline_result *result, of_mac_addr_t mac)
+{
+    xbuf_append_attr(&result->actions, IND_OVS_ACTION_SET_ETH_DST,
+                     mac.addr, OF_MAC_ADDR_BYTES);
+}
+
 #endif
