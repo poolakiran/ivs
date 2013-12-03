@@ -46,6 +46,7 @@ enum table_id {
     TABLE_ID_EGR_VLAN_XLATE = 4,
     TABLE_ID_MY_STATION = 5,
     TABLE_ID_L3_HOST_ROUTE = 6,
+    TABLE_ID_L3_CIDR_ROUTE = 7,
     TABLE_ID_FLOOD = 11,
 };
 
@@ -63,6 +64,7 @@ static indigo_error_t select_lag_port(struct pipeline *pipeline, uint32_t group_
 static indigo_error_t lookup_my_station(struct pipeline *pipeline, const uint8_t *eth_addr);
 static indigo_error_t lookup_l3_route(struct pipeline *pipeline, uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, bool global_vrf_allowed, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *out_port);
 static indigo_error_t lookup_l3_host_route(struct pipeline *pipeline, uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *out_port);
+static indigo_error_t lookup_l3_cidr_route(struct pipeline *pipeline, uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *out_port);
 
 indigo_error_t
 t6_pipeline_process(struct pipeline *pipeline,
@@ -568,11 +570,25 @@ lookup_l3_route(struct pipeline *pipeline, uint32_t hash,
         return INDIGO_ERROR_NONE;
     }
 
+    if ((ret = lookup_l3_cidr_route(
+        pipeline, hash, vrf, ipv4_dst,
+        new_eth_src, new_eth_dst, new_vlan_vid, lag_id)) == 0) {
+        AIM_LOG_VERBOSE("hit in CIDR route table");
+        return INDIGO_ERROR_NONE;
+    }
+
     if (global_vrf_allowed) {
         if ((ret = lookup_l3_host_route(
             pipeline, hash, 0, ipv4_dst,
             new_eth_src, new_eth_dst, new_vlan_vid, lag_id)) == 0) {
             AIM_LOG_VERBOSE("hit in global host route table");
+            return INDIGO_ERROR_NONE;
+        }
+
+        if ((ret = lookup_l3_cidr_route(
+            pipeline, hash, 0, ipv4_dst,
+            new_eth_src, new_eth_dst, new_vlan_vid, lag_id)) == 0) {
+            AIM_LOG_VERBOSE("hit in global CIDR route table");
             return INDIGO_ERROR_NONE;
         }
     }
@@ -595,6 +611,46 @@ lookup_l3_host_route(struct pipeline *pipeline, uint32_t hash,
 
     struct ind_ovs_flow_effects *effects =
         pipeline->lookup(TABLE_ID_L3_HOST_ROUTE, &cfr, NULL);
+    if (effects == NULL) {
+        return INDIGO_ERROR_NOT_FOUND;
+    }
+
+    *lag_id = OF_GROUP_ANY;
+    memset(new_eth_src, 0, sizeof(*new_eth_src));
+    memset(new_eth_dst, 0, sizeof(*new_eth_dst));
+    *new_vlan_vid = 0;
+
+    struct nlattr *attr;
+    XBUF_FOREACH2(&effects->write_actions, attr) {
+        if (attr->nla_type == IND_OVS_ACTION_GROUP) {
+            *lag_id = *XBUF_PAYLOAD(attr, uint32_t);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
+            memcpy(new_eth_src->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_DST) {
+            memcpy(new_eth_dst->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_VLAN_VID) {
+            *new_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
+        }
+    }
+
+    return INDIGO_ERROR_NONE;
+}
+
+static indigo_error_t
+lookup_l3_cidr_route(struct pipeline *pipeline, uint32_t hash,
+                     uint32_t vrf, uint32_t ipv4_dst,
+                     of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst,
+                     uint16_t *new_vlan_vid, uint32_t *lag_id)
+{
+    struct ind_ovs_cfr cfr;
+    memset(&cfr, 0, sizeof(cfr));
+
+    cfr.dl_type = htons(0x0800);
+    cfr.vrf = vrf;
+    cfr.nw_dst = ipv4_dst;
+
+    struct ind_ovs_flow_effects *effects =
+        pipeline->lookup(TABLE_ID_L3_CIDR_ROUTE, &cfr, NULL);
     if (effects == NULL) {
         return INDIGO_ERROR_NOT_FOUND;
     }
