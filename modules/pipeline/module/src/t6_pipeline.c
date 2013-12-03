@@ -53,7 +53,7 @@ static const bool flood_on_dlf = true;
 
 static indigo_error_t process_l3(struct pipeline *pipeline, struct ind_ovs_cfr *cfr, uint32_t hash, struct pipeline_result *result);
 static indigo_error_t lookup_l2(struct pipeline *pipeline, uint16_t vlan_vid, const uint8_t *eth_addr, uint32_t *port_no, uint32_t *group_id);
-static indigo_error_t check_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, bool *tagged);
+static indigo_error_t check_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, bool *global_vrf_allowed);
 static bool is_vlan_configured(struct pipeline *pipeline, uint16_t vlan_vid);
 static indigo_error_t flood_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash, struct pipeline_result *result);
 static indigo_error_t lookup_port(struct pipeline *pipeline, uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id, bool *disable_src_mac_check);
@@ -109,10 +109,16 @@ t6_pipeline_process(struct pipeline *pipeline,
     }
 
     UNUSED bool in_port_tagged;
-    if (check_vlan(pipeline, vlan_vid, cfr->in_port, &in_port_tagged) < 0) {
+    bool global_vrf_allowed;
+    uint32_t vrf;
+    if (check_vlan(pipeline, vlan_vid, cfr->in_port, &in_port_tagged, &vrf, &global_vrf_allowed) < 0) {
         AIM_LOG_VERBOSE("port %u not allowed on vlan %u", cfr->in_port, vlan_vid);
         return INDIGO_ERROR_NONE;
     }
+
+    AIM_LOG_VERBOSE("VLAN %u: vrf=%u global_vrf_allowed=%d", vlan_vid, vrf, global_vrf_allowed);
+    cfr->vrf = vrf;
+    cfr->global_vrf_allowed = global_vrf_allowed;
 
     if (!disable_src_mac_check) {
         /* Source lookup */
@@ -173,7 +179,9 @@ t6_pipeline_process(struct pipeline *pipeline,
     }
 
     bool out_port_tagged;
-    if (check_vlan(pipeline, vlan_vid, dst_port_no, &out_port_tagged) < 0) {
+    UNUSED bool out_global_vrf_allowed;
+    UNUSED uint32_t out_vrf;
+    if (check_vlan(pipeline, vlan_vid, dst_port_no, &out_port_tagged, &out_vrf, &out_global_vrf_allowed) < 0) {
         AIM_LOG_WARN("output port %u not allowed on vlan %u", dst_port_no, vlan_vid);
         return INDIGO_ERROR_NONE;
     }
@@ -221,7 +229,9 @@ process_l3(struct pipeline *pipeline,
     AIM_LOG_VERBOSE("selected LAG port %u", out_port);
 
     bool out_port_tagged;
-    if (check_vlan(pipeline, new_vlan_vid, out_port, &out_port_tagged) < 0) {
+    UNUSED bool out_global_vrf_allowed;
+    UNUSED uint32_t out_vrf;
+    if (check_vlan(pipeline, new_vlan_vid, out_port, &out_port_tagged, &out_vrf, &out_global_vrf_allowed) < 0) {
         AIM_LOG_WARN("output port %u not allowed on vlan %u", out_port, new_vlan_vid);
         return INDIGO_ERROR_NONE;
     }
@@ -288,7 +298,8 @@ is_vlan_configured(struct pipeline *pipeline, uint16_t vlan_vid)
 }
 
 static indigo_error_t
-check_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, bool *tagged)
+check_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port,
+           bool *tagged, uint32_t *vrf, bool *global_vrf_allowed)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
@@ -302,6 +313,8 @@ check_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, bool 
     }
 
     *tagged = true;
+    *vrf = 0;
+    *global_vrf_allowed = false;
 
     struct nlattr *attr;
     XBUF_FOREACH2(&effects->apply_actions, attr) {
@@ -312,6 +325,10 @@ check_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, bool 
             }
         } else if (attr->nla_type == IND_OVS_ACTION_POP_VLAN) {
             *tagged = false;
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_VRF) {
+            *vrf = *XBUF_PAYLOAD(attr, uint32_t);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_GLOBAL_VRF_ALLOWED) {
+            *global_vrf_allowed = *XBUF_PAYLOAD(attr, uint8_t);
         }
     }
 
@@ -353,7 +370,9 @@ flood_vlan(struct pipeline *pipeline,
             }
 
             bool tagged;
-            if (check_vlan(pipeline, vlan_vid, port_no, &tagged) < 0) {
+            UNUSED bool out_global_vrf_allowed;
+            UNUSED uint32_t out_vrf;
+            if (check_vlan(pipeline, vlan_vid, port_no, &tagged, &out_vrf, &out_global_vrf_allowed) < 0) {
                 AIM_LOG_VERBOSE("not flooding vlan %u to port %u", vlan_vid, port_no);
                 continue;
             }
