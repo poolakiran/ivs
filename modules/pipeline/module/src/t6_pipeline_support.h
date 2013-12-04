@@ -95,4 +95,11 @@ set_eth_dst(struct pipeline_result *result, of_mac_addr_t mac)
                      mac.addr, OF_MAC_ADDR_BYTES);
 }
 
+static void
+dec_nw_ttl(struct pipeline_result *result)
+{
+    xbuf_append_attr(&result->actions, IND_OVS_ACTION_DEC_NW_TTL,
+                     NULL, 0);
+}
+
 #endif

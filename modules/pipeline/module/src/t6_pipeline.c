@@ -247,6 +247,7 @@ process_l3(struct pipeline *pipeline,
 
     set_eth_src(result, new_eth_src);
     set_eth_dst(result, new_eth_dst);
+    dec_nw_ttl(result);
     output(result, out_port);
     return INDIGO_ERROR_NONE;
 }
