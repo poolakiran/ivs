@@ -42,6 +42,7 @@
 #include <signal.h>
 #include <sys/eventfd.h>
 #include <stdbool.h>
+#include <lacpa/lacpa.h>
 
 #define AIM_LOG_MODULE_NAME ivs
 #include <AIM/aim_log.h>
@@ -395,6 +396,11 @@ aim_main(int argc, char* argv[])
 
     if (ind_ovs_init(datapath_name) < 0) {
         AIM_LOG_FATAL("Failed to initialize OVSDriver module");
+        return 1;
+    }
+
+    if (lacpa_init() < 0) {
+        AIM_LOG_FATAL("Failed to initialize LACP Agent module");
         return 1;
     }
 
