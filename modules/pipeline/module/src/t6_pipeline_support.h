@@ -37,6 +37,7 @@ enum bsn_pktin_reason {
     BSN_PACKET_IN_REASON_STATION_MOVE = 129,
     BSN_PACKET_IN_REASON_BAD_VLAN = 130,
     BSN_PACKET_IN_REASON_DESTINATION_LOOKUP_FAILURE = 131,
+    BSN_PACKET_IN_REASON_NO_ROUTE = 132,
 };
 
 static void
@@ -78,6 +79,27 @@ set_vlan_pcp(struct pipeline_result *result, uint8_t vlan_pcp)
 {
     xbuf_append_attr(&result->actions, IND_OVS_ACTION_SET_VLAN_PCP,
                      &vlan_pcp, sizeof(vlan_pcp));
+}
+
+static void
+set_eth_src(struct pipeline_result *result, of_mac_addr_t mac)
+{
+    xbuf_append_attr(&result->actions, IND_OVS_ACTION_SET_ETH_SRC,
+                     mac.addr, OF_MAC_ADDR_BYTES);
+}
+
+static void
+set_eth_dst(struct pipeline_result *result, of_mac_addr_t mac)
+{
+    xbuf_append_attr(&result->actions, IND_OVS_ACTION_SET_ETH_DST,
+                     mac.addr, OF_MAC_ADDR_BYTES);
+}
+
+static void
+dec_nw_ttl(struct pipeline_result *result)
+{
+    xbuf_append_attr(&result->actions, IND_OVS_ACTION_DEC_NW_TTL,
+                     NULL, 0);
 }
 
 #endif
