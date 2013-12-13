@@ -58,7 +58,7 @@ static indigo_error_t check_vlan(struct pipeline *pipeline, uint16_t vlan_vid, u
 static bool is_vlan_configured(struct pipeline *pipeline, uint16_t vlan_vid);
 static indigo_error_t flood_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash, struct pipeline_result *result);
 static indigo_error_t lookup_port(struct pipeline *pipeline, uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id, bool *disable_src_mac_check);
-static indigo_error_t lookup_vlan_xlate(struct pipeline *pipeline, uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
+static indigo_error_t lookup_vlan_xlate(struct pipeline *pipeline, uint32_t port_no, uint32_t lag_id, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t lookup_egr_vlan_xlate(struct pipeline *pipeline, uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t select_lag_port(struct pipeline *pipeline, uint32_t group_id, uint32_t hash, uint32_t *port_no);
 static indigo_error_t lookup_my_station(struct pipeline *pipeline, const uint8_t *eth_addr);
@@ -93,7 +93,7 @@ t6_pipeline_process(struct pipeline *pipeline,
     if (cfr->dl_vlan & htons(VLAN_CFI_BIT)) {
         vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan));
         uint16_t new_vlan_vid;
-        if (lookup_vlan_xlate(pipeline, cfr->in_port, vlan_vid, &new_vlan_vid) == 0) {
+        if (lookup_vlan_xlate(pipeline, cfr->in_port, lag_id, vlan_vid, &new_vlan_vid) == 0) {
             vlan_vid = new_vlan_vid;
             set_vlan_vid(result, vlan_vid);
         }
@@ -461,12 +461,13 @@ lookup_port(struct pipeline *pipeline, uint32_t port_no,
 }
 
 static indigo_error_t
-lookup_vlan_xlate(struct pipeline *pipeline, uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid)
+lookup_vlan_xlate(struct pipeline *pipeline, uint32_t port_no, uint32_t lag_id, uint16_t vlan_vid, uint16_t *new_vlan_vid)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
 
     cfr.in_port = port_no;
+    cfr.lag_id = lag_id;
     cfr.dl_vlan = htons(VLAN_TCI(vlan_vid, 0) | VLAN_CFI_BIT);
 
     struct ind_ovs_flow_effects *effects =
