@@ -43,6 +43,7 @@
 #include <sys/eventfd.h>
 #include <stdbool.h>
 #include <lacpa/lacpa.h>
+#include <lldpa/lldpa.h>
 
 #define AIM_LOG_MODULE_NAME ivs
 #include <AIM/aim_log.h>
@@ -404,6 +405,11 @@ aim_main(int argc, char* argv[])
         return 1;
     }
 
+    if (lldpa_system_init() < 0) {
+        AIM_LOG_FATAL("Failed to initialize LLDP Agent module");
+        return 1;
+    }
+
     if (enable_tunnel) {
         if (ind_ovs_tunnel_init() < 0) {
             AIM_LOG_FATAL("Failed to initialize tunneling");
@@ -573,6 +579,7 @@ aim_main(int argc, char* argv[])
 
     AIM_LOG_MSG("Stopping %s", program_version);
 
+    lldpa_system_finish();
     ind_core_finish();
     ind_ovs_finish();
     ind_cxn_finish();
