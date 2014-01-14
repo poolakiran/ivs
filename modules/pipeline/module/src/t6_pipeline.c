@@ -57,7 +57,7 @@ static indigo_error_t lookup_l2(struct pipeline *pipeline, uint16_t vlan_vid, co
 static indigo_error_t check_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, bool *global_vrf_allowed);
 static bool is_vlan_configured(struct pipeline *pipeline, uint16_t vlan_vid);
 static indigo_error_t flood_vlan(struct pipeline *pipeline, uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash, struct pipeline_result *result);
-static indigo_error_t lookup_port(struct pipeline *pipeline, uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id, bool *disable_src_mac_check);
+static indigo_error_t lookup_port(struct pipeline *pipeline, uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id, bool *disable_src_mac_check, bool *arp_offload);
 static indigo_error_t lookup_vlan_xlate(struct pipeline *pipeline, uint32_t port_no, uint32_t lag_id, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t lookup_egr_vlan_xlate(struct pipeline *pipeline, uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t select_lag_port(struct pipeline *pipeline, uint32_t group_id, uint32_t hash, uint32_t *port_no);
@@ -82,12 +82,13 @@ t6_pipeline_process(struct pipeline *pipeline,
     uint16_t default_vlan_vid;
     uint32_t lag_id;
     bool disable_src_mac_check;
-    if (lookup_port(pipeline, cfr->in_port, &default_vlan_vid, &lag_id, &disable_src_mac_check) < 0) {
+    bool arp_offload;
+    if (lookup_port(pipeline, cfr->in_port, &default_vlan_vid, &lag_id, &disable_src_mac_check, &arp_offload) < 0) {
         AIM_LOG_WARN("port %u not found", cfr->in_port);
         return INDIGO_ERROR_NONE;
     }
 
-    AIM_LOG_VERBOSE("hit in port table lookup, default_vlan_vid=%u lag_id=%u", default_vlan_vid, lag_id);
+    AIM_LOG_VERBOSE("hit in port table lookup, default_vlan_vid=%u lag_id=%u disable_src_mac_check=%u arp_offload=%u", default_vlan_vid, lag_id, disable_src_mac_check, arp_offload);
 
     uint16_t vlan_vid;
     if (cfr->dl_vlan & htons(VLAN_CFI_BIT)) {
@@ -140,6 +141,14 @@ t6_pipeline_process(struct pipeline *pipeline,
         } else if (src_group_id != OF_GROUP_ANY && src_group_id != lag_id) {
             AIM_LOG_VERBOSE("incorrect lag_id in source l2table lookup (station move)");
             pktin(result, OF_PACKET_IN_REASON_BSN_STATION_MOVE);
+            return INDIGO_ERROR_NONE;
+        }
+    }
+
+    /* ARP offload */
+    if (arp_offload) {
+        if (cfr->dl_type == htons(0x0806)) {
+            pktin(result, OF_PACKET_IN_REASON_BSN_ARP);
             return INDIGO_ERROR_NONE;
         }
     }
@@ -388,7 +397,8 @@ flood_vlan(struct pipeline *pipeline,
             uint16_t out_default_vlan_vid;
             uint32_t out_lag_id;
             bool out_disable_src_mac_check;
-            if (lookup_port(pipeline, port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check) < 0) {
+            bool out_arp_offload;
+            if (lookup_port(pipeline, port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload) < 0) {
                 AIM_LOG_WARN("port %u not found during flood", port_no);
                 continue;
             }
@@ -429,7 +439,7 @@ flood_vlan(struct pipeline *pipeline,
 static indigo_error_t
 lookup_port(struct pipeline *pipeline, uint32_t port_no,
             uint16_t *default_vlan_vid, uint32_t *lag_id,
-            bool *disable_src_mac_check)
+            bool *disable_src_mac_check, bool *arp_offload)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
@@ -439,6 +449,7 @@ lookup_port(struct pipeline *pipeline, uint32_t port_no,
     *default_vlan_vid = 0;
     *lag_id = OF_GROUP_ANY;
     *disable_src_mac_check = false;
+    *arp_offload = false;
 
     struct ind_ovs_flow_effects *effects =
         pipeline->lookup(TABLE_ID_PORT, &cfr, NULL);
@@ -456,6 +467,7 @@ lookup_port(struct pipeline *pipeline, uint32_t port_no,
     }
 
     *disable_src_mac_check = effects->disable_src_mac_check;
+    *arp_offload = effects->arp_offload; /* TODO */
 
     return INDIGO_ERROR_NONE;
 }
