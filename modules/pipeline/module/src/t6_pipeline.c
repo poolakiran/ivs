@@ -106,7 +106,7 @@ t6_pipeline_process(struct pipeline *pipeline,
     /* Generate packet-in if packet received on unconfigured VLAN */
     if (is_vlan_configured(pipeline, vlan_vid) == false) {
         AIM_LOG_VERBOSE("Packet received on unconfigured vlan %u (bad VLAN)", vlan_vid);
-        pktin(result, BSN_PACKET_IN_REASON_BAD_VLAN);
+        pktin(result, OF_PACKET_IN_REASON_BSN_BAD_VLAN);
         return INDIGO_ERROR_NONE;
     }
 
@@ -127,7 +127,7 @@ t6_pipeline_process(struct pipeline *pipeline,
         uint32_t src_port_no, src_group_id;
         if (lookup_l2(pipeline, vlan_vid, cfr->dl_src, &src_port_no, &src_group_id) < 0) {
             AIM_LOG_VERBOSE("miss in source l2table lookup (new host)");
-            pktin(result, BSN_PACKET_IN_REASON_NEW_HOST);
+            pktin(result, OF_PACKET_IN_REASON_BSN_NEW_HOST);
             return INDIGO_ERROR_NONE;
         }
 
@@ -135,11 +135,11 @@ t6_pipeline_process(struct pipeline *pipeline,
 
         if (src_port_no != OF_PORT_DEST_NONE && src_port_no != cfr->in_port) {
             AIM_LOG_VERBOSE("incorrect port in source l2table lookup (station move)");
-            pktin(result, BSN_PACKET_IN_REASON_STATION_MOVE);
+            pktin(result, OF_PACKET_IN_REASON_BSN_STATION_MOVE);
             return INDIGO_ERROR_NONE;
         } else if (src_group_id != OF_GROUP_ANY && src_group_id != lag_id) {
             AIM_LOG_VERBOSE("incorrect lag_id in source l2table lookup (station move)");
-            pktin(result, BSN_PACKET_IN_REASON_STATION_MOVE);
+            pktin(result, OF_PACKET_IN_REASON_BSN_STATION_MOVE);
             return INDIGO_ERROR_NONE;
         }
     }
@@ -166,7 +166,7 @@ t6_pipeline_process(struct pipeline *pipeline,
                 AIM_LOG_WARN("missing VLAN entry for vlan %u", vlan_vid);
             }
         } else {
-            pktin(result, BSN_PACKET_IN_REASON_DESTINATION_LOOKUP_FAILURE);
+            pktin(result, OF_PACKET_IN_REASON_BSN_DESTINATION_LOOKUP_FAILURE);
         }
         return INDIGO_ERROR_NONE;
     }
@@ -216,7 +216,7 @@ process_l3(struct pipeline *pipeline,
     if (lookup_l3_route(pipeline, hash, cfr->vrf, cfr->nw_dst, cfr->global_vrf_allowed,
                         &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id) < 0) {
         AIM_LOG_VERBOSE("no route to host");
-        pktin(result, BSN_PACKET_IN_REASON_NO_ROUTE);
+        pktin(result, OF_PACKET_IN_REASON_BSN_NO_ROUTE);
         return INDIGO_ERROR_NONE;
     }
 

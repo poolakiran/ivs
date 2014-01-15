@@ -32,13 +32,7 @@
 
 #define UNUSED __attribute__((unused))
 
-enum bsn_pktin_reason {
-    BSN_PACKET_IN_REASON_NEW_HOST = 128,
-    BSN_PACKET_IN_REASON_STATION_MOVE = 129,
-    BSN_PACKET_IN_REASON_BAD_VLAN = 130,
-    BSN_PACKET_IN_REASON_DESTINATION_LOOKUP_FAILURE = 131,
-    BSN_PACKET_IN_REASON_NO_ROUTE = 132,
-};
+#define OF_PACKET_IN_REASON_BSN_ARP 139
 
 static void
 pktin(struct pipeline_result *result, uint8_t reason)
