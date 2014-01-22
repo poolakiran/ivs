@@ -267,7 +267,7 @@ parse_options(int argc, char **argv)
             break;
 
         case OPT_PIPELINE:
-            pipeline = optarg ? optarg : "bvs-1.0";
+            pipeline = optarg ? optarg : "experimental";
             AIM_LOG_MSG("Setting forwarding pipeline to '%s'", pipeline);
             break;
 
