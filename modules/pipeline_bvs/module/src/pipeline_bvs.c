@@ -17,10 +17,10 @@
  *
  ****************************************************************/
 
-#include "t6_pipeline_support.h"
+#include "pipeline_bvs_support.h"
 #include <murmur/murmur.h>
 
-#define AIM_LOG_MODULE_NAME pipeline
+#define AIM_LOG_MODULE_NAME pipeline_bvs
 #include <AIM/aim_log.h>
 
 AIM_LOG_STRUCT_DEFINE(AIM_LOG_OPTIONS_DEFAULT, AIM_LOG_BITS_DEFAULT|AIM_LOG_BIT_VERBOSE, NULL, 0);
@@ -61,9 +61,19 @@ static indigo_error_t lookup_l3_route( uint32_t hash, uint32_t vrf, uint32_t ipv
 static indigo_error_t lookup_l3_host_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *out_port);
 static indigo_error_t lookup_l3_cidr_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *out_port);
 
-indigo_error_t
-t6_pipeline_process(struct ind_ovs_cfr *cfr,
-                    struct pipeline_result *result)
+static void
+pipeline_bvs_init(const char *name)
+{
+}
+
+static void
+pipeline_bvs_finish(void)
+{
+}
+
+static indigo_error_t
+pipeline_bvs_process(struct ind_ovs_cfr *cfr,
+                     struct pipeline_result *result)
 {
     uint32_t hash = murmur_hash(cfr, sizeof(*cfr), 0);
 
@@ -680,4 +690,17 @@ lookup_l3_cidr_route(uint32_t hash,
     }
 
     return INDIGO_ERROR_NONE;
+}
+
+static struct pipeline_ops pipeline_bvs_ops = {
+    .init = pipeline_bvs_init,
+    .finish = pipeline_bvs_finish,
+    .process = pipeline_bvs_process,
+};
+
+void
+__pipeline_bvs_module_init__(void)
+{
+    pipeline_register("bvs-1.0", &pipeline_bvs_ops);
+    pipeline_register("experimental", &pipeline_bvs_ops); /* For command-line compatibility */
 }

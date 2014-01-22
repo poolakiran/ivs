@@ -52,6 +52,9 @@ LDFLAGS += -rdynamic
 GLOBAL_LINK_LIBS += -ldl
 endif
 
+# Closed source modules
+DEPENDMODULES += pipeline_bvs
+
 #
 # Resolve module dependencies
 #
