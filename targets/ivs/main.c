@@ -46,6 +46,7 @@
 #include <lldpa/lldpa.h>
 #include <arpa/arpa.h>
 #include <router_ip_table/router_ip_table.h>
+#include <pipeline/pipeline.h>
 
 #define AIM_LOG_MODULE_NAME ivs
 #include <AIM/aim_log.h>
@@ -104,6 +105,7 @@ static int enable_tunnel = 0;
 static char *datapath_name = "indigo";
 static char *config_filename = NULL;
 static char *openflow_version = NULL;
+static char *pipeline = NULL;
 
 static int
 parse_controller(const char *str,
@@ -199,7 +201,7 @@ parse_options(int argc, char **argv)
             {"max-flows",   required_argument, 0,  OPT_MAX_FLOWS },
             {"config-file", required_argument, 0,  'f' },
             {"openflow-version", required_argument, 0, 'V' },
-            {"pipeline",    no_argument,       0,  OPT_PIPELINE },
+            {"pipeline",    optional_argument, 0,  OPT_PIPELINE },
             {0,             0,                 0,  0 }
         };
 
@@ -265,9 +267,8 @@ parse_options(int argc, char **argv)
             break;
 
         case OPT_PIPELINE:
-            AIM_LOG_MSG("Enabling experimental pipeline");
-            extern bool pipeline_experimental;
-            pipeline_experimental = true;
+            pipeline = optarg ? optarg : "experimental";
+            AIM_LOG_MSG("Setting forwarding pipeline to '%s'", pipeline);
             break;
 
         case 'h':
@@ -425,6 +426,14 @@ aim_main(int argc, char* argv[])
     if (enable_tunnel) {
         if (ind_ovs_tunnel_init() < 0) {
             AIM_LOG_FATAL("Failed to initialize tunneling");
+            return 1;
+        }
+    }
+
+    if (pipeline) {
+        indigo_error_t rv = pipeline_set(pipeline);
+        if (rv < 0) {
+            AIM_LOG_FATAL("Failed to set pipeline: %s", indigo_strerror(rv));
             return 1;
         }
     }

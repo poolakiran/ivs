@@ -17,8 +17,8 @@
  *
  ****************************************************************/
 
-#ifndef OVSDRIVER_PIPELINE_SUPPORT_H
-#define OVSDRIVER_PIPELINE_SUPPORT_H
+#ifndef PIPELINE_BVS_SUPPORT_H
+#define PIPELINE_BVS_SUPPORT_H
 
 #include <stdlib.h>
 #include <arpa/inet.h>
