@@ -153,7 +153,7 @@ pipeline_bvs_process(struct ind_ovs_cfr *cfr,
     if (arp_offload) {
         if (cfr->dl_type == htons(0x0806)) {
             pktin(result, OF_PACKET_IN_REASON_BSN_ARP);
-            return INDIGO_ERROR_NONE;
+            /* Continue forwarding packet */
         }
     }
 
