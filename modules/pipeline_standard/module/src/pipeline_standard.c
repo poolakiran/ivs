@@ -24,6 +24,7 @@
 #include <ivs/ivs.h>
 #include <ivs/actions.h>
 #include <loci/loci.h>
+#include <OVSDriver/ovsdriver.h>
 
 #define AIM_LOG_MODULE_NAME pipeline_standard
 #include <AIM/aim_log.h>
