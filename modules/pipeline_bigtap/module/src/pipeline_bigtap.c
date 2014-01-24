@@ -47,7 +47,7 @@ indigo_error_t
 pipeline_bigtap_process(struct ind_ovs_cfr *cfr,
                           struct pipeline_result *result)
 {
-    if (cfr->dl_type == ETH_P_LLDP) {
+    if (cfr->dl_type == htons(ETH_P_LLDP)) {
         /* Send LLDPs to controller */
         uint8_t reason = OF_PACKET_IN_REASON_ACTION;
         xbuf_append_attr(&result->actions, IND_OVS_ACTION_CONTROLLER,
