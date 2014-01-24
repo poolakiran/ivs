@@ -338,6 +338,10 @@ check_vlan(uint16_t vlan_vid, uint32_t in_port,
             if (port_no == in_port) {
                 return INDIGO_ERROR_NONE;
             }
+        } else if (attr->nla_type == IND_OVS_ACTION_LOCAL) {
+            if (in_port == OF_PORT_DEST_LOCAL) {
+                return INDIGO_ERROR_NONE;
+            }
         } else if (attr->nla_type == IND_OVS_ACTION_POP_VLAN) {
             *tagged = false;
         } else if (attr->nla_type == IND_OVS_ACTION_SET_VRF) {
