@@ -32,8 +32,6 @@
 
 #define UNUSED __attribute__((unused))
 
-#define OF_PACKET_IN_REASON_BSN_ARP 139
-
 static void
 pktin(struct pipeline_result *result, uint8_t reason)
 {
