@@ -153,7 +153,7 @@ pipeline_bvs_process(struct ind_ovs_cfr *cfr,
     if (arp_offload) {
         if (cfr->dl_type == htons(0x0806)) {
             pktin(result, OF_PACKET_IN_REASON_BSN_ARP);
-            return INDIGO_ERROR_NONE;
+            /* Continue forwarding packet */
         }
     }
 
@@ -336,6 +336,10 @@ check_vlan(uint16_t vlan_vid, uint32_t in_port,
         if (attr->nla_type == IND_OVS_ACTION_OUTPUT) {
             uint32_t port_no = *XBUF_PAYLOAD(attr, uint32_t);
             if (port_no == in_port) {
+                return INDIGO_ERROR_NONE;
+            }
+        } else if (attr->nla_type == IND_OVS_ACTION_LOCAL) {
+            if (in_port == OF_PORT_DEST_LOCAL) {
                 return INDIGO_ERROR_NONE;
             }
         } else if (attr->nla_type == IND_OVS_ACTION_POP_VLAN) {
@@ -701,6 +705,7 @@ static struct pipeline_ops pipeline_bvs_ops = {
 void
 __pipeline_bvs_module_init__(void)
 {
+    AIM_LOG_STRUCT_REGISTER();
     pipeline_register("bvs-1.0", &pipeline_bvs_ops);
     pipeline_register("experimental", &pipeline_bvs_ops); /* For command-line compatibility */
 }
