@@ -57,9 +57,9 @@ static indigo_error_t lookup_vlan_xlate( uint32_t port_no, uint32_t lag_id, uint
 static indigo_error_t lookup_egr_vlan_xlate( uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
 static indigo_error_t lookup_my_station( const uint8_t *eth_addr);
-static indigo_error_t lookup_l3_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, bool global_vrf_allowed, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *out_port);
-static indigo_error_t lookup_l3_host_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *out_port);
-static indigo_error_t lookup_l3_cidr_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *out_port);
+static indigo_error_t lookup_l3_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, bool global_vrf_allowed, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap);
+static indigo_error_t lookup_l3_host_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap);
+static indigo_error_t lookup_l3_cidr_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap);
 
 static void
 pipeline_bvs_init(const char *name)
@@ -224,11 +224,18 @@ process_l3(struct ind_ovs_cfr *cfr,
     of_mac_addr_t new_eth_dst;
     uint16_t new_vlan_vid;
     uint32_t lag_id;
+    bool trap;
 
     if (lookup_l3_route(hash, cfr->vrf, cfr->nw_dst, cfr->global_vrf_allowed,
-                        &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id) < 0) {
+                        &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id, &trap) < 0) {
         AIM_LOG_VERBOSE("no route to host");
         pktin(result, OF_PACKET_IN_REASON_BSN_NO_ROUTE);
+        return INDIGO_ERROR_NONE;
+    }
+
+    if (trap) {
+        AIM_LOG_VERBOSE("L3 trap to CPU");
+        pktin(result, OF_PACKET_IN_REASON_ACTION);
         return INDIGO_ERROR_NONE;
     }
 
@@ -576,7 +583,7 @@ static indigo_error_t
 lookup_l3_route(uint32_t hash,
                 uint32_t vrf, uint32_t ipv4_dst, bool global_vrf_allowed,
                 of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst,
-                uint16_t *new_vlan_vid, uint32_t *lag_id)
+                uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap)
 {
     indigo_error_t ret;
 
@@ -585,14 +592,14 @@ lookup_l3_route(uint32_t hash,
 
     if ((ret = lookup_l3_host_route(
         hash, vrf, ipv4_dst,
-        new_eth_src, new_eth_dst, new_vlan_vid, lag_id)) == 0) {
+        new_eth_src, new_eth_dst, new_vlan_vid, lag_id, trap)) == 0) {
         AIM_LOG_VERBOSE("hit in host route table");
         return INDIGO_ERROR_NONE;
     }
 
     if ((ret = lookup_l3_cidr_route(
         hash, vrf, ipv4_dst,
-        new_eth_src, new_eth_dst, new_vlan_vid, lag_id)) == 0) {
+        new_eth_src, new_eth_dst, new_vlan_vid, lag_id, trap)) == 0) {
         AIM_LOG_VERBOSE("hit in CIDR route table");
         return INDIGO_ERROR_NONE;
     }
@@ -600,14 +607,14 @@ lookup_l3_route(uint32_t hash,
     if (global_vrf_allowed) {
         if ((ret = lookup_l3_host_route(
             hash, 0, ipv4_dst,
-            new_eth_src, new_eth_dst, new_vlan_vid, lag_id)) == 0) {
+            new_eth_src, new_eth_dst, new_vlan_vid, lag_id, trap)) == 0) {
             AIM_LOG_VERBOSE("hit in global host route table");
             return INDIGO_ERROR_NONE;
         }
 
         if ((ret = lookup_l3_cidr_route(
             hash, 0, ipv4_dst,
-            new_eth_src, new_eth_dst, new_vlan_vid, lag_id)) == 0) {
+            new_eth_src, new_eth_dst, new_vlan_vid, lag_id, trap)) == 0) {
             AIM_LOG_VERBOSE("hit in global CIDR route table");
             return INDIGO_ERROR_NONE;
         }
@@ -620,7 +627,7 @@ static indigo_error_t
 lookup_l3_host_route(uint32_t hash,
                      uint32_t vrf, uint32_t ipv4_dst,
                      of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst,
-                     uint16_t *new_vlan_vid, uint32_t *lag_id)
+                     uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
@@ -639,6 +646,7 @@ lookup_l3_host_route(uint32_t hash,
     memset(new_eth_src, 0, sizeof(*new_eth_src));
     memset(new_eth_dst, 0, sizeof(*new_eth_dst));
     *new_vlan_vid = 0;
+    *trap = false;
 
     struct nlattr *attr;
     XBUF_FOREACH2(&effects->write_actions, attr) {
@@ -650,6 +658,8 @@ lookup_l3_host_route(uint32_t hash,
             memcpy(new_eth_dst->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
         } else if (attr->nla_type == IND_OVS_ACTION_SET_VLAN_VID) {
             *new_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
+        } else if (attr->nla_type == IND_OVS_ACTION_CONTROLLER) {
+            *trap = true;
         }
     }
 
@@ -660,7 +670,7 @@ static indigo_error_t
 lookup_l3_cidr_route(uint32_t hash,
                      uint32_t vrf, uint32_t ipv4_dst,
                      of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst,
-                     uint16_t *new_vlan_vid, uint32_t *lag_id)
+                     uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
@@ -679,6 +689,7 @@ lookup_l3_cidr_route(uint32_t hash,
     memset(new_eth_src, 0, sizeof(*new_eth_src));
     memset(new_eth_dst, 0, sizeof(*new_eth_dst));
     *new_vlan_vid = 0;
+    *trap = false;
 
     struct nlattr *attr;
     XBUF_FOREACH2(&effects->write_actions, attr) {
@@ -690,6 +701,8 @@ lookup_l3_cidr_route(uint32_t hash,
             memcpy(new_eth_dst->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
         } else if (attr->nla_type == IND_OVS_ACTION_SET_VLAN_VID) {
             *new_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
+        } else if (attr->nla_type == IND_OVS_ACTION_CONTROLLER) {
+            *trap = true;
         }
     }
 
