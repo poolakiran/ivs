@@ -94,4 +94,11 @@ dec_nw_ttl(struct pipeline_result *result)
                      NULL, 0);
 }
 
+static void
+check_nw_ttl(struct pipeline_result *result)
+{
+    xbuf_append_attr(&result->actions, IND_OVS_ACTION_CHECK_NW_TTL,
+                     NULL, 0);
+}
+
 #endif
