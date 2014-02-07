@@ -248,6 +248,7 @@ pipeline_bvs_process(struct ind_ovs_cfr *cfr,
         }
     }
 
+    mirror(TABLE_ID_EGRESS_MIRROR, dst_port_no, hash, result);
     output(result, dst_port_no);
     return INDIGO_ERROR_NONE;
 }
@@ -306,6 +307,7 @@ process_l3(struct ind_ovs_cfr *cfr,
     set_eth_src(result, new_eth_src);
     set_eth_dst(result, new_eth_dst);
     dec_nw_ttl(result);
+    mirror(TABLE_ID_EGRESS_MIRROR, out_port, hash, result);
     output(result, out_port);
     return INDIGO_ERROR_NONE;
 }
@@ -482,6 +484,7 @@ flood_vlan(uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash,
                 tag = new_tag;
             }
 
+            mirror(TABLE_ID_EGRESS_MIRROR, port_no, hash, result);
             output(result, port_no);
         }
     }
