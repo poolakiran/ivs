@@ -46,6 +46,7 @@ enum table_id {
 };
 
 static const bool flood_on_dlf = true;
+static const of_mac_addr_t slow_protocols_mac = { { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x02 } };
 
 static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, struct pipeline_result *result);
 static indigo_error_t lookup_l2( uint16_t vlan_vid, const uint8_t *eth_addr, uint32_t *port_no, uint32_t *group_id);
@@ -77,8 +78,14 @@ pipeline_bvs_process(struct ind_ovs_cfr *cfr,
 {
     uint32_t hash = murmur_hash(cfr, sizeof(*cfr), 0);
 
-    if (cfr->dl_type == htons(0x88cc) || cfr->dl_type == htons(0x8809)) {
+    if (cfr->dl_type == htons(0x88cc)) {
         AIM_LOG_VERBOSE("sending ethertype %#x directly to controller", ntohs(cfr->dl_type));
+        pktin(result, OF_PACKET_IN_REASON_ACTION);
+        return INDIGO_ERROR_NONE;
+    }
+
+    if (!memcmp(cfr->dl_dst, slow_protocols_mac.addr, OF_MAC_ADDR_BYTES)) {
+        AIM_LOG_VERBOSE("sending slow protocols packet directly to controller");
         pktin(result, OF_PACKET_IN_REASON_ACTION);
         return INDIGO_ERROR_NONE;
     }
