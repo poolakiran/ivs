@@ -236,6 +236,8 @@ process_l3(struct ind_ovs_cfr *cfr,
     uint32_t lag_id;
     bool trap;
 
+    check_nw_ttl(result);
+
     if (lookup_l3_route(hash, cfr->vrf, cfr->nw_dst, cfr->global_vrf_allowed,
                         &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id, &trap) < 0) {
         AIM_LOG_VERBOSE("no route to host");
