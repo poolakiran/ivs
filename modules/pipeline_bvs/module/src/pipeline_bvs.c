@@ -32,6 +32,7 @@ AIM_LOG_STRUCT_DEFINE(AIM_LOG_OPTIONS_DEFAULT, AIM_LOG_BITS_DEFAULT|AIM_LOG_BIT_
 
 /* TODO add group lookup interface in mainline */
 indigo_error_t ind_ovs_group_select(uint32_t, uint32_t, struct xbuf **);
+indigo_error_t ind_ovs_group_indirect(uint32_t id, struct xbuf **actions);
 
 enum table_id {
     TABLE_ID_L2 = 0,
@@ -43,6 +44,12 @@ enum table_id {
     TABLE_ID_L3_HOST_ROUTE = 6,
     TABLE_ID_L3_CIDR_ROUTE = 7,
     TABLE_ID_FLOOD = 11,
+    TABLE_ID_ACL1 = 12,
+    TABLE_ID_ACL2 = 13,
+    TABLE_ID_ACL3 = 14,
+    TABLE_ID_DEBUG = 15,
+    TABLE_ID_INGRESS_MIRROR = 16,
+    TABLE_ID_EGRESS_MIRROR = 17,
 };
 
 static const bool flood_on_dlf = true;
@@ -53,6 +60,7 @@ static indigo_error_t lookup_l2( uint16_t vlan_vid, const uint8_t *eth_addr, uin
 static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, bool *global_vrf_allowed);
 static bool is_vlan_configured( uint16_t vlan_vid);
 static indigo_error_t flood_vlan( uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash, struct pipeline_result *result);
+static void mirror(uint8_t table_id, uint32_t port_no, uint32_t hash, struct pipeline_result *result);
 static indigo_error_t lookup_port( uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id, bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload);
 static indigo_error_t lookup_vlan_xlate( uint32_t port_no, uint32_t lag_id, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t lookup_egr_vlan_xlate( uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
@@ -77,6 +85,8 @@ pipeline_bvs_process(struct ind_ovs_cfr *cfr,
                      struct pipeline_result *result)
 {
     uint32_t hash = murmur_hash(cfr, sizeof(*cfr), 0);
+
+    mirror(TABLE_ID_INGRESS_MIRROR, cfr->in_port, hash, result);
 
     if (cfr->dl_type == htons(0x88cc)) {
         AIM_LOG_VERBOSE("sending ethertype %#x directly to controller", ntohs(cfr->dl_type));
@@ -208,6 +218,16 @@ pipeline_bvs_process(struct ind_ovs_cfr *cfr,
             return INDIGO_ERROR_NONE;
         }
         AIM_LOG_VERBOSE("selected LAG port %u", dst_port_no);
+    }
+
+    UNUSED uint16_t out_default_vlan_vid;
+    uint32_t out_lag_id;
+    UNUSED bool out_disable_src_mac_check;
+    UNUSED bool out_arp_offload;
+    UNUSED bool out_dhcp_offload;
+    if (lookup_port(dst_port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload) < 0) {
+        AIM_LOG_WARN("port %u not found during egress", dst_port_no);
+        return INDIGO_ERROR_NONE;
     }
 
     bool out_port_tagged;
@@ -467,6 +487,63 @@ flood_vlan(uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash,
     }
 
     return INDIGO_ERROR_NONE;
+}
+
+static void
+mirror(uint8_t table_id, uint32_t port_no, uint32_t hash,
+       struct pipeline_result *result)
+{
+    struct ind_ovs_cfr cfr;
+    memset(&cfr, 0, sizeof(cfr));
+
+    cfr.in_port = port_no;
+
+    struct ind_ovs_flow_effects *effects =
+        ind_ovs_fwd_pipeline_lookup(table_id, &cfr, NULL);
+    if (effects == NULL) {
+        return;
+    }
+
+    AIM_LOG_VERBOSE("Hit in mirror table for port %d", port_no);
+
+    uint32_t span_group_id = OF_GROUP_ANY;
+    struct nlattr *attr;
+    XBUF_FOREACH2(&effects->apply_actions, attr) {
+        if (attr->nla_type == IND_OVS_ACTION_GROUP) {
+            span_group_id = *XBUF_PAYLOAD(attr, uint32_t);
+        }
+    }
+
+    if (span_group_id == OF_GROUP_ANY) {
+        AIM_LOG_ERROR("No span group action");
+        return;
+    }
+
+    struct xbuf *span_actions;
+    if (ind_ovs_group_indirect(span_group_id, &span_actions) < 0) {
+        AIM_LOG_ERROR("Failed to lookup span group %#x", span_group_id);
+        return;
+    }
+
+    uint32_t dst_group_id = OF_GROUP_ANY;
+    XBUF_FOREACH2(span_actions, attr) {
+        if (attr->nla_type == IND_OVS_ACTION_GROUP) {
+            dst_group_id = *XBUF_PAYLOAD(attr, uint32_t);
+        }
+    }
+
+    if (dst_group_id == OF_GROUP_ANY) {
+        AIM_LOG_ERROR("No LAG group action");
+        return;
+    }
+
+    uint32_t dst_port_no;
+    if (select_lag_port(dst_group_id, hash, &dst_port_no) < 0) {
+        return;
+    }
+    AIM_LOG_VERBOSE("Selected LAG port %u", dst_port_no);
+
+    output(result, dst_port_no);
 }
 
 static indigo_error_t
