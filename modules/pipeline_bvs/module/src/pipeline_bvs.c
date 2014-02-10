@@ -226,6 +226,11 @@ pipeline_bvs_process(struct ind_ovs_cfr *cfr,
         return INDIGO_ERROR_NONE;
     }
 
+    if (out_lag_id != OF_GROUP_ANY && out_lag_id == lag_id) {
+        AIM_LOG_VERBOSE("skipping ingress LAG %u", lag_id);
+        return INDIGO_ERROR_NONE;
+    }
+
     bool out_port_tagged;
     UNUSED bool out_global_vrf_allowed;
     UNUSED uint32_t out_vrf;
