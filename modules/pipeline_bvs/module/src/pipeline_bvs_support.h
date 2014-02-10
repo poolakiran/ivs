@@ -23,11 +23,11 @@
 #include <stdlib.h>
 #include <arpa/inet.h>
 
+#include <indigo/error.h>
 #include <xbuf/xbuf.h>
 #include <ivs/ivs.h>
 #include <ivs/actions.h>
 #include <loci/loci.h>
-#include <indigo/error.h>
 #include <pipeline/pipeline.h>
 
 #define UNUSED __attribute__((unused))
