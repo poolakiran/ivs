@@ -30,10 +30,6 @@ AIM_LOG_STRUCT_DEFINE(AIM_LOG_OPTIONS_DEFAULT, AIM_LOG_BITS_DEFAULT|AIM_LOG_BIT_
 #define FORMAT_IPV4 "%hhu.%hhu.%hhu.%hhu"
 #define VALUE_IPV4(a) (a)[0],(a)[1],(a)[2],(a)[3]
 
-/* TODO add group lookup interface in mainline */
-indigo_error_t ind_ovs_group_select(uint32_t, uint32_t, struct xbuf **);
-indigo_error_t ind_ovs_group_indirect(uint32_t id, struct xbuf **actions);
-
 enum table_id {
     TABLE_ID_L2 = 0,
     TABLE_ID_VLAN = 1,
