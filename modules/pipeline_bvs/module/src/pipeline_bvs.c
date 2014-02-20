@@ -101,9 +101,17 @@ pipeline_bvs_process(struct ind_ovs_cfr *cfr,
     bool disable_src_mac_check;
     bool arp_offload;
     bool dhcp_offload;
-    if (lookup_port(cfr->in_port, &default_vlan_vid, &lag_id, &disable_src_mac_check, &arp_offload, &dhcp_offload) < 0) {
-        AIM_LOG_WARN("port %u not found", cfr->in_port);
-        return INDIGO_ERROR_NONE;
+    if (cfr->in_port == OF_PORT_DEST_LOCAL) {
+        default_vlan_vid = 0;
+        lag_id = OF_GROUP_ANY;
+        disable_src_mac_check = true;
+        arp_offload = false;
+        dhcp_offload = false;
+    } else {
+        if (lookup_port(cfr->in_port, &default_vlan_vid, &lag_id, &disable_src_mac_check, &arp_offload, &dhcp_offload) < 0) {
+            AIM_LOG_WARN("port %u not found", cfr->in_port);
+            return INDIGO_ERROR_NONE;
+        }
     }
 
     AIM_LOG_VERBOSE("hit in port table lookup, default_vlan_vid=%u lag_id=%u disable_src_mac_check=%u arp_offload=%u dhcp_offload=%u", default_vlan_vid, lag_id, disable_src_mac_check, arp_offload, dhcp_offload);
@@ -387,10 +395,6 @@ check_vlan(uint16_t vlan_vid, uint32_t in_port,
             if (port_no == in_port) {
                 return INDIGO_ERROR_NONE;
             }
-        } else if (attr->nla_type == IND_OVS_ACTION_LOCAL) {
-            if (in_port == OF_PORT_DEST_LOCAL) {
-                return INDIGO_ERROR_NONE;
-            }
         } else if (attr->nla_type == IND_OVS_ACTION_POP_VLAN) {
             *tagged = false;
         } else if (attr->nla_type == IND_OVS_ACTION_SET_VRF) {
@@ -398,6 +402,11 @@ check_vlan(uint16_t vlan_vid, uint32_t in_port,
         } else if (attr->nla_type == IND_OVS_ACTION_SET_GLOBAL_VRF_ALLOWED) {
             *global_vrf_allowed = *XBUF_PAYLOAD(attr, uint8_t);
         }
+    }
+
+    if (in_port == OF_PORT_DEST_LOCAL) {
+        *tagged = true;
+        return INDIGO_ERROR_NONE;
     }
 
     return INDIGO_ERROR_NOT_FOUND;
