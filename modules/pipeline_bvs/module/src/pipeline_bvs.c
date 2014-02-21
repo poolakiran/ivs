@@ -77,20 +77,23 @@ pipeline_bvs_finish(void)
 }
 
 static indigo_error_t
-pipeline_bvs_process(struct ind_ovs_cfr *cfr,
+pipeline_bvs_process(struct ind_ovs_parsed_key *key,
                      struct pipeline_result *result)
 {
-    uint32_t hash = murmur_hash(cfr, sizeof(*cfr), 0);
+    struct ind_ovs_cfr cfr;
+    ind_ovs_key_to_cfr(key, &cfr);
 
-    mirror(TABLE_ID_INGRESS_MIRROR, cfr->in_port, hash, result);
+    uint32_t hash = murmur_hash(&cfr, sizeof(cfr), 0);
 
-    if (cfr->dl_type == htons(0x88cc)) {
-        AIM_LOG_VERBOSE("sending ethertype %#x directly to controller", ntohs(cfr->dl_type));
+    mirror(TABLE_ID_INGRESS_MIRROR, cfr.in_port, hash, result);
+
+    if (cfr.dl_type == htons(0x88cc)) {
+        AIM_LOG_VERBOSE("sending ethertype %#x directly to controller", ntohs(cfr.dl_type));
         pktin(result, OF_PACKET_IN_REASON_ACTION);
         return INDIGO_ERROR_NONE;
     }
 
-    if (!memcmp(cfr->dl_dst, slow_protocols_mac.addr, OF_MAC_ADDR_BYTES)) {
+    if (!memcmp(cfr.dl_dst, slow_protocols_mac.addr, OF_MAC_ADDR_BYTES)) {
         AIM_LOG_VERBOSE("sending slow protocols packet directly to controller");
         pktin(result, OF_PACKET_IN_REASON_ACTION);
         return INDIGO_ERROR_NONE;
@@ -101,15 +104,15 @@ pipeline_bvs_process(struct ind_ovs_cfr *cfr,
     bool disable_src_mac_check;
     bool arp_offload;
     bool dhcp_offload;
-    if (cfr->in_port == OF_PORT_DEST_LOCAL) {
+    if (cfr.in_port == OF_PORT_DEST_LOCAL) {
         default_vlan_vid = 0;
         lag_id = OF_GROUP_ANY;
         disable_src_mac_check = true;
         arp_offload = false;
         dhcp_offload = false;
     } else {
-        if (lookup_port(cfr->in_port, &default_vlan_vid, &lag_id, &disable_src_mac_check, &arp_offload, &dhcp_offload) < 0) {
-            AIM_LOG_WARN("port %u not found", cfr->in_port);
+        if (lookup_port(cfr.in_port, &default_vlan_vid, &lag_id, &disable_src_mac_check, &arp_offload, &dhcp_offload) < 0) {
+            AIM_LOG_WARN("port %u not found", cfr.in_port);
             return INDIGO_ERROR_NONE;
         }
     }
@@ -117,10 +120,10 @@ pipeline_bvs_process(struct ind_ovs_cfr *cfr,
     AIM_LOG_VERBOSE("hit in port table lookup, default_vlan_vid=%u lag_id=%u disable_src_mac_check=%u arp_offload=%u dhcp_offload=%u", default_vlan_vid, lag_id, disable_src_mac_check, arp_offload, dhcp_offload);
 
     uint16_t vlan_vid;
-    if (cfr->dl_vlan & htons(VLAN_CFI_BIT)) {
-        vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan));
+    if (cfr.dl_vlan & htons(VLAN_CFI_BIT)) {
+        vlan_vid = VLAN_VID(ntohs(cfr.dl_vlan));
         uint16_t new_vlan_vid;
-        if (lookup_vlan_xlate(cfr->in_port, lag_id, vlan_vid, &new_vlan_vid) == 0) {
+        if (lookup_vlan_xlate(cfr.in_port, lag_id, vlan_vid, &new_vlan_vid) == 0) {
             vlan_vid = new_vlan_vid;
             set_vlan_vid(result, vlan_vid);
         }
@@ -140,19 +143,19 @@ pipeline_bvs_process(struct ind_ovs_cfr *cfr,
     UNUSED bool in_port_tagged;
     bool global_vrf_allowed;
     uint32_t vrf;
-    if (check_vlan(vlan_vid, cfr->in_port, &in_port_tagged, &vrf, &global_vrf_allowed) < 0) {
-        AIM_LOG_VERBOSE("port %u not allowed on vlan %u", cfr->in_port, vlan_vid);
+    if (check_vlan(vlan_vid, cfr.in_port, &in_port_tagged, &vrf, &global_vrf_allowed) < 0) {
+        AIM_LOG_VERBOSE("port %u not allowed on vlan %u", cfr.in_port, vlan_vid);
         return INDIGO_ERROR_NONE;
     }
 
     AIM_LOG_VERBOSE("VLAN %u: vrf=%u global_vrf_allowed=%d", vlan_vid, vrf, global_vrf_allowed);
-    cfr->vrf = vrf;
-    cfr->global_vrf_allowed = global_vrf_allowed;
+    cfr.vrf = vrf;
+    cfr.global_vrf_allowed = global_vrf_allowed;
 
     if (!disable_src_mac_check) {
         /* Source lookup */
         uint32_t src_port_no, src_group_id;
-        if (lookup_l2(vlan_vid, cfr->dl_src, &src_port_no, &src_group_id) < 0) {
+        if (lookup_l2(vlan_vid, cfr.dl_src, &src_port_no, &src_group_id) < 0) {
             AIM_LOG_VERBOSE("miss in source l2table lookup (new host)");
             pktin(result, OF_PACKET_IN_REASON_BSN_NEW_HOST);
             return INDIGO_ERROR_NONE;
@@ -160,7 +163,7 @@ pipeline_bvs_process(struct ind_ovs_cfr *cfr,
 
         AIM_LOG_VERBOSE("hit in source l2table lookup, src_port_no=%u src_group_id=%u", src_port_no, src_group_id);
 
-        if (src_port_no != OF_PORT_DEST_NONE && src_port_no != cfr->in_port) {
+        if (src_port_no != OF_PORT_DEST_NONE && src_port_no != cfr.in_port) {
             AIM_LOG_VERBOSE("incorrect port in source l2table lookup (station move)");
             pktin(result, OF_PACKET_IN_REASON_BSN_STATION_MOVE);
             return INDIGO_ERROR_NONE;
@@ -173,7 +176,7 @@ pipeline_bvs_process(struct ind_ovs_cfr *cfr,
 
     /* ARP offload */
     if (arp_offload) {
-        if (cfr->dl_type == htons(0x0806)) {
+        if (cfr.dl_type == htons(0x0806)) {
             pktin(result, OF_PACKET_IN_REASON_BSN_ARP);
             /* Continue forwarding packet */
         }
@@ -181,32 +184,32 @@ pipeline_bvs_process(struct ind_ovs_cfr *cfr,
 
     /* DHCP offload */
     if (dhcp_offload) {
-        if (cfr->dl_type == htons(0x0800) && cfr->nw_proto == 17 &&
-                (cfr->tp_dst == htons(67) || cfr->tp_dst == htons(68))) {
+        if (cfr.dl_type == htons(0x0800) && cfr.nw_proto == 17 &&
+                (cfr.tp_dst == htons(67) || cfr.tp_dst == htons(68))) {
             pktin(result, OF_PACKET_IN_REASON_BSN_DHCP);
             return INDIGO_ERROR_NONE;
         }
     }
 
     /* Check for broadcast/multicast */
-    if (cfr->dl_dst[0] & 1) {
-        if (flood_vlan(vlan_vid, cfr->in_port, lag_id, hash, result) < 0) {
+    if (cfr.dl_dst[0] & 1) {
+        if (flood_vlan(vlan_vid, cfr.in_port, lag_id, hash, result) < 0) {
             AIM_LOG_WARN("missing VLAN entry for vlan %u", vlan_vid);
         }
         return INDIGO_ERROR_NONE;
     }
 
-    if (lookup_my_station(cfr->dl_dst) == 0) {
+    if (lookup_my_station(cfr.dl_dst) == 0) {
         AIM_LOG_VERBOSE("hit in MyStation table, entering L3 processing");
-        return process_l3(cfr, hash, result);
+        return process_l3(&cfr, hash, result);
     }
 
     /* Destination lookup */
     uint32_t dst_port_no, dst_group_id;
-    if (lookup_l2(vlan_vid, cfr->dl_dst, &dst_port_no, &dst_group_id) < 0) {
+    if (lookup_l2(vlan_vid, cfr.dl_dst, &dst_port_no, &dst_group_id) < 0) {
         AIM_LOG_VERBOSE("miss in destination l2table lookup (destination lookup failure)");
         if (flood_on_dlf) {
-            if (flood_vlan(vlan_vid, cfr->in_port, lag_id, hash, result) < 0) {
+            if (flood_vlan(vlan_vid, cfr.in_port, lag_id, hash, result) < 0) {
                 AIM_LOG_WARN("missing VLAN entry for vlan %u", vlan_vid);
             }
         } else {

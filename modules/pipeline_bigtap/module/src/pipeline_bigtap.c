@@ -44,10 +44,13 @@ pipeline_bigtap_finish(void)
 }
 
 indigo_error_t
-pipeline_bigtap_process(struct ind_ovs_cfr *cfr,
-                          struct pipeline_result *result)
+pipeline_bigtap_process(struct ind_ovs_parsed_key *key,
+                        struct pipeline_result *result)
 {
-    if (cfr->dl_type == htons(ETH_P_LLDP)) {
+    struct ind_ovs_cfr cfr;
+    ind_ovs_key_to_cfr(key, &cfr);
+
+    if (cfr.dl_type == htons(ETH_P_LLDP)) {
         /* Send LLDPs to controller */
         uint8_t reason = OF_PACKET_IN_REASON_ACTION;
         xbuf_append_attr(&result->actions, IND_OVS_ACTION_CONTROLLER,
@@ -57,7 +60,7 @@ pipeline_bigtap_process(struct ind_ovs_cfr *cfr,
 
 
     struct ind_ovs_flow_effects *effects =
-        ind_ovs_fwd_pipeline_lookup(TABLE_ID, cfr, &result->stats);
+        ind_ovs_fwd_pipeline_lookup(TABLE_ID, &cfr, &result->stats);
     if (effects == NULL) {
         /* Drop packets that miss in the table */
         return INDIGO_ERROR_NONE;
