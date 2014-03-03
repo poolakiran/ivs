@@ -58,7 +58,7 @@ static const bool flood_on_dlf = true;
 static const of_mac_addr_t slow_protocols_mac = { { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x02 } };
 
 static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, struct pipeline_result *result);
-static indigo_error_t lookup_l2( uint16_t vlan_vid, const uint8_t *eth_addr, uint32_t *port_no, uint32_t *group_id);
+static indigo_error_t lookup_l2( uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats, uint32_t *port_no, uint32_t *group_id);
 static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, bool *global_vrf_allowed);
 static bool is_vlan_configured( uint16_t vlan_vid);
 static indigo_error_t flood_vlan( uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash, struct pipeline_result *result);
@@ -163,7 +163,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     if (!disable_src_mac_check) {
         /* Source lookup */
         uint32_t src_port_no, src_group_id;
-        if (lookup_l2(vlan_vid, cfr.dl_src, &src_port_no, &src_group_id) < 0) {
+        if (lookup_l2(vlan_vid, cfr.dl_src, &result->stats, &src_port_no, &src_group_id) < 0) {
             AIM_LOG_VERBOSE("miss in source l2table lookup (new host)");
             pktin(result, OF_PACKET_IN_REASON_BSN_NEW_HOST);
             return INDIGO_ERROR_NONE;
@@ -214,7 +214,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 
     /* Destination lookup */
     uint32_t dst_port_no, dst_group_id;
-    if (lookup_l2(vlan_vid, cfr.dl_dst, &dst_port_no, &dst_group_id) < 0) {
+    if (lookup_l2(vlan_vid, cfr.dl_dst, NULL, &dst_port_no, &dst_group_id) < 0) {
         AIM_LOG_VERBOSE("miss in destination l2table lookup (destination lookup failure)");
         if (flood_on_dlf) {
             if (flood_vlan(vlan_vid, cfr.in_port, lag_id, hash, result) < 0) {
@@ -333,7 +333,7 @@ process_l3(struct ind_ovs_cfr *cfr,
 }
 
 static indigo_error_t
-lookup_l2(uint16_t vlan_vid, const uint8_t *eth_addr,
+lookup_l2(uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats,
           uint32_t *port_no, uint32_t *group_id)
 {
     struct ind_ovs_cfr cfr;
@@ -346,7 +346,7 @@ lookup_l2(uint16_t vlan_vid, const uint8_t *eth_addr,
     memcpy(&cfr.dl_dst, eth_addr, sizeof(cfr.dl_dst));
 
     struct ind_ovs_flow_effects *effects =
-        ind_ovs_fwd_pipeline_lookup(TABLE_ID_L2, &cfr, NULL);
+        ind_ovs_fwd_pipeline_lookup(TABLE_ID_L2, &cfr, stats);
     if (effects == NULL) {
         return INDIGO_ERROR_NOT_FOUND;
     }
