@@ -23,7 +23,7 @@
 #define AIM_LOG_MODULE_NAME pipeline_bvs
 #include <AIM/aim_log.h>
 
-AIM_LOG_STRUCT_DEFINE(AIM_LOG_OPTIONS_DEFAULT, AIM_LOG_BITS_DEFAULT|AIM_LOG_BIT_VERBOSE, NULL, 0);
+AIM_LOG_STRUCT_DEFINE(AIM_LOG_OPTIONS_DEFAULT, AIM_LOG_BITS_DEFAULT, NULL, 0);
 
 #define FORMAT_MAC "%02x:%02x:%02x:%02x:%02x:%02x"
 #define VALUE_MAC(a) (a)[0],(a)[1],(a)[2],(a)[3],(a)[4],(a)[5]
@@ -48,6 +48,12 @@ enum table_id {
     TABLE_ID_EGRESS_MIRROR = 17,
 };
 
+enum group_table_id {
+    GROUP_TABLE_ID_LAG = 0,
+    GROUP_TABLE_ID_ECMP = 1,
+    GROUP_TABLE_ID_SPAN = 2,
+};
+
 static const bool flood_on_dlf = true;
 static const of_mac_addr_t slow_protocols_mac = { { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x02 } };
 
@@ -61,10 +67,12 @@ static indigo_error_t lookup_port( uint32_t port_no, uint16_t *default_vlan_vid,
 static indigo_error_t lookup_vlan_xlate( uint32_t port_no, uint32_t lag_id, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t lookup_egr_vlan_xlate( uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
+static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id);
 static indigo_error_t lookup_my_station( const uint8_t *eth_addr);
 static indigo_error_t lookup_l3_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, bool global_vrf_allowed, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap);
 static indigo_error_t lookup_l3_host_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap);
 static indigo_error_t lookup_l3_cidr_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap);
+static uint32_t group_to_table_id(uint32_t group_id);
 
 static void
 pipeline_bvs_init(const char *name)
@@ -661,7 +669,7 @@ select_lag_port(uint32_t group_id, uint32_t hash, uint32_t *port_no)
     struct xbuf *actions;
     rv = ind_ovs_group_select(group_id, hash, &actions);
     if (rv < 0) {
-        AIM_LOG_WARN("error selecting group %u bucket: %d", group_id, rv);
+        AIM_LOG_WARN("error selecting LAG group %u bucket: %s", group_id, indigo_strerror(rv));
         return rv;
     }
 
@@ -675,6 +683,42 @@ select_lag_port(uint32_t group_id, uint32_t hash, uint32_t *port_no)
 
     AIM_LOG_WARN("no output action found in group %u bucket", group_id);
     return INDIGO_ERROR_NOT_FOUND;
+}
+
+static indigo_error_t
+select_ecmp_route(
+    uint32_t group_id, uint32_t hash,
+    of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst,
+    uint16_t *new_vlan_vid, uint32_t *lag_id)
+{
+    indigo_error_t rv;
+
+    struct xbuf *actions;
+    rv = ind_ovs_group_select(group_id, hash, &actions);
+    if (rv < 0) {
+        AIM_LOG_WARN("error selecting ECMP group %u bucket: %s", group_id, indigo_strerror(rv));
+        return rv;
+    }
+
+    *lag_id = OF_GROUP_ANY;
+    memset(new_eth_src, 0, sizeof(*new_eth_src));
+    memset(new_eth_dst, 0, sizeof(*new_eth_dst));
+    *new_vlan_vid = 0;
+
+    struct nlattr *attr;
+    XBUF_FOREACH2(actions, attr) {
+        if (attr->nla_type == IND_OVS_ACTION_GROUP) {
+            *lag_id = *XBUF_PAYLOAD(attr, uint32_t);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
+            memcpy(new_eth_src->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_DST) {
+            memcpy(new_eth_dst->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_VLAN_VID) {
+            *new_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
+        }
+    }
+
+    return INDIGO_ERROR_NONE;
 }
 
 static indigo_error_t
@@ -757,7 +801,7 @@ lookup_l3_host_route(uint32_t hash,
         return INDIGO_ERROR_NOT_FOUND;
     }
 
-    *lag_id = OF_GROUP_ANY;
+    uint32_t group_id = OF_GROUP_ANY;
     memset(new_eth_src, 0, sizeof(*new_eth_src));
     memset(new_eth_dst, 0, sizeof(*new_eth_dst));
     *new_vlan_vid = 0;
@@ -766,7 +810,7 @@ lookup_l3_host_route(uint32_t hash,
     struct nlattr *attr;
     XBUF_FOREACH2(&effects->write_actions, attr) {
         if (attr->nla_type == IND_OVS_ACTION_GROUP) {
-            *lag_id = *XBUF_PAYLOAD(attr, uint32_t);
+            group_id = *XBUF_PAYLOAD(attr, uint32_t);
         } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
             memcpy(new_eth_src->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
         } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_DST) {
@@ -775,6 +819,21 @@ lookup_l3_host_route(uint32_t hash,
             *new_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
         } else if (attr->nla_type == IND_OVS_ACTION_CONTROLLER) {
             *trap = true;
+        }
+    }
+
+    if (group_id != OF_GROUP_ANY) {
+        switch (group_to_table_id(group_id)) {
+        case GROUP_TABLE_ID_LAG:
+            *lag_id = group_id;
+            break;
+        case GROUP_TABLE_ID_ECMP:
+            if (select_ecmp_route(group_id, hash, new_eth_src, new_eth_dst, new_vlan_vid, lag_id) < 0) {
+                return INDIGO_ERROR_NOT_FOUND;
+            }
+            break;
+        default:
+            return INDIGO_ERROR_COMPAT;
         }
     }
 
@@ -800,7 +859,7 @@ lookup_l3_cidr_route(uint32_t hash,
         return INDIGO_ERROR_NOT_FOUND;
     }
 
-    *lag_id = OF_GROUP_ANY;
+    uint32_t group_id = OF_GROUP_ANY;
     memset(new_eth_src, 0, sizeof(*new_eth_src));
     memset(new_eth_dst, 0, sizeof(*new_eth_dst));
     *new_vlan_vid = 0;
@@ -809,7 +868,7 @@ lookup_l3_cidr_route(uint32_t hash,
     struct nlattr *attr;
     XBUF_FOREACH2(&effects->write_actions, attr) {
         if (attr->nla_type == IND_OVS_ACTION_GROUP) {
-            *lag_id = *XBUF_PAYLOAD(attr, uint32_t);
+            group_id = *XBUF_PAYLOAD(attr, uint32_t);
         } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
             memcpy(new_eth_src->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
         } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_DST) {
@@ -821,7 +880,28 @@ lookup_l3_cidr_route(uint32_t hash,
         }
     }
 
+    if (group_id != OF_GROUP_ANY) {
+        switch (group_to_table_id(group_id)) {
+        case GROUP_TABLE_ID_LAG:
+            *lag_id = group_id;
+            break;
+        case GROUP_TABLE_ID_ECMP:
+            if (select_ecmp_route(group_id, hash, new_eth_src, new_eth_dst, new_vlan_vid, lag_id) < 0) {
+                return INDIGO_ERROR_NOT_FOUND;
+            }
+            break;
+        default:
+            return INDIGO_ERROR_COMPAT;
+        }
+    }
+
     return INDIGO_ERROR_NONE;
+}
+
+static uint32_t
+group_to_table_id(uint32_t group_id)
+{
+    return group_id >> 24;
 }
 
 static struct pipeline_ops pipeline_bvs_ops = {
