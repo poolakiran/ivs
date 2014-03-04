@@ -141,6 +141,8 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
         set_vlan_vid(result, vlan_vid);
     }
 
+    cfr.dl_vlan = htons(VLAN_TCI(vlan_vid, VLAN_PCP(ntohs(cfr.dl_vlan))) | VLAN_CFI_BIT);
+
     /* Generate packet-in if packet received on unconfigured VLAN */
     if (is_vlan_configured(vlan_vid) == false) {
         AIM_LOG_VERBOSE("Packet received on unconfigured vlan %u (bad VLAN)", vlan_vid);
