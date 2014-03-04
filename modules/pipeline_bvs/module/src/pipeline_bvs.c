@@ -300,14 +300,13 @@ process_l3(struct ind_ovs_cfr *cfr,
     uint16_t new_vlan_vid;
     uint32_t lag_id;
     bool trap;
+    bool valid_next_hop = false;
 
     check_nw_ttl(result);
 
     if (lookup_l3_route(hash, cfr->vrf, cfr->nw_dst, cfr->global_vrf_allowed,
-                        &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id, &trap) < 0) {
-        AIM_LOG_VERBOSE("no route to host");
-        pktin(result, OF_PACKET_IN_REASON_BSN_NO_ROUTE);
-        return INDIGO_ERROR_NONE;
+                        &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id, &trap) == 0) {
+        valid_next_hop = true;
     }
 
     bool drop;
@@ -319,6 +318,12 @@ process_l3(struct ind_ovs_cfr *cfr,
     if (trap) {
         AIM_LOG_VERBOSE("L3 trap to CPU");
         pktin(result, OF_PACKET_IN_REASON_ACTION);
+        return INDIGO_ERROR_NONE;
+    }
+
+    if (!valid_next_hop) {
+        AIM_LOG_VERBOSE("no route to host");
+        pktin(result, OF_PACKET_IN_REASON_BSN_NO_ROUTE);
         return INDIGO_ERROR_NONE;
     }
 
