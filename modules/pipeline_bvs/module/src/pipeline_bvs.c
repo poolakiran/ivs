@@ -227,6 +227,13 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     uint32_t dst_port_no, dst_group_id;
     if (lookup_l2(vlan_vid, cfr.dl_dst, NULL, &dst_port_no, &dst_group_id) < 0) {
         AIM_LOG_VERBOSE("miss in destination l2table lookup (destination lookup failure)");
+
+        bool drop;
+        process_debug(&cfr, hash, result, &drop);
+        if (drop) {
+            return INDIGO_ERROR_NONE;
+        }
+
         if (flood_on_dlf) {
             if (flood_vlan(vlan_vid, cfr.in_port, lag_id, hash, result) < 0) {
                 AIM_LOG_WARN("missing VLAN entry for vlan %u", vlan_vid);
