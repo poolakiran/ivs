@@ -57,7 +57,7 @@ enum group_table_id {
 static const bool flood_on_dlf = true;
 static const of_mac_addr_t slow_protocols_mac = { { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x02 } };
 
-static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, struct pipeline_result *result);
+static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, uint32_t ingress_lag_id, bool disable_split_horizon_check, struct pipeline_result *result);
 static void process_debug(struct ind_ovs_cfr *cfr, uint32_t hash, struct pipeline_result *result, bool *drop);
 static indigo_error_t lookup_l2( uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats, uint32_t *port_no, uint32_t *group_id);
 static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, bool *global_vrf_allowed);
@@ -65,7 +65,7 @@ static bool is_vlan_configured( uint16_t vlan_vid);
 static indigo_error_t flood_vlan( uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash, struct pipeline_result *result);
 static void mirror(uint8_t table_id, uint32_t port_no, uint32_t hash, struct pipeline_result *result);
 static void span(uint32_t span_id, uint32_t hash, struct pipeline_result *result);
-static indigo_error_t lookup_port( uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id, bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload);
+static indigo_error_t lookup_port( uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id, bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload, bool *disable_split_horizon_check);
 static indigo_error_t lookup_vlan_xlate( uint32_t port_no, uint32_t lag_id, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t lookup_egr_vlan_xlate( uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
@@ -115,14 +115,16 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     bool disable_src_mac_check;
     bool arp_offload;
     bool dhcp_offload;
+    bool disable_split_horizon_check;
     if (cfr.in_port == OF_PORT_DEST_LOCAL) {
         default_vlan_vid = 0;
         lag_id = OF_GROUP_ANY;
         disable_src_mac_check = true;
         arp_offload = false;
         dhcp_offload = false;
+        disable_split_horizon_check = false;
     } else {
-        if (lookup_port(cfr.in_port, &default_vlan_vid, &lag_id, &disable_src_mac_check, &arp_offload, &dhcp_offload) < 0) {
+        if (lookup_port(cfr.in_port, &default_vlan_vid, &lag_id, &disable_src_mac_check, &arp_offload, &dhcp_offload, &disable_split_horizon_check) < 0) {
             AIM_LOG_WARN("port %u not found", cfr.in_port);
             return INDIGO_ERROR_NONE;
         }
@@ -220,7 +222,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 
     if (lookup_my_station(cfr.dl_dst) == 0) {
         AIM_LOG_VERBOSE("hit in MyStation table, entering L3 processing");
-        return process_l3(&cfr, hash, result);
+        return process_l3(&cfr, hash, lag_id, disable_split_horizon_check, result);
     }
 
     /* Destination lookup */
@@ -264,7 +266,8 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     UNUSED bool out_disable_src_mac_check;
     UNUSED bool out_arp_offload;
     UNUSED bool out_dhcp_offload;
-    if (lookup_port(dst_port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload) < 0) {
+    UNUSED bool out_disable_split_horizon_check;
+    if (lookup_port(dst_port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_disable_split_horizon_check) < 0) {
         AIM_LOG_WARN("port %u not found during egress", dst_port_no);
         return INDIGO_ERROR_NONE;
     }
@@ -300,6 +303,8 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 static indigo_error_t
 process_l3(struct ind_ovs_cfr *cfr,
            uint32_t hash,
+           uint32_t ingress_lag_id,
+           bool disable_split_horizon_check,
            struct pipeline_result *result)
 {
     of_mac_addr_t new_eth_src;
@@ -349,6 +354,11 @@ process_l3(struct ind_ovs_cfr *cfr,
     UNUSED uint32_t out_vrf;
     if (check_vlan(new_vlan_vid, out_port, &out_port_tagged, &out_vrf, &out_global_vrf_allowed) < 0) {
         AIM_LOG_WARN("output port %u not allowed on vlan %u", out_port, new_vlan_vid);
+        return INDIGO_ERROR_NONE;
+    }
+
+    if (!disable_split_horizon_check && lag_id == ingress_lag_id) {
+        AIM_LOG_VERBOSE("skipping ingress LAG %u", lag_id);
         return INDIGO_ERROR_NONE;
     }
 
@@ -529,7 +539,8 @@ flood_vlan(uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash,
             bool out_disable_src_mac_check;
             bool out_arp_offload;
             bool out_dhcp_offload;
-            if (lookup_port(port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload) < 0) {
+            bool out_disable_split_horizon_check;
+            if (lookup_port(port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_disable_split_horizon_check) < 0) {
                 AIM_LOG_WARN("port %u not found during flood", port_no);
                 continue;
             }
@@ -635,7 +646,7 @@ span(uint32_t span_id, uint32_t hash, struct pipeline_result *result)
 static indigo_error_t
 lookup_port(uint32_t port_no,
             uint16_t *default_vlan_vid, uint32_t *lag_id,
-            bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload)
+            bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload, bool *disable_split_horizon_check)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
@@ -647,6 +658,7 @@ lookup_port(uint32_t port_no,
     *disable_src_mac_check = false;
     *arp_offload = false;
     *dhcp_offload = false;
+    *disable_split_horizon_check = false;
 
     struct ind_ovs_flow_effects *effects =
         ind_ovs_fwd_pipeline_lookup(TABLE_ID_PORT, &cfr, NULL);
@@ -666,6 +678,7 @@ lookup_port(uint32_t port_no,
     *disable_src_mac_check = effects->disable_src_mac_check;
     *arp_offload = effects->arp_offload;
     *dhcp_offload = effects->dhcp_offload;
+    *disable_split_horizon_check = effects->disable_split_horizon_check;
 
     return INDIGO_ERROR_NONE;
 }
