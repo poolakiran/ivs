@@ -58,11 +58,13 @@ static const bool flood_on_dlf = true;
 static const of_mac_addr_t slow_protocols_mac = { { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x02 } };
 
 static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, struct pipeline_result *result);
+static void process_debug(struct ind_ovs_cfr *cfr, uint32_t hash, struct pipeline_result *result, bool *drop);
 static indigo_error_t lookup_l2( uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats, uint32_t *port_no, uint32_t *group_id);
 static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, bool *global_vrf_allowed);
 static bool is_vlan_configured( uint16_t vlan_vid);
 static indigo_error_t flood_vlan( uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash, struct pipeline_result *result);
 static void mirror(uint8_t table_id, uint32_t port_no, uint32_t hash, struct pipeline_result *result);
+static void span(uint32_t span_id, uint32_t hash, struct pipeline_result *result);
 static indigo_error_t lookup_port( uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id, bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload);
 static indigo_error_t lookup_vlan_xlate( uint32_t port_no, uint32_t lag_id, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t lookup_egr_vlan_xlate( uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
@@ -72,6 +74,7 @@ static indigo_error_t lookup_my_station( const uint8_t *eth_addr);
 static indigo_error_t lookup_l3_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, bool global_vrf_allowed, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap);
 static indigo_error_t lookup_l3_host_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap);
 static indigo_error_t lookup_l3_cidr_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap);
+static void lookup_debug(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *span_id, bool *cpu, bool *drop);
 static uint32_t group_to_table_id(uint32_t group_id);
 
 static void
@@ -141,6 +144,8 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
         set_vlan_vid(result, vlan_vid);
     }
 
+    cfr.dl_vlan = htons(VLAN_TCI(vlan_vid, VLAN_PCP(ntohs(cfr.dl_vlan))) | VLAN_CFI_BIT);
+
     /* Generate packet-in if packet received on unconfigured VLAN */
     if (is_vlan_configured(vlan_vid) == false) {
         AIM_LOG_VERBOSE("Packet received on unconfigured vlan %u (bad VLAN)", vlan_vid);
@@ -201,6 +206,12 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 
     /* Check for broadcast/multicast */
     if (cfr.dl_dst[0] & 1) {
+        bool drop;
+        process_debug(&cfr, hash, result, &drop);
+        if (drop) {
+            return INDIGO_ERROR_NONE;
+        }
+
         if (flood_vlan(vlan_vid, cfr.in_port, lag_id, hash, result) < 0) {
             AIM_LOG_WARN("missing VLAN entry for vlan %u", vlan_vid);
         }
@@ -216,6 +227,13 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     uint32_t dst_port_no, dst_group_id;
     if (lookup_l2(vlan_vid, cfr.dl_dst, NULL, &dst_port_no, &dst_group_id) < 0) {
         AIM_LOG_VERBOSE("miss in destination l2table lookup (destination lookup failure)");
+
+        bool drop;
+        process_debug(&cfr, hash, result, &drop);
+        if (drop) {
+            return INDIGO_ERROR_NONE;
+        }
+
         if (flood_on_dlf) {
             if (flood_vlan(vlan_vid, cfr.in_port, lag_id, hash, result) < 0) {
                 AIM_LOG_WARN("missing VLAN entry for vlan %u", vlan_vid);
@@ -227,6 +245,12 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     }
 
     AIM_LOG_VERBOSE("hit in destination l2table lookup, dst_port_no=%u dst_group_id=%u", dst_port_no, dst_group_id);
+
+    bool drop;
+    process_debug(&cfr, hash, result, &drop);
+    if (drop) {
+        return INDIGO_ERROR_NONE;
+    }
 
     if (dst_group_id != OF_GROUP_ANY) {
         if (select_lag_port(dst_group_id, hash, &dst_port_no) < 0) {
@@ -283,19 +307,30 @@ process_l3(struct ind_ovs_cfr *cfr,
     uint16_t new_vlan_vid;
     uint32_t lag_id;
     bool trap;
+    bool valid_next_hop = false;
 
     check_nw_ttl(result);
 
     if (lookup_l3_route(hash, cfr->vrf, cfr->nw_dst, cfr->global_vrf_allowed,
-                        &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id, &trap) < 0) {
-        AIM_LOG_VERBOSE("no route to host");
-        pktin(result, OF_PACKET_IN_REASON_BSN_NO_ROUTE);
+                        &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id, &trap) == 0) {
+        valid_next_hop = true;
+    }
+
+    bool drop;
+    process_debug(cfr, hash, result, &drop);
+    if (drop) {
         return INDIGO_ERROR_NONE;
     }
 
     if (trap) {
         AIM_LOG_VERBOSE("L3 trap to CPU");
         pktin(result, OF_PACKET_IN_REASON_ACTION);
+        return INDIGO_ERROR_NONE;
+    }
+
+    if (!valid_next_hop) {
+        AIM_LOG_VERBOSE("no route to host");
+        pktin(result, OF_PACKET_IN_REASON_BSN_NO_ROUTE);
         return INDIGO_ERROR_NONE;
     }
 
@@ -330,6 +365,26 @@ process_l3(struct ind_ovs_cfr *cfr,
     mirror(TABLE_ID_EGRESS_MIRROR, out_port, hash, result);
     output(result, out_port);
     return INDIGO_ERROR_NONE;
+}
+
+static void
+process_debug(struct ind_ovs_cfr *cfr,
+              uint32_t hash,
+              struct pipeline_result *result,
+              bool *drop)
+{
+    uint32_t span_id;
+    bool cpu;
+
+    lookup_debug(cfr, &result->stats, &span_id, &cpu, drop);
+
+    if (span_id != OF_GROUP_ANY) {
+        span(span_id, hash, result);
+    }
+
+    if (cpu) {
+        pktin(result, OF_PACKET_IN_REASON_BSN_DEBUG);
+    }
 }
 
 static indigo_error_t
@@ -543,13 +598,20 @@ mirror(uint8_t table_id, uint32_t port_no, uint32_t hash,
         return;
     }
 
+    span(span_group_id, hash, result);
+}
+
+static void
+span(uint32_t span_id, uint32_t hash, struct pipeline_result *result)
+{
     struct xbuf *span_actions;
-    if (ind_ovs_group_indirect(span_group_id, &span_actions) < 0) {
-        AIM_LOG_ERROR("Failed to lookup span group %#x", span_group_id);
+    if (ind_ovs_group_indirect(span_id, &span_actions) < 0) {
+        AIM_LOG_ERROR("Failed to lookup span group %#x", span_id);
         return;
     }
 
     uint32_t dst_group_id = OF_GROUP_ANY;
+    struct nlattr *attr;
     XBUF_FOREACH2(span_actions, attr) {
         if (attr->nla_type == IND_OVS_ACTION_GROUP) {
             dst_group_id = *XBUF_PAYLOAD(attr, uint32_t);
@@ -896,6 +958,33 @@ lookup_l3_cidr_route(uint32_t hash,
     }
 
     return INDIGO_ERROR_NONE;
+}
+
+static void
+lookup_debug(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *span_id, bool *cpu, bool *drop)
+{
+    *span_id = OF_GROUP_ANY;
+    *cpu = false;
+    *drop = false;
+
+    struct ind_ovs_flow_effects *effects =
+        ind_ovs_fwd_pipeline_lookup(TABLE_ID_DEBUG, cfr, stats);
+    if (effects == NULL) {
+        return;
+    }
+
+    *drop = effects->deny;
+
+    struct nlattr *attr;
+    XBUF_FOREACH2(&effects->apply_actions, attr) {
+        if (attr->nla_type == IND_OVS_ACTION_GROUP) {
+            *span_id = *XBUF_PAYLOAD(attr, uint32_t);
+        } else if (attr->nla_type == IND_OVS_ACTION_CONTROLLER) {
+            *cpu = true;
+        }
+    }
+
+    AIM_LOG_VERBOSE("hit in debug table: span_id=0x%x cpu=%d drop=%d", *span_id, *cpu, *drop);
 }
 
 static uint32_t
