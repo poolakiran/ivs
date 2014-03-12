@@ -58,7 +58,7 @@ enum group_table_id {
 static const bool flood_on_dlf = true;
 static const of_mac_addr_t slow_protocols_mac = { { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x02 } };
 
-static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, uint32_t ingress_lag_id, bool disable_split_horizon_check, struct pipeline_result *result);
+static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, uint32_t ingress_lag_id, bool disable_split_horizon_check, of_mac_addr_t vrouter_mac, struct pipeline_result *result);
 static void process_debug(struct ind_ovs_cfr *cfr, uint32_t hash, struct pipeline_result *result, bool *drop);
 static indigo_error_t lookup_l2( uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats, uint32_t *port_no, uint32_t *group_id);
 static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, bool *global_vrf_allowed, uint32_t *l3_interface_class_id, of_mac_addr_t *vrouter_mac);
@@ -241,7 +241,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 
     if (lookup_my_station(cfr.dl_dst) == 0) {
         AIM_LOG_VERBOSE("hit in MyStation table, entering L3 processing");
-        return process_l3(&cfr, hash, lag_id, disable_split_horizon_check, result);
+        return process_l3(&cfr, hash, lag_id, disable_split_horizon_check, vrouter_mac, result);
     }
 
     /* Destination lookup */
@@ -326,9 +326,10 @@ process_l3(struct ind_ovs_cfr *cfr,
            uint32_t hash,
            uint32_t ingress_lag_id,
            bool disable_split_horizon_check,
+           of_mac_addr_t vrouter_mac,
            struct pipeline_result *result)
 {
-    of_mac_addr_t new_eth_src;
+    UNUSED of_mac_addr_t new_eth_src;
     of_mac_addr_t new_eth_dst;
     uint16_t new_vlan_vid;
     uint32_t lag_id;
@@ -392,7 +393,11 @@ process_l3(struct ind_ovs_cfr *cfr,
         set_vlan_vid(result, new_vlan_vid);
     }
 
-    set_eth_src(result, new_eth_src);
+    if (memcmp(&vrouter_mac.addr, of_mac_addr_all_zeros.addr, OF_MAC_ADDR_BYTES)) {
+        set_eth_src(result, vrouter_mac);
+    } else {
+        set_eth_src(result, new_eth_src);
+    }
     set_eth_dst(result, new_eth_dst);
     dec_nw_ttl(result);
     mirror(TABLE_ID_EGRESS_MIRROR, out_port, hash, result);
