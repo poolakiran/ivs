@@ -134,18 +134,29 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 
     AIM_LOG_VERBOSE("hit in port table lookup, default_vlan_vid=%u lag_id=%u disable_src_mac_check=%u arp_offload=%u dhcp_offload=%u", default_vlan_vid, lag_id, disable_src_mac_check, arp_offload, dhcp_offload);
 
-    uint16_t vlan_vid;
-    if (cfr.dl_vlan & htons(VLAN_CFI_BIT)) {
+    uint32_t vrf;
+    uint32_t l3_interface_class_id;
+    of_mac_addr_t vrouter_mac;
+    bool vlan_acl_hit = false;
+    uint16_t vlan_vid = 0;
+    if (lookup_vlan_acl(&cfr, &result->stats, &vrf, &l3_interface_class_id, &vrouter_mac) == 0) {
+        AIM_LOG_VERBOSE("Hit in vlan_acl table: vrf=%u", vrf);
+        cfr.vrf = vrf;
         vlan_vid = VLAN_VID(ntohs(cfr.dl_vlan));
-        uint16_t new_vlan_vid;
-        if (lookup_vlan_xlate(cfr.in_port, lag_id, vlan_vid, &new_vlan_vid) == 0) {
-            vlan_vid = new_vlan_vid;
+        vlan_acl_hit = true;
+    } else {
+        if (cfr.dl_vlan & htons(VLAN_CFI_BIT)) {
+            vlan_vid = VLAN_VID(ntohs(cfr.dl_vlan));
+            uint16_t new_vlan_vid;
+            if (lookup_vlan_xlate(cfr.in_port, lag_id, vlan_vid, &new_vlan_vid) == 0) {
+                vlan_vid = new_vlan_vid;
+                set_vlan_vid(result, vlan_vid);
+            }
+        } else {
+            vlan_vid = default_vlan_vid;
+            push_vlan(result, 0x8100);
             set_vlan_vid(result, vlan_vid);
         }
-    } else {
-        vlan_vid = default_vlan_vid;
-        push_vlan(result, 0x8100);
-        set_vlan_vid(result, vlan_vid);
     }
 
     cfr.dl_vlan = htons(VLAN_TCI(vlan_vid, VLAN_PCP(ntohs(cfr.dl_vlan))) | VLAN_CFI_BIT);
@@ -159,21 +170,15 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 
     UNUSED bool in_port_tagged;
     bool global_vrf_allowed;
-    uint32_t vrf;
     if (check_vlan(vlan_vid, cfr.in_port, &in_port_tagged, &vrf, &global_vrf_allowed) < 0) {
         AIM_LOG_VERBOSE("port %u not allowed on vlan %u", cfr.in_port, vlan_vid);
         return INDIGO_ERROR_NONE;
     }
 
-    AIM_LOG_VERBOSE("VLAN %u: vrf=%u global_vrf_allowed=%d", vlan_vid, vrf, global_vrf_allowed);
-    cfr.vrf = vrf;
-    cfr.global_vrf_allowed = global_vrf_allowed;
-
-    uint32_t l3_interface_class_id;
-    of_mac_addr_t vrouter_mac;
-    if (lookup_vlan_acl(&cfr, &result->stats, &vrf, &l3_interface_class_id, &vrouter_mac) == 0) {
-        AIM_LOG_VERBOSE("Hit in vlan_acl table: vrf=%u", vrf);
+    if (!vlan_acl_hit) {
+        AIM_LOG_VERBOSE("VLAN %u: vrf=%u global_vrf_allowed=%d", vlan_vid, vrf, global_vrf_allowed);
         cfr.vrf = vrf;
+        cfr.global_vrf_allowed = global_vrf_allowed;
     }
 
     if (!disable_src_mac_check) {
