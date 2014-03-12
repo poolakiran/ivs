@@ -311,7 +311,7 @@ process_l3(struct ind_ovs_cfr *cfr,
     of_mac_addr_t new_eth_dst;
     uint16_t new_vlan_vid;
     uint32_t lag_id;
-    bool trap;
+    bool trap = false;
     bool valid_next_hop = false;
 
     check_nw_ttl(result);
