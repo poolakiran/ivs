@@ -76,7 +76,7 @@ static indigo_error_t lookup_l3_route( uint32_t hash, uint32_t vrf, uint32_t ipv
 static indigo_error_t lookup_l3_host_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap);
 static indigo_error_t lookup_l3_cidr_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap);
 static void lookup_debug(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *span_id, bool *cpu, bool *drop);
-static indigo_error_t lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf);
+static indigo_error_t lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint32_t *l3_interface_clas_id, of_mac_addr_t *vrouter_mac);
 static uint32_t group_to_table_id(uint32_t group_id);
 
 static void
@@ -169,7 +169,9 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     cfr.vrf = vrf;
     cfr.global_vrf_allowed = global_vrf_allowed;
 
-    if (lookup_vlan_acl(&cfr, &result->stats, &vrf) == 0) {
+    uint32_t l3_interface_class_id;
+    of_mac_addr_t vrouter_mac;
+    if (lookup_vlan_acl(&cfr, &result->stats, &vrf, &l3_interface_class_id, &vrouter_mac) == 0) {
         AIM_LOG_VERBOSE("Hit in vlan_acl table: vrf=%u", vrf);
         cfr.vrf = vrf;
     }
@@ -1008,9 +1010,11 @@ lookup_debug(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *span_id, boo
 }
 
 static indigo_error_t
-lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf)
+lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint32_t *l3_interface_class_id, of_mac_addr_t *vrouter_mac)
 {
     *vrf = 0;
+    *l3_interface_class_id = 0;
+    memset(vrouter_mac, 0, sizeof(*vrouter_mac));
 
     struct ind_ovs_flow_effects *effects =
         ind_ovs_fwd_pipeline_lookup(TABLE_ID_VLAN_ACL, cfr, stats);
@@ -1022,6 +1026,10 @@ lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf)
     XBUF_FOREACH2(&effects->apply_actions, attr) {
         if (attr->nla_type == IND_OVS_ACTION_SET_VRF) {
             *vrf = *XBUF_PAYLOAD(attr, uint32_t);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_L3_INTERFACE_CLASS_ID) {
+            *l3_interface_class_id = *XBUF_PAYLOAD(attr, uint32_t);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
+            memcpy(vrouter_mac->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
         }
     }
 
