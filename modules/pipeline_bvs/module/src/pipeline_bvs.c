@@ -66,7 +66,7 @@ static bool is_vlan_configured( uint16_t vlan_vid);
 static indigo_error_t flood_vlan( uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash, struct pipeline_result *result);
 static void mirror(uint8_t table_id, uint32_t port_no, uint32_t hash, struct pipeline_result *result);
 static void span(uint32_t span_id, uint32_t hash, struct pipeline_result *result);
-static indigo_error_t lookup_port( uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id, bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload, bool *disable_split_horizon_check);
+static indigo_error_t lookup_port( uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id, bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload, bool *disable_split_horizon_check, uint32_t *egr_port_group_id);
 static indigo_error_t lookup_vlan_xlate( uint32_t port_no, uint32_t lag_id, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t lookup_egr_vlan_xlate( uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
@@ -118,6 +118,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     bool arp_offload;
     bool dhcp_offload;
     bool disable_split_horizon_check;
+    uint32_t egr_port_group_id;
     if (cfr.in_port == OF_PORT_DEST_LOCAL) {
         default_vlan_vid = 0;
         lag_id = OF_GROUP_ANY;
@@ -125,8 +126,9 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
         arp_offload = false;
         dhcp_offload = false;
         disable_split_horizon_check = false;
+        egr_port_group_id = 0;
     } else {
-        if (lookup_port(cfr.in_port, &default_vlan_vid, &lag_id, &disable_src_mac_check, &arp_offload, &dhcp_offload, &disable_split_horizon_check) < 0) {
+        if (lookup_port(cfr.in_port, &default_vlan_vid, &lag_id, &disable_src_mac_check, &arp_offload, &dhcp_offload, &disable_split_horizon_check, &egr_port_group_id) < 0) {
             AIM_LOG_WARN("port %u not found", cfr.in_port);
             return INDIGO_ERROR_NONE;
         }
@@ -286,7 +288,8 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     UNUSED bool out_arp_offload;
     UNUSED bool out_dhcp_offload;
     UNUSED bool out_disable_split_horizon_check;
-    if (lookup_port(dst_port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_disable_split_horizon_check) < 0) {
+    UNUSED uint32_t out_egr_port_group_id;
+    if (lookup_port(dst_port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_disable_split_horizon_check, &egr_port_group_id) < 0) {
         AIM_LOG_WARN("port %u not found during egress", dst_port_no);
         return INDIGO_ERROR_NONE;
     }
@@ -381,8 +384,20 @@ process_l3(struct ind_ovs_cfr *cfr,
         return INDIGO_ERROR_NONE;
     }
 
-    if (!disable_split_horizon_check && lag_id == ingress_lag_id) {
-        AIM_LOG_VERBOSE("skipping ingress LAG %u", lag_id);
+    UNUSED uint16_t out_default_vlan_vid;
+    uint32_t out_lag_id;
+    UNUSED bool out_disable_src_mac_check;
+    UNUSED bool out_arp_offload;
+    UNUSED bool out_dhcp_offload;
+    UNUSED bool out_disable_split_horizon_check;
+    uint32_t out_egr_port_group_id;
+    if (lookup_port(out_port, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_disable_split_horizon_check, &out_egr_port_group_id) < 0) {
+        AIM_LOG_WARN("port %u not found during egress", out_port);
+        return INDIGO_ERROR_NONE;
+    }
+
+    if (!disable_split_horizon_check && out_lag_id == ingress_lag_id) {
+        AIM_LOG_VERBOSE("skipping ingress LAG %u", ingress_lag_id);
         return INDIGO_ERROR_NONE;
     }
 
@@ -577,7 +592,8 @@ flood_vlan(uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash,
             bool out_arp_offload;
             bool out_dhcp_offload;
             bool out_disable_split_horizon_check;
-            if (lookup_port(port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_disable_split_horizon_check) < 0) {
+            UNUSED uint32_t out_egr_port_group_id;
+            if (lookup_port(port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_disable_split_horizon_check, &out_egr_port_group_id) < 0) {
                 AIM_LOG_WARN("port %u not found during flood", port_no);
                 continue;
             }
@@ -683,7 +699,8 @@ span(uint32_t span_id, uint32_t hash, struct pipeline_result *result)
 static indigo_error_t
 lookup_port(uint32_t port_no,
             uint16_t *default_vlan_vid, uint32_t *lag_id,
-            bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload, bool *disable_split_horizon_check)
+            bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload, bool *disable_split_horizon_check,
+            uint32_t *egr_port_group_id)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
@@ -696,6 +713,7 @@ lookup_port(uint32_t port_no,
     *arp_offload = false;
     *dhcp_offload = false;
     *disable_split_horizon_check = false;
+    *egr_port_group_id = 0;
 
     struct ind_ovs_flow_effects *effects =
         ind_ovs_fwd_pipeline_lookup(TABLE_ID_PORT, &cfr, NULL);
@@ -709,6 +727,8 @@ lookup_port(uint32_t port_no,
             *default_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
         } else if (attr->nla_type == IND_OVS_ACTION_SET_LAG_ID) {
             *lag_id = *XBUF_PAYLOAD(attr, uint32_t);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_EGR_PORT_GROUP_ID) {
+            *egr_port_group_id = *XBUF_PAYLOAD(attr, uint32_t);
         }
     }
 
