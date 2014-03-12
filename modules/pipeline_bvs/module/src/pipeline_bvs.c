@@ -142,6 +142,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     if (lookup_vlan_acl(&cfr, &result->stats, &vrf, &l3_interface_class_id, &vrouter_mac) == 0) {
         AIM_LOG_VERBOSE("Hit in vlan_acl table: vrf=%u", vrf);
         cfr.vrf = vrf;
+        cfr.l3_interface_class_id = l3_interface_class_id;
         vlan_vid = VLAN_VID(ntohs(cfr.dl_vlan));
         vlan_acl_hit = true;
     } else {
