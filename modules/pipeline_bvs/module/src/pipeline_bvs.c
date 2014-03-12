@@ -46,6 +46,7 @@ enum table_id {
     TABLE_ID_DEBUG = 15,
     TABLE_ID_INGRESS_MIRROR = 16,
     TABLE_ID_EGRESS_MIRROR = 17,
+    TABLE_ID_VLAN_ACL = 19,
 };
 
 enum group_table_id {
@@ -75,6 +76,7 @@ static indigo_error_t lookup_l3_route( uint32_t hash, uint32_t vrf, uint32_t ipv
 static indigo_error_t lookup_l3_host_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap);
 static indigo_error_t lookup_l3_cidr_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap);
 static void lookup_debug(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *span_id, bool *cpu, bool *drop);
+static indigo_error_t lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf);
 static uint32_t group_to_table_id(uint32_t group_id);
 
 static void
@@ -166,6 +168,11 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     AIM_LOG_VERBOSE("VLAN %u: vrf=%u global_vrf_allowed=%d", vlan_vid, vrf, global_vrf_allowed);
     cfr.vrf = vrf;
     cfr.global_vrf_allowed = global_vrf_allowed;
+
+    if (lookup_vlan_acl(&cfr, &result->stats, &vrf) == 0) {
+        AIM_LOG_VERBOSE("Hit in vlan_acl table: vrf=%u", vrf);
+        cfr.vrf = vrf;
+    }
 
     if (!disable_src_mac_check) {
         /* Source lookup */
@@ -998,6 +1005,27 @@ lookup_debug(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *span_id, boo
     }
 
     AIM_LOG_VERBOSE("hit in debug table: span_id=0x%x cpu=%d drop=%d", *span_id, *cpu, *drop);
+}
+
+static indigo_error_t
+lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf)
+{
+    *vrf = 0;
+
+    struct ind_ovs_flow_effects *effects =
+        ind_ovs_fwd_pipeline_lookup(TABLE_ID_VLAN_ACL, cfr, stats);
+    if (effects == NULL) {
+        return INDIGO_ERROR_NOT_FOUND;
+    }
+
+    struct nlattr *attr;
+    XBUF_FOREACH2(&effects->apply_actions, attr) {
+        if (attr->nla_type == IND_OVS_ACTION_SET_VRF) {
+            *vrf = *XBUF_PAYLOAD(attr, uint32_t);
+        }
+    }
+
+    return INDIGO_ERROR_NONE;
 }
 
 static uint32_t
