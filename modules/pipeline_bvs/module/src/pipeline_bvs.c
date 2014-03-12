@@ -61,7 +61,7 @@ static const of_mac_addr_t slow_protocols_mac = { { 0x01, 0x80, 0xC2, 0x00, 0x00
 static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, uint32_t ingress_lag_id, bool disable_split_horizon_check, struct pipeline_result *result);
 static void process_debug(struct ind_ovs_cfr *cfr, uint32_t hash, struct pipeline_result *result, bool *drop);
 static indigo_error_t lookup_l2( uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats, uint32_t *port_no, uint32_t *group_id);
-static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, bool *global_vrf_allowed);
+static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, bool *global_vrf_allowed, uint32_t *l3_interface_class_id, of_mac_addr_t *vrouter_mac);
 static bool is_vlan_configured( uint16_t vlan_vid);
 static indigo_error_t flood_vlan( uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash, struct pipeline_result *result);
 static void mirror(uint8_t table_id, uint32_t port_no, uint32_t hash, struct pipeline_result *result);
@@ -171,7 +171,9 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 
     UNUSED bool in_port_tagged;
     bool global_vrf_allowed;
-    if (check_vlan(vlan_vid, cfr.in_port, &in_port_tagged, &vrf, &global_vrf_allowed) < 0) {
+    uint32_t vlan_l3_interface_class_id;
+    of_mac_addr_t vlan_vrouter_mac;
+    if (check_vlan(vlan_vid, cfr.in_port, &in_port_tagged, &vrf, &global_vrf_allowed, &vlan_l3_interface_class_id, &vlan_vrouter_mac) < 0) {
         AIM_LOG_VERBOSE("port %u not allowed on vlan %u", cfr.in_port, vlan_vid);
         return INDIGO_ERROR_NONE;
     }
@@ -180,6 +182,8 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
         AIM_LOG_VERBOSE("VLAN %u: vrf=%u global_vrf_allowed=%d", vlan_vid, vrf, global_vrf_allowed);
         cfr.vrf = vrf;
         cfr.global_vrf_allowed = global_vrf_allowed;
+        cfr.l3_interface_class_id = vlan_l3_interface_class_id;
+        memcpy(vrouter_mac.addr, vlan_vrouter_mac.addr, OF_MAC_ADDR_BYTES);
     }
 
     if (!disable_src_mac_check) {
@@ -295,7 +299,9 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     bool out_port_tagged;
     UNUSED bool out_global_vrf_allowed;
     UNUSED uint32_t out_vrf;
-    if (check_vlan(vlan_vid, dst_port_no, &out_port_tagged, &out_vrf, &out_global_vrf_allowed) < 0) {
+    UNUSED uint32_t out_l3_interface_class_id;
+    UNUSED of_mac_addr_t out_vrouter_mac;
+    if (check_vlan(vlan_vid, dst_port_no, &out_port_tagged, &out_vrf, &out_global_vrf_allowed, &out_l3_interface_class_id, &out_vrouter_mac) < 0) {
         AIM_LOG_WARN("output port %u not allowed on vlan %u", dst_port_no, vlan_vid);
         return INDIGO_ERROR_NONE;
     }
@@ -367,7 +373,9 @@ process_l3(struct ind_ovs_cfr *cfr,
     bool out_port_tagged;
     UNUSED bool out_global_vrf_allowed;
     UNUSED uint32_t out_vrf;
-    if (check_vlan(new_vlan_vid, out_port, &out_port_tagged, &out_vrf, &out_global_vrf_allowed) < 0) {
+    UNUSED uint32_t out_l3_interface_class_id;
+    UNUSED of_mac_addr_t out_vrouter_mac;
+    if (check_vlan(new_vlan_vid, out_port, &out_port_tagged, &out_vrf, &out_global_vrf_allowed, &out_l3_interface_class_id, &out_vrouter_mac) < 0) {
         AIM_LOG_WARN("output port %u not allowed on vlan %u", out_port, new_vlan_vid);
         return INDIGO_ERROR_NONE;
     }
@@ -462,7 +470,8 @@ is_vlan_configured(uint16_t vlan_vid)
 
 static indigo_error_t
 check_vlan(uint16_t vlan_vid, uint32_t in_port,
-           bool *tagged, uint32_t *vrf, bool *global_vrf_allowed)
+           bool *tagged, uint32_t *vrf, bool *global_vrf_allowed,
+           uint32_t *l3_interface_class_id, of_mac_addr_t *vrouter_mac)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
@@ -478,6 +487,8 @@ check_vlan(uint16_t vlan_vid, uint32_t in_port,
     *tagged = true;
     *vrf = 0;
     *global_vrf_allowed = false;
+    *l3_interface_class_id = 0;
+    memset(vrouter_mac, 0, sizeof(*vrouter_mac));
 
     struct nlattr *attr;
     XBUF_FOREACH2(&effects->apply_actions, attr) {
@@ -492,6 +503,10 @@ check_vlan(uint16_t vlan_vid, uint32_t in_port,
             *vrf = *XBUF_PAYLOAD(attr, uint32_t);
         } else if (attr->nla_type == IND_OVS_ACTION_SET_GLOBAL_VRF_ALLOWED) {
             *global_vrf_allowed = *XBUF_PAYLOAD(attr, uint8_t);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_L3_INTERFACE_CLASS_ID) {
+            *l3_interface_class_id = *XBUF_PAYLOAD(attr, uint32_t);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
+            memcpy(vrouter_mac->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
         }
     }
 
@@ -539,7 +554,9 @@ flood_vlan(uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash,
             bool tagged;
             UNUSED bool out_global_vrf_allowed;
             UNUSED uint32_t out_vrf;
-            if (check_vlan(vlan_vid, port_no, &tagged, &out_vrf, &out_global_vrf_allowed) < 0) {
+            UNUSED uint32_t out_l3_interface_class_id;
+            UNUSED of_mac_addr_t out_vrouter_mac;
+            if (check_vlan(vlan_vid, port_no, &tagged, &out_vrf, &out_global_vrf_allowed, &out_l3_interface_class_id, &out_vrouter_mac) < 0) {
                 AIM_LOG_VERBOSE("not flooding vlan %u to port %u", vlan_vid, port_no);
                 continue;
             }
