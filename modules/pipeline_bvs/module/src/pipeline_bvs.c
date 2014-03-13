@@ -44,6 +44,7 @@ enum table_id {
     TABLE_ID_DEBUG = 15,
     TABLE_ID_INGRESS_MIRROR = 16,
     TABLE_ID_EGRESS_MIRROR = 17,
+    TABLE_ID_EGRESS_ACL = 18,
     TABLE_ID_VLAN_ACL = 19,
 };
 
@@ -76,6 +77,7 @@ static indigo_error_t lookup_l3_cidr_route( uint32_t hash, uint32_t vrf, uint32_
 static void lookup_debug(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *span_id, bool *cpu, bool *drop);
 static indigo_error_t lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint32_t *l3_interface_clas_id, of_mac_addr_t *vrouter_mac);
 static void lookup_ingress_acl(struct ind_ovs_cfr *cfr, uint32_t hash, struct xbuf *stats, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *valid_next_hop, bool *cpu, bool *drop);
+static void lookup_egress_acl(struct ind_ovs_cfr *cfr, bool *drop);
 static uint32_t group_to_table_id(uint32_t group_id);
 
 static void
@@ -401,6 +403,8 @@ process_l3(struct ind_ovs_cfr *cfr,
         return INDIGO_ERROR_NONE;
     }
 
+    cfr->egr_port_group_id = out_egr_port_group_id;
+
     if (!disable_split_horizon_check && out_lag_id == ingress_lag_id) {
         AIM_LOG_VERBOSE("skipping ingress LAG %u", ingress_lag_id);
         return INDIGO_ERROR_NONE;
@@ -408,9 +412,16 @@ process_l3(struct ind_ovs_cfr *cfr,
 
     if (!out_port_tagged) {
         pop_vlan(result);
+        cfr->dl_vlan = 0;
     } else {
         lookup_egr_vlan_xlate(out_port, new_vlan_vid, &new_vlan_vid);
         set_vlan_vid(result, new_vlan_vid);
+        cfr->dl_vlan = htons(VLAN_TCI(new_vlan_vid, VLAN_PCP(ntohs(cfr->dl_vlan))) | VLAN_CFI_BIT);
+    }
+
+    lookup_egress_acl(cfr, &drop);
+    if (drop) {
+        return INDIGO_ERROR_NONE;
     }
 
     if (memcmp(&vrouter_mac.addr, of_mac_addr_all_zeros.addr, OF_MAC_ADDR_BYTES)) {
@@ -1151,6 +1162,22 @@ lookup_ingress_acl(struct ind_ovs_cfr *cfr, uint32_t hash, struct xbuf *stats,
             AIM_LOG_ERROR("unexpected group table in ingress_acl action");
         }
     }
+}
+
+static void
+lookup_egress_acl(struct ind_ovs_cfr *cfr, bool *drop)
+{
+    *drop = false;
+
+    struct ind_ovs_flow_effects *effects =
+        ind_ovs_fwd_pipeline_lookup(TABLE_ID_EGRESS_ACL, cfr, NULL);
+    if (effects == NULL) {
+        return;
+    }
+
+    *drop = effects->deny;
+
+    AIM_LOG_VERBOSE("hit in egress_acl table: drop=%d", *drop);
 }
 
 static uint32_t
