@@ -40,9 +40,7 @@ enum table_id {
     TABLE_ID_L3_HOST_ROUTE = 6,
     TABLE_ID_L3_CIDR_ROUTE = 7,
     TABLE_ID_FLOOD = 11,
-    TABLE_ID_ACL1 = 12,
-    TABLE_ID_ACL2 = 13,
-    TABLE_ID_ACL3 = 14,
+    TABLE_ID_INGRESS_ACL = 12,
     TABLE_ID_DEBUG = 15,
     TABLE_ID_INGRESS_MIRROR = 16,
     TABLE_ID_EGRESS_MIRROR = 17,
@@ -77,6 +75,7 @@ static indigo_error_t lookup_l3_host_route( uint32_t hash, uint32_t vrf, uint32_
 static indigo_error_t lookup_l3_cidr_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *valid_next_hop, bool *valid_cpu);
 static void lookup_debug(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *span_id, bool *cpu, bool *drop);
 static indigo_error_t lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint32_t *l3_interface_clas_id, of_mac_addr_t *vrouter_mac);
+static void lookup_ingress_acl(struct ind_ovs_cfr *cfr, uint32_t hash, struct xbuf *stats, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *valid_next_hop, bool *cpu, bool *drop);
 static uint32_t group_to_table_id(uint32_t group_id);
 
 static void
@@ -338,6 +337,7 @@ process_l3(struct ind_ovs_cfr *cfr,
     uint32_t lag_id;
     bool cpu;
     bool valid_next_hop;
+    bool drop;
 
     check_nw_ttl(result);
 
@@ -345,15 +345,20 @@ process_l3(struct ind_ovs_cfr *cfr,
                     &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id,
                     &valid_next_hop, &cpu);
 
-    bool drop;
     process_debug(cfr, hash, result, &drop);
     if (drop) {
         return INDIGO_ERROR_NONE;
     }
 
+    lookup_ingress_acl(cfr, hash, &result->stats, &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id, &valid_next_hop, &cpu, &drop);
+
     if (cpu) {
         AIM_LOG_VERBOSE("L3 copy to CPU");
         pktin(result, OF_PACKET_IN_REASON_ACTION);
+    }
+
+    if (drop) {
+        return INDIGO_ERROR_NONE;
     }
 
     if (!valid_next_hop) {
@@ -1092,6 +1097,60 @@ lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint
     }
 
     return INDIGO_ERROR_NONE;
+}
+
+static void
+lookup_ingress_acl(struct ind_ovs_cfr *cfr, uint32_t hash, struct xbuf *stats,
+                   of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst,
+                   uint16_t *new_vlan_vid, uint32_t *lag_id,
+                   bool *valid_next_hop, bool *cpu, bool *drop)
+{
+    /* Assumes return value memory is initialized */
+
+    struct ind_ovs_flow_effects *effects =
+        ind_ovs_fwd_pipeline_lookup(TABLE_ID_INGRESS_ACL, cfr, stats);
+    if (effects == NULL) {
+        return;
+    }
+
+    AIM_LOG_VERBOSE("hit in ingress_acl table drop=%d", effects->deny);
+
+    if (effects->deny) {
+        *drop = effects->deny;
+    }
+
+    struct nlattr *attr;
+    uint32_t group_id = OF_GROUP_ANY;
+    XBUF_FOREACH2(&effects->write_actions, attr) {
+        if (attr->nla_type == IND_OVS_ACTION_GROUP) {
+            group_id = *XBUF_PAYLOAD(attr, uint32_t);
+            *valid_next_hop = true;
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
+            memcpy(new_eth_src->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_DST) {
+            memcpy(new_eth_dst->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_VLAN_VID) {
+            *new_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
+        } else if (attr->nla_type == IND_OVS_ACTION_CONTROLLER) {
+            *cpu = true;
+        }
+    }
+
+    if (group_id != OF_GROUP_ANY) {
+        switch (group_to_table_id(group_id)) {
+        case GROUP_TABLE_ID_LAG:
+            *lag_id = group_id;
+            break;
+        case GROUP_TABLE_ID_ECMP:
+            if (select_ecmp_route(group_id, hash, new_eth_src, new_eth_dst, new_vlan_vid, lag_id) < 0) {
+                AIM_LOG_ERROR("failed to get ecmp route from ingress_acl action");
+                return;
+            }
+            break;
+        default:
+            AIM_LOG_ERROR("unexpected group table in ingress_acl action");
+        }
+    }
 }
 
 static uint32_t
