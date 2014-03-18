@@ -40,12 +40,12 @@ enum table_id {
     TABLE_ID_L3_HOST_ROUTE = 6,
     TABLE_ID_L3_CIDR_ROUTE = 7,
     TABLE_ID_FLOOD = 11,
-    TABLE_ID_ACL1 = 12,
-    TABLE_ID_ACL2 = 13,
-    TABLE_ID_ACL3 = 14,
+    TABLE_ID_INGRESS_ACL = 12,
     TABLE_ID_DEBUG = 15,
     TABLE_ID_INGRESS_MIRROR = 16,
     TABLE_ID_EGRESS_MIRROR = 17,
+    TABLE_ID_EGRESS_ACL = 18,
+    TABLE_ID_VLAN_ACL = 19,
 };
 
 enum group_table_id {
@@ -57,24 +57,27 @@ enum group_table_id {
 static const bool flood_on_dlf = true;
 static const of_mac_addr_t slow_protocols_mac = { { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x02 } };
 
-static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, uint32_t ingress_lag_id, bool disable_split_horizon_check, struct pipeline_result *result);
+static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, uint32_t ingress_lag_id, bool disable_split_horizon_check, of_mac_addr_t vrouter_mac, struct pipeline_result *result);
 static void process_debug(struct ind_ovs_cfr *cfr, uint32_t hash, struct pipeline_result *result, bool *drop);
 static indigo_error_t lookup_l2( uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats, uint32_t *port_no, uint32_t *group_id);
-static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, bool *global_vrf_allowed);
+static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, bool *global_vrf_allowed, uint32_t *l3_interface_class_id, of_mac_addr_t *vrouter_mac);
 static bool is_vlan_configured( uint16_t vlan_vid);
 static indigo_error_t flood_vlan( uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash, struct pipeline_result *result);
 static void mirror(uint8_t table_id, uint32_t port_no, uint32_t hash, struct pipeline_result *result);
 static void span(uint32_t span_id, uint32_t hash, struct pipeline_result *result);
-static indigo_error_t lookup_port( uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id, bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload, bool *disable_split_horizon_check);
+static indigo_error_t lookup_port( uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id, bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload, bool *disable_split_horizon_check, uint32_t *egr_port_group_id);
 static indigo_error_t lookup_vlan_xlate( uint32_t port_no, uint32_t lag_id, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t lookup_egr_vlan_xlate( uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
 static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id);
 static indigo_error_t lookup_my_station( const uint8_t *eth_addr);
-static indigo_error_t lookup_l3_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, bool global_vrf_allowed, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap);
-static indigo_error_t lookup_l3_host_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap);
-static indigo_error_t lookup_l3_cidr_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap);
+static indigo_error_t lookup_l3_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, bool global_vrf_allowed, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *valid_next_hop, bool *valid_cpu);
+static indigo_error_t lookup_l3_host_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *valid_next_hop, bool *valid_cpu);
+static indigo_error_t lookup_l3_cidr_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *valid_next_hop, bool *valid_cpu);
 static void lookup_debug(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *span_id, bool *cpu, bool *drop);
+static indigo_error_t lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint32_t *l3_interface_clas_id, of_mac_addr_t *vrouter_mac);
+static void lookup_ingress_acl(struct ind_ovs_cfr *cfr, uint32_t hash, struct xbuf *stats, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *valid_next_hop, bool *cpu, bool *drop);
+static void lookup_egress_acl(struct ind_ovs_cfr *cfr, bool *drop);
 static uint32_t group_to_table_id(uint32_t group_id);
 
 static void
@@ -116,6 +119,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     bool arp_offload;
     bool dhcp_offload;
     bool disable_split_horizon_check;
+    uint32_t egr_port_group_id;
     if (cfr.in_port == OF_PORT_DEST_LOCAL) {
         default_vlan_vid = 0;
         lag_id = OF_GROUP_ANY;
@@ -123,8 +127,9 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
         arp_offload = false;
         dhcp_offload = false;
         disable_split_horizon_check = false;
+        egr_port_group_id = 0;
     } else {
-        if (lookup_port(cfr.in_port, &default_vlan_vid, &lag_id, &disable_src_mac_check, &arp_offload, &dhcp_offload, &disable_split_horizon_check) < 0) {
+        if (lookup_port(cfr.in_port, &default_vlan_vid, &lag_id, &disable_src_mac_check, &arp_offload, &dhcp_offload, &disable_split_horizon_check, &egr_port_group_id) < 0) {
             AIM_LOG_WARN("port %u not found", cfr.in_port);
             return INDIGO_ERROR_NONE;
         }
@@ -132,18 +137,30 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 
     AIM_LOG_VERBOSE("hit in port table lookup, default_vlan_vid=%u lag_id=%u disable_src_mac_check=%u arp_offload=%u dhcp_offload=%u", default_vlan_vid, lag_id, disable_src_mac_check, arp_offload, dhcp_offload);
 
-    uint16_t vlan_vid;
-    if (cfr.dl_vlan & htons(VLAN_CFI_BIT)) {
+    uint32_t vrf;
+    uint32_t l3_interface_class_id;
+    of_mac_addr_t vrouter_mac;
+    bool vlan_acl_hit = false;
+    uint16_t vlan_vid = 0;
+    if (lookup_vlan_acl(&cfr, &result->stats, &vrf, &l3_interface_class_id, &vrouter_mac) == 0) {
+        AIM_LOG_VERBOSE("Hit in vlan_acl table: vrf=%u", vrf);
+        cfr.vrf = vrf;
+        cfr.l3_interface_class_id = l3_interface_class_id;
         vlan_vid = VLAN_VID(ntohs(cfr.dl_vlan));
-        uint16_t new_vlan_vid;
-        if (lookup_vlan_xlate(cfr.in_port, lag_id, vlan_vid, &new_vlan_vid) == 0) {
-            vlan_vid = new_vlan_vid;
+        vlan_acl_hit = true;
+    } else {
+        if (cfr.dl_vlan & htons(VLAN_CFI_BIT)) {
+            vlan_vid = VLAN_VID(ntohs(cfr.dl_vlan));
+            uint16_t new_vlan_vid;
+            if (lookup_vlan_xlate(cfr.in_port, lag_id, vlan_vid, &new_vlan_vid) == 0) {
+                vlan_vid = new_vlan_vid;
+                set_vlan_vid(result, vlan_vid);
+            }
+        } else {
+            vlan_vid = default_vlan_vid;
+            push_vlan(result, 0x8100);
             set_vlan_vid(result, vlan_vid);
         }
-    } else {
-        vlan_vid = default_vlan_vid;
-        push_vlan(result, 0x8100);
-        set_vlan_vid(result, vlan_vid);
     }
 
     cfr.dl_vlan = htons(VLAN_TCI(vlan_vid, VLAN_PCP(ntohs(cfr.dl_vlan))) | VLAN_CFI_BIT);
@@ -157,15 +174,20 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 
     UNUSED bool in_port_tagged;
     bool global_vrf_allowed;
-    uint32_t vrf;
-    if (check_vlan(vlan_vid, cfr.in_port, &in_port_tagged, &vrf, &global_vrf_allowed) < 0) {
+    uint32_t vlan_l3_interface_class_id;
+    of_mac_addr_t vlan_vrouter_mac;
+    if (check_vlan(vlan_vid, cfr.in_port, &in_port_tagged, &vrf, &global_vrf_allowed, &vlan_l3_interface_class_id, &vlan_vrouter_mac) < 0) {
         AIM_LOG_VERBOSE("port %u not allowed on vlan %u", cfr.in_port, vlan_vid);
         return INDIGO_ERROR_NONE;
     }
 
-    AIM_LOG_VERBOSE("VLAN %u: vrf=%u global_vrf_allowed=%d", vlan_vid, vrf, global_vrf_allowed);
-    cfr.vrf = vrf;
-    cfr.global_vrf_allowed = global_vrf_allowed;
+    if (!vlan_acl_hit) {
+        AIM_LOG_VERBOSE("VLAN %u: vrf=%u global_vrf_allowed=%d", vlan_vid, vrf, global_vrf_allowed);
+        cfr.vrf = vrf;
+        cfr.global_vrf_allowed = global_vrf_allowed;
+        cfr.l3_interface_class_id = vlan_l3_interface_class_id;
+        memcpy(vrouter_mac.addr, vlan_vrouter_mac.addr, OF_MAC_ADDR_BYTES);
+    }
 
     if (!disable_src_mac_check) {
         /* Source lookup */
@@ -222,7 +244,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 
     if (lookup_my_station(cfr.dl_dst) == 0) {
         AIM_LOG_VERBOSE("hit in MyStation table, entering L3 processing");
-        return process_l3(&cfr, hash, lag_id, disable_split_horizon_check, result);
+        return process_l3(&cfr, hash, lag_id, disable_split_horizon_check, vrouter_mac, result);
     }
 
     /* Destination lookup */
@@ -267,7 +289,8 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     UNUSED bool out_arp_offload;
     UNUSED bool out_dhcp_offload;
     UNUSED bool out_disable_split_horizon_check;
-    if (lookup_port(dst_port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_disable_split_horizon_check) < 0) {
+    UNUSED uint32_t out_egr_port_group_id;
+    if (lookup_port(dst_port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_disable_split_horizon_check, &egr_port_group_id) < 0) {
         AIM_LOG_WARN("port %u not found during egress", dst_port_no);
         return INDIGO_ERROR_NONE;
     }
@@ -280,7 +303,9 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     bool out_port_tagged;
     UNUSED bool out_global_vrf_allowed;
     UNUSED uint32_t out_vrf;
-    if (check_vlan(vlan_vid, dst_port_no, &out_port_tagged, &out_vrf, &out_global_vrf_allowed) < 0) {
+    UNUSED uint32_t out_l3_interface_class_id;
+    UNUSED of_mac_addr_t out_vrouter_mac;
+    if (check_vlan(vlan_vid, dst_port_no, &out_port_tagged, &out_vrf, &out_global_vrf_allowed, &out_l3_interface_class_id, &out_vrouter_mac) < 0) {
         AIM_LOG_WARN("output port %u not allowed on vlan %u", dst_port_no, vlan_vid);
         return INDIGO_ERROR_NONE;
     }
@@ -305,37 +330,44 @@ process_l3(struct ind_ovs_cfr *cfr,
            uint32_t hash,
            uint32_t ingress_lag_id,
            bool disable_split_horizon_check,
+           of_mac_addr_t vrouter_mac,
            struct pipeline_result *result)
 {
-    of_mac_addr_t new_eth_src;
+    UNUSED of_mac_addr_t new_eth_src;
     of_mac_addr_t new_eth_dst;
     uint16_t new_vlan_vid;
     uint32_t lag_id;
-    bool trap;
-    bool valid_next_hop = false;
+    bool cpu;
+    bool valid_next_hop;
+    bool drop;
 
     check_nw_ttl(result);
 
-    if (lookup_l3_route(hash, cfr->vrf, cfr->nw_dst, cfr->global_vrf_allowed,
-                        &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id, &trap) == 0) {
-        valid_next_hop = true;
-    }
+    lookup_l3_route(hash, cfr->vrf, cfr->nw_dst, cfr->global_vrf_allowed,
+                    &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id,
+                    &valid_next_hop, &cpu);
 
-    bool drop;
     process_debug(cfr, hash, result, &drop);
     if (drop) {
         return INDIGO_ERROR_NONE;
     }
 
-    if (trap) {
-        AIM_LOG_VERBOSE("L3 trap to CPU");
+    lookup_ingress_acl(cfr, hash, &result->stats, &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id, &valid_next_hop, &cpu, &drop);
+
+    if (cpu) {
+        AIM_LOG_VERBOSE("L3 copy to CPU");
         pktin(result, OF_PACKET_IN_REASON_ACTION);
+    }
+
+    if (drop) {
         return INDIGO_ERROR_NONE;
     }
 
     if (!valid_next_hop) {
         AIM_LOG_VERBOSE("no route to host");
-        pktin(result, OF_PACKET_IN_REASON_BSN_NO_ROUTE);
+        if (!cpu) {
+            pktin(result, OF_PACKET_IN_REASON_BSN_NO_ROUTE);
+        }
         return INDIGO_ERROR_NONE;
     }
 
@@ -352,24 +384,51 @@ process_l3(struct ind_ovs_cfr *cfr,
     bool out_port_tagged;
     UNUSED bool out_global_vrf_allowed;
     UNUSED uint32_t out_vrf;
-    if (check_vlan(new_vlan_vid, out_port, &out_port_tagged, &out_vrf, &out_global_vrf_allowed) < 0) {
+    UNUSED uint32_t out_l3_interface_class_id;
+    UNUSED of_mac_addr_t out_vrouter_mac;
+    if (check_vlan(new_vlan_vid, out_port, &out_port_tagged, &out_vrf, &out_global_vrf_allowed, &out_l3_interface_class_id, &out_vrouter_mac) < 0) {
         AIM_LOG_WARN("output port %u not allowed on vlan %u", out_port, new_vlan_vid);
         return INDIGO_ERROR_NONE;
     }
 
-    if (!disable_split_horizon_check && lag_id == ingress_lag_id) {
-        AIM_LOG_VERBOSE("skipping ingress LAG %u", lag_id);
+    UNUSED uint16_t out_default_vlan_vid;
+    uint32_t out_lag_id;
+    UNUSED bool out_disable_src_mac_check;
+    UNUSED bool out_arp_offload;
+    UNUSED bool out_dhcp_offload;
+    UNUSED bool out_disable_split_horizon_check;
+    uint32_t out_egr_port_group_id;
+    if (lookup_port(out_port, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_disable_split_horizon_check, &out_egr_port_group_id) < 0) {
+        AIM_LOG_WARN("port %u not found during egress", out_port);
+        return INDIGO_ERROR_NONE;
+    }
+
+    cfr->egr_port_group_id = out_egr_port_group_id;
+
+    if (!disable_split_horizon_check && out_lag_id == ingress_lag_id) {
+        AIM_LOG_VERBOSE("skipping ingress LAG %u", ingress_lag_id);
         return INDIGO_ERROR_NONE;
     }
 
     if (!out_port_tagged) {
         pop_vlan(result);
+        cfr->dl_vlan = 0;
     } else {
         lookup_egr_vlan_xlate(out_port, new_vlan_vid, &new_vlan_vid);
         set_vlan_vid(result, new_vlan_vid);
+        cfr->dl_vlan = htons(VLAN_TCI(new_vlan_vid, VLAN_PCP(ntohs(cfr->dl_vlan))) | VLAN_CFI_BIT);
     }
 
-    set_eth_src(result, new_eth_src);
+    lookup_egress_acl(cfr, &drop);
+    if (drop) {
+        return INDIGO_ERROR_NONE;
+    }
+
+    if (memcmp(&vrouter_mac.addr, of_mac_addr_all_zeros.addr, OF_MAC_ADDR_BYTES)) {
+        set_eth_src(result, vrouter_mac);
+    } else {
+        set_eth_src(result, new_eth_src);
+    }
     set_eth_dst(result, new_eth_dst);
     dec_nw_ttl(result);
     mirror(TABLE_ID_EGRESS_MIRROR, out_port, hash, result);
@@ -447,7 +506,8 @@ is_vlan_configured(uint16_t vlan_vid)
 
 static indigo_error_t
 check_vlan(uint16_t vlan_vid, uint32_t in_port,
-           bool *tagged, uint32_t *vrf, bool *global_vrf_allowed)
+           bool *tagged, uint32_t *vrf, bool *global_vrf_allowed,
+           uint32_t *l3_interface_class_id, of_mac_addr_t *vrouter_mac)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
@@ -463,6 +523,8 @@ check_vlan(uint16_t vlan_vid, uint32_t in_port,
     *tagged = true;
     *vrf = 0;
     *global_vrf_allowed = false;
+    *l3_interface_class_id = 0;
+    memset(vrouter_mac, 0, sizeof(*vrouter_mac));
 
     struct nlattr *attr;
     XBUF_FOREACH2(&effects->apply_actions, attr) {
@@ -477,6 +539,10 @@ check_vlan(uint16_t vlan_vid, uint32_t in_port,
             *vrf = *XBUF_PAYLOAD(attr, uint32_t);
         } else if (attr->nla_type == IND_OVS_ACTION_SET_GLOBAL_VRF_ALLOWED) {
             *global_vrf_allowed = *XBUF_PAYLOAD(attr, uint8_t);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_L3_INTERFACE_CLASS_ID) {
+            *l3_interface_class_id = *XBUF_PAYLOAD(attr, uint32_t);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
+            memcpy(vrouter_mac->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
         }
     }
 
@@ -524,7 +590,9 @@ flood_vlan(uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash,
             bool tagged;
             UNUSED bool out_global_vrf_allowed;
             UNUSED uint32_t out_vrf;
-            if (check_vlan(vlan_vid, port_no, &tagged, &out_vrf, &out_global_vrf_allowed) < 0) {
+            UNUSED uint32_t out_l3_interface_class_id;
+            UNUSED of_mac_addr_t out_vrouter_mac;
+            if (check_vlan(vlan_vid, port_no, &tagged, &out_vrf, &out_global_vrf_allowed, &out_l3_interface_class_id, &out_vrouter_mac) < 0) {
                 AIM_LOG_VERBOSE("not flooding vlan %u to port %u", vlan_vid, port_no);
                 continue;
             }
@@ -540,7 +608,8 @@ flood_vlan(uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash,
             bool out_arp_offload;
             bool out_dhcp_offload;
             bool out_disable_split_horizon_check;
-            if (lookup_port(port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_disable_split_horizon_check) < 0) {
+            UNUSED uint32_t out_egr_port_group_id;
+            if (lookup_port(port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_disable_split_horizon_check, &out_egr_port_group_id) < 0) {
                 AIM_LOG_WARN("port %u not found during flood", port_no);
                 continue;
             }
@@ -646,7 +715,8 @@ span(uint32_t span_id, uint32_t hash, struct pipeline_result *result)
 static indigo_error_t
 lookup_port(uint32_t port_no,
             uint16_t *default_vlan_vid, uint32_t *lag_id,
-            bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload, bool *disable_split_horizon_check)
+            bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload, bool *disable_split_horizon_check,
+            uint32_t *egr_port_group_id)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
@@ -659,6 +729,7 @@ lookup_port(uint32_t port_no,
     *arp_offload = false;
     *dhcp_offload = false;
     *disable_split_horizon_check = false;
+    *egr_port_group_id = 0;
 
     struct ind_ovs_flow_effects *effects =
         ind_ovs_fwd_pipeline_lookup(TABLE_ID_PORT, &cfr, NULL);
@@ -672,6 +743,8 @@ lookup_port(uint32_t port_no,
             *default_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
         } else if (attr->nla_type == IND_OVS_ACTION_SET_LAG_ID) {
             *lag_id = *XBUF_PAYLOAD(attr, uint32_t);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_EGR_PORT_GROUP_ID) {
+            *egr_port_group_id = *XBUF_PAYLOAD(attr, uint32_t);
         }
     }
 
@@ -817,23 +890,27 @@ static indigo_error_t
 lookup_l3_route(uint32_t hash,
                 uint32_t vrf, uint32_t ipv4_dst, bool global_vrf_allowed,
                 of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst,
-                uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap)
+                uint16_t *new_vlan_vid, uint32_t *lag_id,
+                bool *valid_next_hop, bool *cpu)
 {
     indigo_error_t ret;
 
     AIM_LOG_VERBOSE("looking up route for VRF=%u ip="FORMAT_IPV4" global_vrf_allowed=%u",
                     vrf, VALUE_IPV4((uint8_t *)&ipv4_dst), global_vrf_allowed);
 
+    *valid_next_hop = false;
+    *cpu = false;
+
     if ((ret = lookup_l3_host_route(
         hash, vrf, ipv4_dst,
-        new_eth_src, new_eth_dst, new_vlan_vid, lag_id, trap)) == 0) {
+        new_eth_src, new_eth_dst, new_vlan_vid, lag_id, valid_next_hop, cpu)) == 0) {
         AIM_LOG_VERBOSE("hit in host route table");
         return INDIGO_ERROR_NONE;
     }
 
     if ((ret = lookup_l3_cidr_route(
         hash, vrf, ipv4_dst,
-        new_eth_src, new_eth_dst, new_vlan_vid, lag_id, trap)) == 0) {
+        new_eth_src, new_eth_dst, new_vlan_vid, lag_id, valid_next_hop, cpu)) == 0) {
         AIM_LOG_VERBOSE("hit in CIDR route table");
         return INDIGO_ERROR_NONE;
     }
@@ -841,14 +918,14 @@ lookup_l3_route(uint32_t hash,
     if (global_vrf_allowed) {
         if ((ret = lookup_l3_host_route(
             hash, 0, ipv4_dst,
-            new_eth_src, new_eth_dst, new_vlan_vid, lag_id, trap)) == 0) {
+            new_eth_src, new_eth_dst, new_vlan_vid, lag_id, valid_next_hop, cpu)) == 0) {
             AIM_LOG_VERBOSE("hit in global host route table");
             return INDIGO_ERROR_NONE;
         }
 
         if ((ret = lookup_l3_cidr_route(
             hash, 0, ipv4_dst,
-            new_eth_src, new_eth_dst, new_vlan_vid, lag_id, trap)) == 0) {
+            new_eth_src, new_eth_dst, new_vlan_vid, lag_id, valid_next_hop, cpu)) == 0) {
             AIM_LOG_VERBOSE("hit in global CIDR route table");
             return INDIGO_ERROR_NONE;
         }
@@ -861,7 +938,8 @@ static indigo_error_t
 lookup_l3_host_route(uint32_t hash,
                      uint32_t vrf, uint32_t ipv4_dst,
                      of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst,
-                     uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap)
+                     uint16_t *new_vlan_vid, uint32_t *lag_id,
+                     bool *valid_next_hop, bool *cpu)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
@@ -880,12 +958,14 @@ lookup_l3_host_route(uint32_t hash,
     memset(new_eth_src, 0, sizeof(*new_eth_src));
     memset(new_eth_dst, 0, sizeof(*new_eth_dst));
     *new_vlan_vid = 0;
-    *trap = false;
+    *valid_next_hop = false;
+    *cpu = false;
 
     struct nlattr *attr;
     XBUF_FOREACH2(&effects->write_actions, attr) {
         if (attr->nla_type == IND_OVS_ACTION_GROUP) {
             group_id = *XBUF_PAYLOAD(attr, uint32_t);
+            *valid_next_hop = true;
         } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
             memcpy(new_eth_src->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
         } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_DST) {
@@ -893,7 +973,7 @@ lookup_l3_host_route(uint32_t hash,
         } else if (attr->nla_type == IND_OVS_ACTION_SET_VLAN_VID) {
             *new_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
         } else if (attr->nla_type == IND_OVS_ACTION_CONTROLLER) {
-            *trap = true;
+            *cpu = true;
         }
     }
 
@@ -919,7 +999,8 @@ static indigo_error_t
 lookup_l3_cidr_route(uint32_t hash,
                      uint32_t vrf, uint32_t ipv4_dst,
                      of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst,
-                     uint16_t *new_vlan_vid, uint32_t *lag_id, bool *trap)
+                     uint16_t *new_vlan_vid, uint32_t *lag_id,
+                     bool *valid_next_hop, bool *cpu)
 {
     struct ind_ovs_cfr cfr;
     memset(&cfr, 0, sizeof(cfr));
@@ -938,12 +1019,14 @@ lookup_l3_cidr_route(uint32_t hash,
     memset(new_eth_src, 0, sizeof(*new_eth_src));
     memset(new_eth_dst, 0, sizeof(*new_eth_dst));
     *new_vlan_vid = 0;
-    *trap = false;
+    *valid_next_hop = false;
+    *cpu = false;
 
     struct nlattr *attr;
     XBUF_FOREACH2(&effects->write_actions, attr) {
         if (attr->nla_type == IND_OVS_ACTION_GROUP) {
             group_id = *XBUF_PAYLOAD(attr, uint32_t);
+            *valid_next_hop = true;
         } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
             memcpy(new_eth_src->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
         } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_DST) {
@@ -951,7 +1034,7 @@ lookup_l3_cidr_route(uint32_t hash,
         } else if (attr->nla_type == IND_OVS_ACTION_SET_VLAN_VID) {
             *new_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
         } else if (attr->nla_type == IND_OVS_ACTION_CONTROLLER) {
-            *trap = true;
+            *cpu = true;
         }
     }
 
@@ -998,6 +1081,103 @@ lookup_debug(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *span_id, boo
     }
 
     AIM_LOG_VERBOSE("hit in debug table: span_id=0x%x cpu=%d drop=%d", *span_id, *cpu, *drop);
+}
+
+static indigo_error_t
+lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint32_t *l3_interface_class_id, of_mac_addr_t *vrouter_mac)
+{
+    *vrf = 0;
+    *l3_interface_class_id = 0;
+    memset(vrouter_mac, 0, sizeof(*vrouter_mac));
+
+    struct ind_ovs_flow_effects *effects =
+        ind_ovs_fwd_pipeline_lookup(TABLE_ID_VLAN_ACL, cfr, stats);
+    if (effects == NULL) {
+        return INDIGO_ERROR_NOT_FOUND;
+    }
+
+    struct nlattr *attr;
+    XBUF_FOREACH2(&effects->apply_actions, attr) {
+        if (attr->nla_type == IND_OVS_ACTION_SET_VRF) {
+            *vrf = *XBUF_PAYLOAD(attr, uint32_t);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_L3_INTERFACE_CLASS_ID) {
+            *l3_interface_class_id = *XBUF_PAYLOAD(attr, uint32_t);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
+            memcpy(vrouter_mac->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
+        }
+    }
+
+    return INDIGO_ERROR_NONE;
+}
+
+static void
+lookup_ingress_acl(struct ind_ovs_cfr *cfr, uint32_t hash, struct xbuf *stats,
+                   of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst,
+                   uint16_t *new_vlan_vid, uint32_t *lag_id,
+                   bool *valid_next_hop, bool *cpu, bool *drop)
+{
+    /* Assumes return value memory is initialized */
+
+    struct ind_ovs_flow_effects *effects =
+        ind_ovs_fwd_pipeline_lookup(TABLE_ID_INGRESS_ACL, cfr, stats);
+    if (effects == NULL) {
+        return;
+    }
+
+    AIM_LOG_VERBOSE("hit in ingress_acl table drop=%d", effects->deny);
+
+    if (effects->deny) {
+        *drop = effects->deny;
+    }
+
+    struct nlattr *attr;
+    uint32_t group_id = OF_GROUP_ANY;
+    XBUF_FOREACH2(&effects->write_actions, attr) {
+        if (attr->nla_type == IND_OVS_ACTION_GROUP) {
+            group_id = *XBUF_PAYLOAD(attr, uint32_t);
+            *valid_next_hop = true;
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
+            memcpy(new_eth_src->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_DST) {
+            memcpy(new_eth_dst->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_VLAN_VID) {
+            *new_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
+        } else if (attr->nla_type == IND_OVS_ACTION_CONTROLLER) {
+            *cpu = true;
+        }
+    }
+
+    if (group_id != OF_GROUP_ANY) {
+        switch (group_to_table_id(group_id)) {
+        case GROUP_TABLE_ID_LAG:
+            *lag_id = group_id;
+            break;
+        case GROUP_TABLE_ID_ECMP:
+            if (select_ecmp_route(group_id, hash, new_eth_src, new_eth_dst, new_vlan_vid, lag_id) < 0) {
+                AIM_LOG_ERROR("failed to get ecmp route from ingress_acl action");
+                return;
+            }
+            break;
+        default:
+            AIM_LOG_ERROR("unexpected group table in ingress_acl action");
+        }
+    }
+}
+
+static void
+lookup_egress_acl(struct ind_ovs_cfr *cfr, bool *drop)
+{
+    *drop = false;
+
+    struct ind_ovs_flow_effects *effects =
+        ind_ovs_fwd_pipeline_lookup(TABLE_ID_EGRESS_ACL, cfr, NULL);
+    if (effects == NULL) {
+        return;
+    }
+
+    *drop = effects->deny;
+
+    AIM_LOG_VERBOSE("hit in egress_acl table: drop=%d", *drop);
 }
 
 static uint32_t
