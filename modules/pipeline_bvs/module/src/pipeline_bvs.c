@@ -75,7 +75,7 @@ static indigo_error_t lookup_l3_route( uint32_t hash, uint32_t vrf, uint32_t ipv
 static indigo_error_t lookup_l3_host_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *valid_next_hop, bool *valid_cpu);
 static indigo_error_t lookup_l3_cidr_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *valid_next_hop, bool *valid_cpu);
 static void lookup_debug(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *span_id, bool *cpu, bool *drop);
-static indigo_error_t lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint32_t *l3_interface_clas_id, of_mac_addr_t *vrouter_mac);
+static indigo_error_t lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint32_t *l3_interface_clas_id, uint32_t *l3_src_class_id, of_mac_addr_t *vrouter_mac);
 static void lookup_ingress_acl(struct ind_ovs_cfr *cfr, uint32_t hash, struct xbuf *stats, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *valid_next_hop, bool *cpu, bool *drop);
 static void lookup_egress_acl(struct ind_ovs_cfr *cfr, bool *drop);
 static uint32_t group_to_table_id(uint32_t group_id);
@@ -139,13 +139,15 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 
     uint32_t vrf;
     uint32_t l3_interface_class_id;
+    uint32_t l3_src_class_id;
     of_mac_addr_t vrouter_mac;
     bool vlan_acl_hit = false;
     uint16_t vlan_vid = 0;
-    if (lookup_vlan_acl(&cfr, &result->stats, &vrf, &l3_interface_class_id, &vrouter_mac) == 0) {
-        AIM_LOG_VERBOSE("Hit in vlan_acl table: vrf=%u", vrf);
+    if (lookup_vlan_acl(&cfr, &result->stats, &vrf, &l3_interface_class_id, &l3_src_class_id, &vrouter_mac) == 0) {
+        AIM_LOG_VERBOSE("Hit in vlan_acl table: vrf=%u l3_interface_class_id=%u l3_src_class_id=%u", vrf, l3_interface_class_id, l3_src_class_id);
         cfr.vrf = vrf;
         cfr.l3_interface_class_id = l3_interface_class_id;
+        cfr.l3_src_class_id = l3_src_class_id;
         vlan_vid = VLAN_VID(ntohs(cfr.dl_vlan));
         vlan_acl_hit = true;
     } else {
@@ -1084,10 +1086,11 @@ lookup_debug(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *span_id, boo
 }
 
 static indigo_error_t
-lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint32_t *l3_interface_class_id, of_mac_addr_t *vrouter_mac)
+lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint32_t *l3_interface_class_id, uint32_t *l3_src_class_id, of_mac_addr_t *vrouter_mac)
 {
     *vrf = 0;
     *l3_interface_class_id = 0;
+    *l3_src_class_id = 0;
     memset(vrouter_mac, 0, sizeof(*vrouter_mac));
 
     struct ind_ovs_flow_effects *effects =
@@ -1102,6 +1105,8 @@ lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint
             *vrf = *XBUF_PAYLOAD(attr, uint32_t);
         } else if (attr->nla_type == IND_OVS_ACTION_SET_L3_INTERFACE_CLASS_ID) {
             *l3_interface_class_id = *XBUF_PAYLOAD(attr, uint32_t);
+        } else if (attr->nla_type == IND_OVS_ACTION_SET_L3_SRC_CLASS_ID) {
+            *l3_src_class_id = *XBUF_PAYLOAD(attr, uint32_t);
         } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
             memcpy(vrouter_mac->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
         }
