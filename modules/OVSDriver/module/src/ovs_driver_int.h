@@ -268,6 +268,9 @@ void ind_ovs_multicast_init(void);
 void ind_ovs_group_module_init(void);
 struct ind_ovs_group *ind_ovs_group_lookup(uint32_t id);
 
+/* Interface of the packet of death submodule */
+void ind_ovs_packet_of_death_init(void);
+
 /* Log Netlink attributes in human readable form */
 void ind_ovs_dump_nested(const struct nlattr *nla, void (*cb)(const struct nlattr *attr));
 void ind_ovs_dump_dp_attr(const struct nlattr *nla);
