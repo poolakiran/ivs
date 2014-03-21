@@ -19,6 +19,7 @@
 
 #include "pipeline_bvs_support.h"
 #include <murmur/murmur.h>
+#include <indigo/of_connection_manager.h>
 
 #define AIM_LOG_MODULE_NAME pipeline_bvs
 #include <AIM/aim_log.h>
@@ -80,14 +81,36 @@ static void lookup_ingress_acl(struct ind_ovs_cfr *cfr, uint32_t hash, struct xb
 static void lookup_egress_acl(struct ind_ovs_cfr *cfr, bool *drop);
 static uint32_t group_to_table_id(uint32_t group_id);
 
+/*
+ * Switch -> Controller async msg channel selector.
+ *
+ * For now all the async msgs (packet-in, lacp, lldp, etc.)
+ * go on aux 1, if present, else on main channel.
+ * Note - This might change as requirements change
+ */
+static void
+pipeline_bvs_cxn_async_channel_selector(const of_object_t *obj, uint32_t num_aux,
+                                        uint8_t *auxiliary_id)
+{
+    AIM_ASSERT(auxiliary_id != NULL);
+
+    if (num_aux == 0) {
+        *auxiliary_id = 0;
+    } else {
+        *auxiliary_id = 1;
+    }
+}
+
 static void
 pipeline_bvs_init(const char *name)
 {
+    indigo_cxn_async_channel_selector_register(pipeline_bvs_cxn_async_channel_selector);
 }
 
 static void
 pipeline_bvs_finish(void)
 {
+    indigo_cxn_async_channel_selector_unregister(pipeline_bvs_cxn_async_channel_selector);
 }
 
 static indigo_error_t
