@@ -57,6 +57,7 @@ enum group_table_id {
 
 static const bool flood_on_dlf = true;
 static const of_mac_addr_t slow_protocols_mac = { { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x02 } };
+static const of_mac_addr_t packet_of_death_mac = { { 0x5C, 0x16, 0xC7, 0xFF, 0xFF, 0x04 } };
 
 static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, uint32_t ingress_lag_id, of_mac_addr_t vrouter_mac, struct pipeline_result *result);
 static void process_debug(struct ind_ovs_cfr *cfr, uint32_t hash, struct pipeline_result *result, bool *drop);
@@ -66,7 +67,7 @@ static bool is_vlan_configured( uint16_t vlan_vid);
 static indigo_error_t flood_vlan( uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash, struct pipeline_result *result);
 static void mirror(uint8_t table_id, uint32_t port_no, uint32_t hash, struct pipeline_result *result);
 static void span(uint32_t span_id, uint32_t hash, struct pipeline_result *result);
-static indigo_error_t lookup_port( uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id, bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload, uint32_t *egr_port_group_id);
+static indigo_error_t lookup_port( uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id, bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload, bool *allow_packet_of_death, uint32_t *egr_port_group_id);
 static indigo_error_t lookup_vlan_xlate( uint32_t port_no, uint32_t lag_id, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t lookup_egr_vlan_xlate( uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
@@ -124,10 +125,15 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 
     mirror(TABLE_ID_INGRESS_MIRROR, cfr.in_port, hash, result);
 
+    bool packet_of_death = false;
     if (cfr.dl_type == htons(0x88cc)) {
-        AIM_LOG_VERBOSE("sending ethertype %#x directly to controller", ntohs(cfr.dl_type));
-        pktin(result, OF_PACKET_IN_REASON_ACTION);
-        return INDIGO_ERROR_NONE;
+        if (!memcmp(cfr.dl_src, packet_of_death_mac.addr, OF_MAC_ADDR_BYTES)) {
+            packet_of_death = true;
+        } else {
+            AIM_LOG_VERBOSE("sending ethertype %#x directly to controller", ntohs(cfr.dl_type));
+            pktin(result, OF_PACKET_IN_REASON_ACTION);
+            return INDIGO_ERROR_NONE;
+        }
     }
 
     if (!memcmp(cfr.dl_dst, slow_protocols_mac.addr, OF_MAC_ADDR_BYTES)) {
@@ -141,6 +147,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     bool disable_src_mac_check;
     bool arp_offload;
     bool dhcp_offload;
+    bool allow_packet_of_death;
     uint32_t egr_port_group_id;
     if (cfr.in_port == OF_PORT_DEST_LOCAL) {
         default_vlan_vid = 0;
@@ -148,15 +155,27 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
         disable_src_mac_check = true;
         arp_offload = false;
         dhcp_offload = false;
+        allow_packet_of_death = false;
         egr_port_group_id = 0;
     } else {
-        if (lookup_port(cfr.in_port, &default_vlan_vid, &lag_id, &disable_src_mac_check, &arp_offload, &dhcp_offload, &egr_port_group_id) < 0) {
+        if (lookup_port(cfr.in_port, &default_vlan_vid, &lag_id, &disable_src_mac_check, &arp_offload, &dhcp_offload, &allow_packet_of_death, &egr_port_group_id) < 0) {
             AIM_LOG_WARN("port %u not found", cfr.in_port);
             return INDIGO_ERROR_NONE;
         }
     }
 
-    AIM_LOG_VERBOSE("hit in port table lookup, default_vlan_vid=%u lag_id=%u disable_src_mac_check=%u arp_offload=%u dhcp_offload=%u", default_vlan_vid, lag_id, disable_src_mac_check, arp_offload, dhcp_offload);
+    AIM_LOG_VERBOSE("hit in port table lookup, default_vlan_vid=%u lag_id=%u disable_src_mac_check=%u arp_offload=%u dhcp_offload=%u allow_packet_of_death=%u", default_vlan_vid, lag_id, disable_src_mac_check, arp_offload, dhcp_offload, allow_packet_of_death);
+
+    if (packet_of_death) {
+        if (allow_packet_of_death) {
+            AIM_LOG_VERBOSE("sending packet of death to cpu");
+            pktin(result, OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH);
+            return INDIGO_ERROR_NONE;
+        } else {
+            AIM_LOG_VERBOSE("dropping packet of death on not-allowed port");
+            return INDIGO_ERROR_NONE;
+        }
+    }
 
     uint32_t vrf;
     uint32_t l3_interface_class_id;
@@ -311,8 +330,9 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     UNUSED bool out_disable_src_mac_check;
     UNUSED bool out_arp_offload;
     UNUSED bool out_dhcp_offload;
+    UNUSED bool out_allow_packet_of_death;
     UNUSED uint32_t out_egr_port_group_id;
-    if (lookup_port(dst_port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &egr_port_group_id) < 0) {
+    if (lookup_port(dst_port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_allow_packet_of_death, &egr_port_group_id) < 0) {
         AIM_LOG_WARN("port %u not found during egress", dst_port_no);
         return INDIGO_ERROR_NONE;
     }
@@ -417,8 +437,9 @@ process_l3(struct ind_ovs_cfr *cfr,
     UNUSED bool out_disable_src_mac_check;
     UNUSED bool out_arp_offload;
     UNUSED bool out_dhcp_offload;
+    UNUSED bool out_allow_packet_of_death;
     uint32_t out_egr_port_group_id;
-    if (lookup_port(out_port, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_egr_port_group_id) < 0) {
+    if (lookup_port(out_port, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_allow_packet_of_death, &out_egr_port_group_id) < 0) {
         AIM_LOG_WARN("port %u not found during egress", out_port);
         return INDIGO_ERROR_NONE;
     }
@@ -622,8 +643,9 @@ flood_vlan(uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash,
             bool out_disable_src_mac_check;
             bool out_arp_offload;
             bool out_dhcp_offload;
+            bool out_allow_packet_of_death;
             UNUSED uint32_t out_egr_port_group_id;
-            if (lookup_port(port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_egr_port_group_id) < 0) {
+            if (lookup_port(port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_allow_packet_of_death, &out_egr_port_group_id) < 0) {
                 AIM_LOG_WARN("port %u not found during flood", port_no);
                 continue;
             }
@@ -730,6 +752,7 @@ static indigo_error_t
 lookup_port(uint32_t port_no,
             uint16_t *default_vlan_vid, uint32_t *lag_id,
             bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload,
+            bool *allow_packet_of_death,
             uint32_t *egr_port_group_id)
 {
     struct ind_ovs_cfr cfr;
@@ -742,6 +765,7 @@ lookup_port(uint32_t port_no,
     *disable_src_mac_check = false;
     *arp_offload = false;
     *dhcp_offload = false;
+    *allow_packet_of_death = false;
     *egr_port_group_id = 0;
 
     struct ind_ovs_flow_effects *effects =
@@ -764,6 +788,7 @@ lookup_port(uint32_t port_no,
     *disable_src_mac_check = effects->disable_src_mac_check;
     *arp_offload = effects->arp_offload;
     *dhcp_offload = effects->dhcp_offload;
+    *allow_packet_of_death = effects->packet_of_death;
 
     return INDIGO_ERROR_NONE;
 }
