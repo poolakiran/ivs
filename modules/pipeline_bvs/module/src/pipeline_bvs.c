@@ -59,8 +59,8 @@ static const bool flood_on_dlf = true;
 static const of_mac_addr_t slow_protocols_mac = { { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x02 } };
 static const of_mac_addr_t packet_of_death_mac = { { 0x5C, 0x16, 0xC7, 0xFF, 0xFF, 0x04 } };
 
-static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, uint32_t ingress_lag_id, of_mac_addr_t vrouter_mac, struct pipeline_result *result);
-static void process_debug(struct ind_ovs_cfr *cfr, uint32_t hash, struct pipeline_result *result, bool *drop);
+static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, uint32_t ingress_lag_id, of_mac_addr_t vrouter_mac, uint16_t orig_vlan_vid, struct pipeline_result *result);
+static void process_debug(struct ind_ovs_cfr *cfr, uint32_t hash, uint16_t orig_vlan_vid, struct pipeline_result *result, bool *drop);
 static indigo_error_t lookup_l2( uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats, uint32_t *port_no, uint32_t *group_id);
 static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, bool *global_vrf_allowed, uint32_t *l3_interface_class_id, of_mac_addr_t *vrouter_mac);
 static bool is_vlan_configured( uint16_t vlan_vid);
@@ -122,6 +122,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     ind_ovs_key_to_cfr(key, &cfr);
 
     uint32_t hash = murmur_hash(&cfr, sizeof(cfr), 0);
+    uint16_t orig_vlan_vid = VLAN_VID(ntohs(cfr.dl_vlan));
 
     mirror(TABLE_ID_INGRESS_MIRROR, cfr.in_port, hash, result);
 
@@ -273,7 +274,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     /* Check for broadcast/multicast */
     if (cfr.dl_dst[0] & 1) {
         bool drop;
-        process_debug(&cfr, hash, result, &drop);
+        process_debug(&cfr, hash, orig_vlan_vid, result, &drop);
         if (drop) {
             return INDIGO_ERROR_NONE;
         }
@@ -286,7 +287,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 
     if (lookup_my_station(cfr.dl_dst) == 0) {
         AIM_LOG_VERBOSE("hit in MyStation table, entering L3 processing");
-        return process_l3(&cfr, hash, lag_id, vrouter_mac, result);
+        return process_l3(&cfr, hash, lag_id, vrouter_mac, orig_vlan_vid, result);
     }
 
     /* Destination lookup */
@@ -295,7 +296,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
         AIM_LOG_VERBOSE("miss in destination l2table lookup (destination lookup failure)");
 
         bool drop;
-        process_debug(&cfr, hash, result, &drop);
+        process_debug(&cfr, hash, orig_vlan_vid, result, &drop);
         if (drop) {
             return INDIGO_ERROR_NONE;
         }
@@ -313,7 +314,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     AIM_LOG_VERBOSE("hit in destination l2table lookup, dst_port_no=%u dst_group_id=%u", dst_port_no, dst_group_id);
 
     bool drop;
-    process_debug(&cfr, hash, result, &drop);
+    process_debug(&cfr, hash, orig_vlan_vid, result, &drop);
     if (drop) {
         return INDIGO_ERROR_NONE;
     }
@@ -372,6 +373,7 @@ process_l3(struct ind_ovs_cfr *cfr,
            uint32_t hash,
            uint32_t ingress_lag_id,
            of_mac_addr_t vrouter_mac,
+           uint16_t orig_vlan_vid,
            struct pipeline_result *result)
 {
     UNUSED of_mac_addr_t new_eth_src;
@@ -388,7 +390,7 @@ process_l3(struct ind_ovs_cfr *cfr,
                     &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id,
                     &valid_next_hop, &cpu);
 
-    process_debug(cfr, hash, result, &drop);
+    process_debug(cfr, hash, orig_vlan_vid, result, &drop);
     if (drop) {
         return INDIGO_ERROR_NONE;
     }
@@ -475,6 +477,7 @@ process_l3(struct ind_ovs_cfr *cfr,
 static void
 process_debug(struct ind_ovs_cfr *cfr,
               uint32_t hash,
+              uint16_t orig_vlan_vid,
               struct pipeline_result *result,
               bool *drop)
 {
@@ -484,7 +487,9 @@ process_debug(struct ind_ovs_cfr *cfr,
     lookup_debug(cfr, &result->stats, &span_id, &cpu, drop);
 
     if (span_id != OF_GROUP_ANY) {
+        set_vlan_vid(result, orig_vlan_vid);
         span(span_id, hash, result);
+        set_vlan_vid(result, VLAN_VID(ntohs(cfr->dl_vlan)));
     }
 
     if (cpu) {
