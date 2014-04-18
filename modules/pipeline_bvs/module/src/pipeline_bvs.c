@@ -59,7 +59,7 @@ static const bool flood_on_dlf = true;
 static const of_mac_addr_t slow_protocols_mac = { { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x02 } };
 static const of_mac_addr_t packet_of_death_mac = { { 0x5C, 0x16, 0xC7, 0xFF, 0xFF, 0x04 } };
 
-static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, uint32_t ingress_lag_id, of_mac_addr_t vrouter_mac, uint16_t orig_vlan_vid, struct pipeline_result *result);
+static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, uint32_t ingress_lag_id, of_mac_addr_t vrouter_mac, uint16_t orig_vlan_vid, uint8_t ttl, struct pipeline_result *result);
 static void process_debug(struct ind_ovs_cfr *cfr, uint32_t hash, uint16_t orig_vlan_vid, struct pipeline_result *result, bool *drop);
 static indigo_error_t lookup_l2( uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats, uint32_t *port_no, uint32_t *group_id);
 static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, bool *global_vrf_allowed, uint32_t *l3_interface_class_id, of_mac_addr_t *vrouter_mac);
@@ -287,7 +287,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 
     if (lookup_my_station(cfr.dl_dst) == 0) {
         AIM_LOG_VERBOSE("hit in MyStation table, entering L3 processing");
-        return process_l3(&cfr, hash, lag_id, vrouter_mac, orig_vlan_vid, result);
+        return process_l3(&cfr, hash, lag_id, vrouter_mac, orig_vlan_vid, key->ipv4.ipv4_ttl, result);
     }
 
     /* Destination lookup */
@@ -374,6 +374,7 @@ process_l3(struct ind_ovs_cfr *cfr,
            uint32_t ingress_lag_id,
            of_mac_addr_t vrouter_mac,
            uint16_t orig_vlan_vid,
+           uint8_t ttl,
            struct pipeline_result *result)
 {
     UNUSED of_mac_addr_t new_eth_src;
@@ -384,7 +385,10 @@ process_l3(struct ind_ovs_cfr *cfr,
     bool valid_next_hop;
     bool drop;
 
-    check_nw_ttl(result);
+    if (ttl <= 1) {
+        pktin(result, OF_PACKET_IN_REASON_INVALID_TTL);
+        return INDIGO_ERROR_NONE;
+    }
 
     lookup_l3_route(hash, cfr->vrf, cfr->nw_dst, cfr->global_vrf_allowed,
                     &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id,
