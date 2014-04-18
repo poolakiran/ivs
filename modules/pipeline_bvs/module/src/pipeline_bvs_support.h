@@ -33,10 +33,11 @@
 #define UNUSED __attribute__((unused))
 
 static void
-pktin(struct pipeline_result *result, uint8_t reason)
+pktin(struct pipeline_result *result, uint8_t reason, uint64_t metadata)
 {
+    uint64_t userdata = IVS_PKTIN_USERDATA(reason, metadata);
     xbuf_append_attr(&result->actions, IND_OVS_ACTION_CONTROLLER,
-                     &reason, sizeof(reason));
+                     &userdata, sizeof(userdata));
 }
 
 static void

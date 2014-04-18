@@ -132,14 +132,14 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
             packet_of_death = true;
         } else {
             AIM_LOG_VERBOSE("sending ethertype %#x directly to controller", ntohs(cfr.dl_type));
-            pktin(result, OF_PACKET_IN_REASON_ACTION);
+            pktin(result, OF_PACKET_IN_REASON_ACTION, 0);
             return INDIGO_ERROR_NONE;
         }
     }
 
     if (!memcmp(cfr.dl_dst, slow_protocols_mac.addr, OF_MAC_ADDR_BYTES)) {
         AIM_LOG_VERBOSE("sending slow protocols packet directly to controller");
-        pktin(result, OF_PACKET_IN_REASON_ACTION);
+        pktin(result, OF_PACKET_IN_REASON_ACTION, 0);
         return INDIGO_ERROR_NONE;
     }
 
@@ -170,7 +170,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     if (packet_of_death) {
         if (allow_packet_of_death) {
             AIM_LOG_VERBOSE("sending packet of death to cpu");
-            pktin(result, OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH);
+            pktin(result, OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH, 0);
             return INDIGO_ERROR_NONE;
         } else {
             AIM_LOG_VERBOSE("dropping packet of death on not-allowed port");
@@ -211,7 +211,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     /* Generate packet-in if packet received on unconfigured VLAN */
     if (is_vlan_configured(vlan_vid) == false) {
         AIM_LOG_VERBOSE("Packet received on unconfigured vlan %u (bad VLAN)", vlan_vid);
-        pktin(result, OF_PACKET_IN_REASON_BSN_BAD_VLAN);
+        pktin(result, OF_PACKET_IN_REASON_BSN_BAD_VLAN, 0);
         return INDIGO_ERROR_NONE;
     }
 
@@ -237,7 +237,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
         uint32_t src_port_no, src_group_id;
         if (lookup_l2(vlan_vid, cfr.dl_src, &result->stats, &src_port_no, &src_group_id) < 0) {
             AIM_LOG_VERBOSE("miss in source l2table lookup (new host)");
-            pktin(result, OF_PACKET_IN_REASON_BSN_NEW_HOST);
+            pktin(result, OF_PACKET_IN_REASON_BSN_NEW_HOST, 0);
             return INDIGO_ERROR_NONE;
         }
 
@@ -245,11 +245,11 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 
         if (src_port_no != OF_PORT_DEST_NONE && src_port_no != cfr.in_port) {
             AIM_LOG_VERBOSE("incorrect port in source l2table lookup (station move)");
-            pktin(result, OF_PACKET_IN_REASON_BSN_STATION_MOVE);
+            pktin(result, OF_PACKET_IN_REASON_BSN_STATION_MOVE, 0);
             return INDIGO_ERROR_NONE;
         } else if (src_group_id != OF_GROUP_ANY && src_group_id != lag_id) {
             AIM_LOG_VERBOSE("incorrect lag_id in source l2table lookup (station move)");
-            pktin(result, OF_PACKET_IN_REASON_BSN_STATION_MOVE);
+            pktin(result, OF_PACKET_IN_REASON_BSN_STATION_MOVE, 0);
             return INDIGO_ERROR_NONE;
         }
     }
@@ -257,7 +257,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     /* ARP offload */
     if (arp_offload) {
         if (cfr.dl_type == htons(0x0806)) {
-            pktin(result, OF_PACKET_IN_REASON_BSN_ARP);
+            pktin(result, OF_PACKET_IN_REASON_BSN_ARP, 0);
             /* Continue forwarding packet */
         }
     }
@@ -266,7 +266,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     if (dhcp_offload) {
         if (cfr.dl_type == htons(0x0800) && cfr.nw_proto == 17 &&
                 (cfr.tp_dst == htons(67) || cfr.tp_dst == htons(68))) {
-            pktin(result, OF_PACKET_IN_REASON_BSN_DHCP);
+            pktin(result, OF_PACKET_IN_REASON_BSN_DHCP, 0);
             return INDIGO_ERROR_NONE;
         }
     }
@@ -306,7 +306,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
                 AIM_LOG_WARN("missing VLAN entry for vlan %u", vlan_vid);
             }
         } else {
-            pktin(result, OF_PACKET_IN_REASON_BSN_DESTINATION_LOOKUP_FAILURE);
+            pktin(result, OF_PACKET_IN_REASON_BSN_DESTINATION_LOOKUP_FAILURE, 0);
         }
         return INDIGO_ERROR_NONE;
     }
@@ -386,7 +386,7 @@ process_l3(struct ind_ovs_cfr *cfr,
     bool drop;
 
     if (ttl <= 1) {
-        pktin(result, OF_PACKET_IN_REASON_INVALID_TTL);
+        pktin(result, OF_PACKET_IN_REASON_INVALID_TTL, 0);
         return INDIGO_ERROR_NONE;
     }
 
@@ -403,7 +403,7 @@ process_l3(struct ind_ovs_cfr *cfr,
 
     if (cpu) {
         AIM_LOG_VERBOSE("L3 copy to CPU");
-        pktin(result, OF_PACKET_IN_REASON_ACTION);
+        pktin(result, OF_PACKET_IN_REASON_ACTION, 0);
     }
 
     if (drop) {
@@ -413,7 +413,7 @@ process_l3(struct ind_ovs_cfr *cfr,
     if (!valid_next_hop) {
         AIM_LOG_VERBOSE("no route to host");
         if (!cpu) {
-            pktin(result, OF_PACKET_IN_REASON_BSN_NO_ROUTE);
+            pktin(result, OF_PACKET_IN_REASON_BSN_NO_ROUTE, 0);
         }
         return INDIGO_ERROR_NONE;
     }
@@ -497,7 +497,7 @@ process_debug(struct ind_ovs_cfr *cfr,
     }
 
     if (cpu) {
-        pktin(result, OF_PACKET_IN_REASON_BSN_DEBUG);
+        pktin(result, OF_PACKET_IN_REASON_BSN_DEBUG, 0);
     }
 }
 
