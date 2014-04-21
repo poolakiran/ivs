@@ -230,6 +230,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     if (is_vlan_configured(vlan_vid) == false) {
         AIM_LOG_VERBOSE("Packet received on unconfigured vlan %u (bad VLAN)", vlan_vid);
         mark_drop(&ctx);
+        return INDIGO_ERROR_NONE;
     }
 
     UNUSED bool in_port_tagged;
@@ -239,9 +240,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     if (check_vlan(vlan_vid, cfr.in_port, &in_port_tagged, &vrf, &global_vrf_allowed, &vlan_l3_interface_class_id, &vlan_vrouter_mac) < 0) {
         AIM_LOG_VERBOSE("port %u not allowed on vlan %u", cfr.in_port, vlan_vid);
         mark_drop(&ctx);
-        global_vrf_allowed = false;
-        vlan_l3_interface_class_id = 0;
-        memset(&vlan_vrouter_mac.addr, 0, sizeof(vlan_vrouter_mac));
+        return INDIGO_ERROR_NONE;
     }
 
     if (!vlan_acl_hit) {
