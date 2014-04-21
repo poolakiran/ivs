@@ -191,10 +191,10 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
         if (allow_packet_of_death) {
             AIM_LOG_VERBOSE("sending packet of death to cpu");
             pktin(result, OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH, 0);
-            return INDIGO_ERROR_NONE;
         } else {
             AIM_LOG_VERBOSE("ignoring packet of death on not-allowed port");
         }
+        return INDIGO_ERROR_NONE;
     }
 
     uint32_t vrf;
