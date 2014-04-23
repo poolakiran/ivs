@@ -1307,22 +1307,7 @@ static void
 process_pktin(struct ctx *ctx, struct pipeline_result *result)
 {
     if (ctx->pktin_agent || ctx->pktin_controller) {
-        uint8_t reason;
-        if (ctx->pktin_metadata & OFP_BSN_PKTIN_FLAG_STATION_MOVE) {
-            reason = OF_PACKET_IN_REASON_BSN_STATION_MOVE;
-        } else if (ctx->pktin_metadata & OFP_BSN_PKTIN_FLAG_NEW_HOST) {
-            reason = OF_PACKET_IN_REASON_BSN_NEW_HOST;
-        } else if (ctx->pktin_metadata & OFP_BSN_PKTIN_FLAG_L3_MISS) {
-            reason = OF_PACKET_IN_REASON_BSN_NO_ROUTE;
-        } else if (ctx->pktin_metadata & OFP_BSN_PKTIN_FLAG_ARP) {
-            reason = OF_PACKET_IN_REASON_BSN_ARP;
-        } else if (ctx->pktin_metadata & OFP_BSN_PKTIN_FLAG_TTL_EXPIRED) {
-            reason = OF_PACKET_IN_REASON_INVALID_TTL;
-        } else if (ctx->pktin_metadata & OFP_BSN_PKTIN_FLAG_DEBUG) {
-            reason = OF_PACKET_IN_REASON_BSN_DEBUG;
-        } else {
-            reason = OF_PACKET_IN_REASON_ACTION;
-        }
+        uint8_t reason = ctx->pktin_controller ? OF_PACKET_IN_REASON_ACTION : OF_PACKET_IN_REASON_NO_MATCH;
         pktin(result, reason, ctx->pktin_metadata);
     }
 }
