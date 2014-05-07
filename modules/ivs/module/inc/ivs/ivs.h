@@ -192,6 +192,8 @@ struct ind_ovs_flow_effects *ind_ovs_fwd_pipeline_lookup(int table_id, struct in
 indigo_error_t ind_ovs_group_select(uint32_t id, uint32_t hash, struct xbuf **actions);
 indigo_error_t ind_ovs_group_indirect(uint32_t id, struct xbuf **actions);
 void ind_ovs_kflow_invalidate_all(void);
+void ind_ovs_fwd_write_lock();
+void ind_ovs_fwd_write_unlock();
 
 /* Translate an OVS key into a CFR */
 void ind_ovs_key_to_cfr(const struct ind_ovs_parsed_key *pkey, struct ind_ovs_cfr *cfr);

@@ -108,7 +108,10 @@ pipeline_bvs_table_l2_entry_create(
                     entry->key.vlan_vid, &entry->key.mac,
                     entry->value.lag_id);
 
+    ind_ovs_fwd_write_lock();
     l2_hashtable_insert(l2_hashtable, entry);
+    ind_ovs_fwd_write_unlock();
+
     *entry_priv = entry;
     ind_ovs_kflow_invalidate_all();
     return INDIGO_ERROR_NONE;
@@ -128,7 +131,10 @@ pipeline_bvs_table_l2_entry_modify(
         return rv;
     }
 
+    ind_ovs_fwd_write_lock();
     entry->value = value;
+    ind_ovs_fwd_write_unlock();
+
     ind_ovs_kflow_invalidate_all();
     return INDIGO_ERROR_NONE;
 }
@@ -139,7 +145,11 @@ pipeline_bvs_table_l2_entry_delete(
     indigo_fi_flow_stats_t *flow_stats)
 {
     struct l2_entry *entry = entry_priv;
+
+    ind_ovs_fwd_write_lock();
     bighash_remove(l2_hashtable, &entry->hash_entry);
+    ind_ovs_fwd_write_unlock();
+
     ind_ovs_kflow_invalidate_all();
     flow_stats->packets = entry->stats.packets;
     flow_stats->bytes = entry->stats.bytes;
