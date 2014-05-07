@@ -17,7 +17,7 @@
  *
  ****************************************************************/
 
-#include "pipeline_bvs_support.h"
+#include "pipeline_bvs_int.h"
 #include <murmur/murmur.h>
 #include <indigo/of_connection_manager.h>
 
