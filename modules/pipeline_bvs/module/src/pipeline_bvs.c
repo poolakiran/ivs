@@ -76,12 +76,14 @@ static void
 pipeline_bvs_init(const char *name)
 {
     indigo_cxn_async_channel_selector_register(pipeline_bvs_cxn_async_channel_selector);
+    pipeline_bvs_table_l2_register();
 }
 
 static void
 pipeline_bvs_finish(void)
 {
     indigo_cxn_async_channel_selector_unregister(pipeline_bvs_cxn_async_channel_selector);
+    pipeline_bvs_table_l2_unregister();
 }
 
 static indigo_error_t

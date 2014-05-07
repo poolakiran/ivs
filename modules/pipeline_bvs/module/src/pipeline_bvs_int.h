@@ -31,6 +31,7 @@
 #include <pipeline/pipeline.h>
 #include <murmur/murmur.h>
 #include <indigo/of_connection_manager.h>
+#include <indigo/of_state_manager.h>
 
 #define AIM_LOG_MODULE_NAME pipeline_bvs
 #include <AIM/aim_log.h>
@@ -72,6 +73,14 @@ struct ctx {
     bool pktin_controller;
     uint64_t pktin_metadata;
 };
+
+
+/* Table interfaces */
+void pipeline_bvs_table_l2_register(void);
+void pipeline_bvs_table_l2_unregister(void);
+
+
+/* IVS action emitters */
 
 static inline void
 pktin(struct pipeline_result *result, uint8_t reason, uint64_t metadata)
