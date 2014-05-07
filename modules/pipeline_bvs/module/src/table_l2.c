@@ -19,12 +19,97 @@
 
 #include "pipeline_bvs_int.h"
 
+#define TEMPLATE_NAME l2_hashtable
+#define TEMPLATE_OBJ_TYPE struct l2_entry
+#define TEMPLATE_KEY_FIELD key
+#define TEMPLATE_ENTRY_FIELD hash_entry
+#include <BigHash/bighash_template.h>
+
+static bighash_table_t *l2_hashtable;
+static const of_match_fields_t required_mask = {
+    .vlan_vid = 0xffff,
+    .eth_dst = { { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff } },
+};
+
+static indigo_error_t
+parse_key(of_flow_add_t *obj, struct l2_key *key)
+{
+    of_match_t match;
+    if (of_flow_add_match_get(obj, &match) < 0) {
+        return INDIGO_ERROR_UNKNOWN;
+    }
+    if (memcmp(&match.masks, &required_mask, sizeof(of_match_fields_t))) {
+        return INDIGO_ERROR_COMPAT;
+    }
+    key->vlan_vid = match.fields.vlan_vid & 0xfff;
+    key->mac = match.fields.eth_dst;
+    return INDIGO_ERROR_NONE;
+}
+
+static indigo_error_t
+parse_value(of_flow_add_t *obj, struct l2_value *value)
+{
+    int rv;
+    of_list_instruction_t insts;
+    of_instruction_t inst;
+    of_flow_add_instructions_bind(obj, &insts);
+
+    value->lag_id = OF_GROUP_ANY;
+
+    OF_LIST_INSTRUCTION_ITER(&insts, &inst, rv) {
+        switch (inst.header.object_id) {
+        case OF_INSTRUCTION_APPLY_ACTIONS: {
+            of_list_action_t actions;
+            of_instruction_apply_actions_actions_bind(&inst.apply_actions, &actions);
+            of_action_t act;
+            int rv;
+            OF_LIST_ACTION_ITER(&actions, &act, rv) {
+                switch (act.header.object_id) {
+                case OF_ACTION_GROUP:
+                    of_action_group_group_id_get(&act.group, &value->lag_id);
+                    break;
+                default:
+                    AIM_LOG_WARN("Unexpected action %s in L2 table", of_object_id_str[act.header.object_id]);
+                    break;
+                }
+            }
+            break;
+        }
+        default:
+            AIM_LOG_WARN("Unexpected instruction %s in L2 table", of_object_id_str[inst.header.object_id]);
+            break;
+        }
+    }
+
+    return INDIGO_ERROR_NONE;
+}
+
 static indigo_error_t
 pipeline_bvs_table_l2_entry_create(
     void *table_priv, indigo_cxn_id_t cxn_id, of_flow_add_t *obj,
     indigo_cookie_t flow_id, void **entry_priv)
 {
-    *entry_priv = NULL;
+    indigo_error_t rv;
+    struct l2_entry *entry = aim_zmalloc(sizeof(*entry));
+
+    rv = parse_key(obj, &entry->key);
+    if (rv < 0) {
+        aim_free(entry);
+        return rv;
+    }
+
+    rv = parse_value(obj, &entry->value);
+    if (rv < 0) {
+        aim_free(entry);
+        return rv;
+    }
+
+    AIM_LOG_VERBOSE("Create L2 entry vlan=%u, mac=%{mac} -> lag %u",
+                    entry->key.vlan_vid, &entry->key.mac,
+                    entry->value.lag_id);
+
+    l2_hashtable_insert(l2_hashtable, entry);
+    *entry_priv = entry;
     return INDIGO_ERROR_NONE;
 }
 
@@ -33,6 +118,14 @@ pipeline_bvs_table_l2_entry_modify(
     void *table_priv, indigo_cxn_id_t cxn_id, void *entry_priv,
     of_flow_modify_strict_t *obj)
 {
+    indigo_error_t rv;
+    struct l2_entry *entry = entry_priv;
+
+    rv = parse_value(obj, &entry->value);
+    if (rv < 0) {
+        return rv;
+    }
+
     return INDIGO_ERROR_NONE;
 }
 
@@ -41,6 +134,9 @@ pipeline_bvs_table_l2_entry_delete(
     void *table_priv, indigo_cxn_id_t cxn_id, void *entry_priv,
     indigo_fi_flow_stats_t *flow_stats)
 {
+    struct l2_entry *entry = entry_priv;
+    bighash_remove(l2_hashtable, &entry->hash_entry);
+    aim_free(entry);
     return INDIGO_ERROR_NONE;
 }
 
@@ -57,7 +153,10 @@ pipeline_bvs_table_l2_entry_hit_status_get(
     void *table_priv, indigo_cxn_id_t cxn_id, void *entry_priv,
     bool *hit_status)
 {
-    return INDIGO_ERROR_NOT_SUPPORTED;
+    struct l2_entry *entry = entry_priv;
+    *hit_status = entry->hit_status;
+    entry->hit_status = false;
+    return INDIGO_ERROR_NONE;
 }
 
 static const indigo_core_table_ops_t table_ops = {
@@ -71,6 +170,7 @@ static const indigo_core_table_ops_t table_ops = {
 void
 pipeline_bvs_table_l2_register(void)
 {
+    l2_hashtable = bighash_table_create(128 * 1024);
     indigo_core_table_register(TABLE_ID_L2, "l2", &table_ops, NULL);
 }
 
@@ -78,4 +178,5 @@ void
 pipeline_bvs_table_l2_unregister(void)
 {
     indigo_core_table_unregister(TABLE_ID_L2);
+    bighash_table_destroy(l2_hashtable, NULL);
 }

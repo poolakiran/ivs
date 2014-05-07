@@ -32,6 +32,8 @@
 #include <murmur/murmur.h>
 #include <indigo/of_connection_manager.h>
 #include <indigo/of_state_manager.h>
+#include <BigHash/bighash.h>
+#include <AIM/aim_list.h>
 
 #define AIM_LOG_MODULE_NAME pipeline_bvs
 #include <AIM/aim_log.h>
@@ -76,6 +78,26 @@ struct ctx {
 
 
 /* Table interfaces */
+
+/* L2 table */
+
+struct l2_key {
+    uint16_t vlan_vid;
+    of_mac_addr_t mac;
+};
+AIM_STATIC_ASSERT(L2_KEY_SIZE, sizeof(struct l2_key) == 8);
+
+struct l2_value {
+    uint32_t lag_id;
+};
+
+struct l2_entry {
+    bighash_entry_t hash_entry;
+    struct l2_key key;
+    struct l2_value value;
+    bool hit_status;
+};
+
 void pipeline_bvs_table_l2_register(void);
 void pipeline_bvs_table_l2_unregister(void);
 
