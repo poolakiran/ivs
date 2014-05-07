@@ -110,6 +110,7 @@ pipeline_bvs_table_l2_entry_create(
 
     l2_hashtable_insert(l2_hashtable, entry);
     *entry_priv = entry;
+    ind_ovs_kflow_invalidate_all();
     return INDIGO_ERROR_NONE;
 }
 
@@ -128,6 +129,7 @@ pipeline_bvs_table_l2_entry_modify(
     }
 
     entry->value = value;
+    ind_ovs_kflow_invalidate_all();
     return INDIGO_ERROR_NONE;
 }
 
@@ -138,6 +140,7 @@ pipeline_bvs_table_l2_entry_delete(
 {
     struct l2_entry *entry = entry_priv;
     bighash_remove(l2_hashtable, &entry->hash_entry);
+    ind_ovs_kflow_invalidate_all();
     flow_stats->packets = entry->stats.packets;
     flow_stats->bytes = entry->stats.bytes;
     aim_free(entry);
