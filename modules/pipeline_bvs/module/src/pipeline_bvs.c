@@ -18,49 +18,8 @@
  ****************************************************************/
 
 #include "pipeline_bvs_int.h"
-#include <murmur/murmur.h>
-#include <indigo/of_connection_manager.h>
-
-#define AIM_LOG_MODULE_NAME pipeline_bvs
-#include <AIM/aim_log.h>
 
 AIM_LOG_STRUCT_DEFINE(AIM_LOG_OPTIONS_DEFAULT, AIM_LOG_BITS_DEFAULT, NULL, 0);
-
-#define FORMAT_MAC "%02x:%02x:%02x:%02x:%02x:%02x"
-#define VALUE_MAC(a) (a)[0],(a)[1],(a)[2],(a)[3],(a)[4],(a)[5]
-#define FORMAT_IPV4 "%hhu.%hhu.%hhu.%hhu"
-#define VALUE_IPV4(a) (a)[0],(a)[1],(a)[2],(a)[3]
-
-enum table_id {
-    TABLE_ID_L2 = 0,
-    TABLE_ID_VLAN = 1,
-    TABLE_ID_PORT = 2,
-    TABLE_ID_VLAN_XLATE = 3,
-    TABLE_ID_EGR_VLAN_XLATE = 4,
-    TABLE_ID_MY_STATION = 5,
-    TABLE_ID_L3_HOST_ROUTE = 6,
-    TABLE_ID_L3_CIDR_ROUTE = 7,
-    TABLE_ID_FLOOD = 11,
-    TABLE_ID_INGRESS_ACL = 12,
-    TABLE_ID_DEBUG = 15,
-    TABLE_ID_INGRESS_MIRROR = 16,
-    TABLE_ID_EGRESS_MIRROR = 17,
-    TABLE_ID_EGRESS_ACL = 18,
-    TABLE_ID_VLAN_ACL = 19,
-};
-
-enum group_table_id {
-    GROUP_TABLE_ID_LAG = 0,
-    GROUP_TABLE_ID_ECMP = 1,
-    GROUP_TABLE_ID_SPAN = 2,
-};
-
-struct ctx {
-    bool drop;
-    bool pktin_agent;
-    bool pktin_controller;
-    uint64_t pktin_metadata;
-};
 
 static const bool flood_on_dlf = true;
 static const of_mac_addr_t slow_protocols_mac = { { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x02 } };
