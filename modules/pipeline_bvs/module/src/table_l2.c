@@ -120,12 +120,14 @@ pipeline_bvs_table_l2_entry_modify(
 {
     indigo_error_t rv;
     struct l2_entry *entry = entry_priv;
+    struct l2_value value;
 
-    rv = parse_value(obj, &entry->value);
+    rv = parse_value(obj, &value);
     if (rv < 0) {
         return rv;
     }
 
+    entry->value = value;
     return INDIGO_ERROR_NONE;
 }
 
