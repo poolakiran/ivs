@@ -530,7 +530,11 @@ process_debug(struct ind_ovs_cfr *cfr,
     lookup_debug(cfr, &result->stats, &span_id, &cpu, &drop);
 
     if (span_id != OF_GROUP_ANY) {
-        set_vlan_vid(result, orig_vlan_vid);
+        if (orig_vlan_vid != 0) {
+            set_vlan_vid(result, orig_vlan_vid);
+        } else {
+            pop_vlan(result);
+        }
         span(span_id, hash, result);
         set_vlan_vid(result, VLAN_VID(ntohs(cfr->dl_vlan)));
     }
