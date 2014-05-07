@@ -136,6 +136,8 @@ pipeline_bvs_table_l2_entry_delete(
 {
     struct l2_entry *entry = entry_priv;
     bighash_remove(l2_hashtable, &entry->hash_entry);
+    flow_stats->packets = entry->stats.packets;
+    flow_stats->bytes = entry->stats.bytes;
     aim_free(entry);
     return INDIGO_ERROR_NONE;
 }
@@ -145,7 +147,10 @@ pipeline_bvs_table_l2_entry_stats_get(
     void *table_priv, indigo_cxn_id_t cxn_id, void *entry_priv,
     indigo_fi_flow_stats_t *flow_stats)
 {
-    return INDIGO_ERROR_NOT_SUPPORTED;
+    struct l2_entry *entry = entry_priv;
+    flow_stats->packets = entry->stats.packets;
+    flow_stats->bytes = entry->stats.bytes;
+    return INDIGO_ERROR_NONE;
 }
 
 static indigo_error_t
@@ -154,8 +159,12 @@ pipeline_bvs_table_l2_entry_hit_status_get(
     bool *hit_status)
 {
     struct l2_entry *entry = entry_priv;
-    *hit_status = entry->hit_status;
-    entry->hit_status = false;
+    if (entry->stats.packets != entry->last_hit_check_packets) {
+        entry->last_hit_check_packets = entry->stats.packets;
+        *hit_status = true;
+    } else {
+        *hit_status = false;
+    }
     return INDIGO_ERROR_NONE;
 }
 

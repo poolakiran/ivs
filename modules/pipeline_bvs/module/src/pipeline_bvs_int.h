@@ -95,7 +95,8 @@ struct l2_entry {
     bighash_entry_t hash_entry;
     struct l2_key key;
     struct l2_value value;
-    bool hit_status;
+    struct ind_ovs_flow_stats stats;
+    uint64_t last_hit_check_packets;
 };
 
 void pipeline_bvs_table_l2_register(void);

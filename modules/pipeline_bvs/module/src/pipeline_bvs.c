@@ -521,6 +521,10 @@ lookup_l2(uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats,
         return INDIGO_ERROR_NOT_FOUND;
     }
 
+    if (stats != NULL) {
+        xbuf_append_ptr(stats, &entry->stats);
+    }
+
     *group_id = entry->value.lag_id;
     return INDIGO_ERROR_NONE;
 }
