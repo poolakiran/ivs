@@ -180,3 +180,18 @@ pipeline_bvs_table_l2_unregister(void)
     indigo_core_table_unregister(TABLE_ID_L2);
     bighash_table_destroy(l2_hashtable, NULL);
 }
+
+struct l2_entry *
+pipeline_bvs_table_l2_lookup(const struct l2_key *key)
+{
+    struct l2_entry *entry = l2_hashtable_first(l2_hashtable, key);
+    if (entry) {
+        AIM_LOG_VERBOSE("Hit L2 entry vlan=%u, mac=%{mac} -> lag %u",
+                        entry->key.vlan_vid, &entry->key.mac,
+                        entry->value.lag_id);
+    } else {
+        AIM_LOG_VERBOSE("Miss L2 entry vlan=%u, mac=%{mac}",
+                        key->vlan_vid, &key->mac);
+    }
+    return entry;
+}

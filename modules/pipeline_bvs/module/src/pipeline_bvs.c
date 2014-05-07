@@ -509,30 +509,19 @@ static indigo_error_t
 lookup_l2(uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats,
           uint32_t *port_no, uint32_t *group_id)
 {
-    struct ind_ovs_cfr cfr;
-    memset(&cfr, 0, sizeof(cfr));
+    struct l2_key key;
+    key.vlan_vid = VLAN_VID(vlan_vid);
+    memcpy(&key.mac.addr, eth_addr, OF_MAC_ADDR_BYTES);
 
     *port_no = OF_PORT_DEST_NONE;
     *group_id = OF_GROUP_ANY;
 
-    cfr.dl_vlan = htons(VLAN_TCI(vlan_vid, 0) | VLAN_CFI_BIT);
-    memcpy(&cfr.dl_dst, eth_addr, sizeof(cfr.dl_dst));
-
-    struct ind_ovs_flow_effects *effects =
-        ind_ovs_fwd_pipeline_lookup(TABLE_ID_L2, &cfr, stats);
-    if (effects == NULL) {
+    struct l2_entry *entry = pipeline_bvs_table_l2_lookup(&key);
+    if (entry == NULL) {
         return INDIGO_ERROR_NOT_FOUND;
     }
 
-    struct nlattr *attr;
-    XBUF_FOREACH2(&effects->apply_actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_OUTPUT) {
-            *port_no = *XBUF_PAYLOAD(attr, uint32_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_GROUP) {
-            *group_id = *XBUF_PAYLOAD(attr, uint32_t);
-        }
-    }
-
+    *group_id = entry->value.lag_id;
     return INDIGO_ERROR_NONE;
 }
 
