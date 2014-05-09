@@ -36,6 +36,7 @@
 #include <AIM/aim_list.h>
 
 #include "table_l2.h"
+#include "table_l3_host_route.h"
 
 #define AIM_LOG_MODULE_NAME pipeline_bvs
 #include <AIM/aim_log.h>
@@ -141,6 +142,15 @@ dec_nw_ttl(struct pipeline_result *result)
 {
     xbuf_append_attr(&result->actions, IND_OVS_ACTION_DEC_NW_TTL,
                      NULL, 0);
+}
+
+
+/* Utility functions */
+
+static inline uint32_t
+group_to_table_id(uint32_t group_id)
+{
+    return group_id >> 24;
 }
 
 #endif
