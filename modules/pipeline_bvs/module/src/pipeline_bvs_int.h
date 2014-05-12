@@ -35,6 +35,8 @@
 #include <BigHash/bighash.h>
 #include <AIM/aim_list.h>
 
+#include "table_l2.h"
+
 #define AIM_LOG_MODULE_NAME pipeline_bvs
 #include <AIM/aim_log.h>
 
@@ -75,34 +77,6 @@ struct ctx {
     bool pktin_controller;
     uint64_t pktin_metadata;
 };
-
-
-/* Table interfaces */
-
-/* L2 table */
-
-struct l2_key {
-    uint16_t vlan_vid;
-    of_mac_addr_t mac;
-};
-AIM_STATIC_ASSERT(L2_KEY_SIZE, sizeof(struct l2_key) == 8);
-
-struct l2_value {
-    uint32_t lag_id;
-};
-
-struct l2_entry {
-    bighash_entry_t hash_entry;
-    struct l2_key key;
-    struct l2_value value;
-    struct ind_ovs_flow_stats stats;
-    uint64_t last_hit_check_packets;
-};
-
-void pipeline_bvs_table_l2_register(void);
-void pipeline_bvs_table_l2_unregister(void);
-struct l2_entry *pipeline_bvs_table_l2_lookup(const struct l2_key *key);
-
 
 /* IVS action emitters */
 
