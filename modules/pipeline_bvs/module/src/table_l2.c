@@ -41,7 +41,7 @@ parse_key(of_flow_add_t *obj, struct l2_key *key)
     if (memcmp(&match.masks, &required_mask, sizeof(of_match_fields_t))) {
         return INDIGO_ERROR_COMPAT;
     }
-    key->vlan_vid = match.fields.vlan_vid & 0xfff;
+    key->vlan_vid = match.fields.vlan_vid & ~VLAN_CFI_BIT;
     key->mac = match.fields.eth_dst;
     return INDIGO_ERROR_NONE;
 }
