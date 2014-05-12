@@ -17,50 +17,9 @@
  *
  ****************************************************************/
 
-#include "pipeline_bvs_support.h"
-#include <murmur/murmur.h>
-#include <indigo/of_connection_manager.h>
-
-#define AIM_LOG_MODULE_NAME pipeline_bvs
-#include <AIM/aim_log.h>
+#include "pipeline_bvs_int.h"
 
 AIM_LOG_STRUCT_DEFINE(AIM_LOG_OPTIONS_DEFAULT, AIM_LOG_BITS_DEFAULT, NULL, 0);
-
-#define FORMAT_MAC "%02x:%02x:%02x:%02x:%02x:%02x"
-#define VALUE_MAC(a) (a)[0],(a)[1],(a)[2],(a)[3],(a)[4],(a)[5]
-#define FORMAT_IPV4 "%hhu.%hhu.%hhu.%hhu"
-#define VALUE_IPV4(a) (a)[0],(a)[1],(a)[2],(a)[3]
-
-enum table_id {
-    TABLE_ID_L2 = 0,
-    TABLE_ID_VLAN = 1,
-    TABLE_ID_PORT = 2,
-    TABLE_ID_VLAN_XLATE = 3,
-    TABLE_ID_EGR_VLAN_XLATE = 4,
-    TABLE_ID_MY_STATION = 5,
-    TABLE_ID_L3_HOST_ROUTE = 6,
-    TABLE_ID_L3_CIDR_ROUTE = 7,
-    TABLE_ID_FLOOD = 11,
-    TABLE_ID_INGRESS_ACL = 12,
-    TABLE_ID_DEBUG = 15,
-    TABLE_ID_INGRESS_MIRROR = 16,
-    TABLE_ID_EGRESS_MIRROR = 17,
-    TABLE_ID_EGRESS_ACL = 18,
-    TABLE_ID_VLAN_ACL = 19,
-};
-
-enum group_table_id {
-    GROUP_TABLE_ID_LAG = 0,
-    GROUP_TABLE_ID_ECMP = 1,
-    GROUP_TABLE_ID_SPAN = 2,
-};
-
-struct ctx {
-    bool drop;
-    bool pktin_agent;
-    bool pktin_controller;
-    uint64_t pktin_metadata;
-};
 
 static const bool flood_on_dlf = true;
 static const of_mac_addr_t slow_protocols_mac = { { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x02 } };
@@ -117,12 +76,14 @@ static void
 pipeline_bvs_init(const char *name)
 {
     indigo_cxn_async_channel_selector_register(pipeline_bvs_cxn_async_channel_selector);
+    pipeline_bvs_table_l2_register();
 }
 
 static void
 pipeline_bvs_finish(void)
 {
     indigo_cxn_async_channel_selector_unregister(pipeline_bvs_cxn_async_channel_selector);
+    pipeline_bvs_table_l2_unregister();
 }
 
 static indigo_error_t
@@ -552,30 +513,23 @@ static indigo_error_t
 lookup_l2(uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats,
           uint32_t *port_no, uint32_t *group_id)
 {
-    struct ind_ovs_cfr cfr;
-    memset(&cfr, 0, sizeof(cfr));
+    struct l2_key key;
+    key.vlan_vid = VLAN_VID(vlan_vid);
+    memcpy(&key.mac.addr, eth_addr, OF_MAC_ADDR_BYTES);
 
     *port_no = OF_PORT_DEST_NONE;
     *group_id = OF_GROUP_ANY;
 
-    cfr.dl_vlan = htons(VLAN_TCI(vlan_vid, 0) | VLAN_CFI_BIT);
-    memcpy(&cfr.dl_dst, eth_addr, sizeof(cfr.dl_dst));
-
-    struct ind_ovs_flow_effects *effects =
-        ind_ovs_fwd_pipeline_lookup(TABLE_ID_L2, &cfr, stats);
-    if (effects == NULL) {
+    struct l2_entry *entry = pipeline_bvs_table_l2_lookup(&key);
+    if (entry == NULL) {
         return INDIGO_ERROR_NOT_FOUND;
     }
 
-    struct nlattr *attr;
-    XBUF_FOREACH2(&effects->apply_actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_OUTPUT) {
-            *port_no = *XBUF_PAYLOAD(attr, uint32_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_GROUP) {
-            *group_id = *XBUF_PAYLOAD(attr, uint32_t);
-        }
+    if (stats != NULL) {
+        xbuf_append_ptr(stats, &entry->stats);
     }
 
+    *group_id = entry->value.lag_id;
     return INDIGO_ERROR_NONE;
 }
 
