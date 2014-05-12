@@ -52,10 +52,9 @@ parse_value(of_flow_add_t *obj, struct l2_value *value)
     int rv;
     of_list_instruction_t insts;
     of_instruction_t inst;
+    bool seen_lag_id = false;
+
     of_flow_add_instructions_bind(obj, &insts);
-
-    value->lag_id = OF_GROUP_ANY;
-
     OF_LIST_INSTRUCTION_ITER(&insts, &inst, rv) {
         switch (inst.header.object_id) {
         case OF_INSTRUCTION_APPLY_ACTIONS: {
@@ -67,6 +66,7 @@ parse_value(of_flow_add_t *obj, struct l2_value *value)
                 switch (act.header.object_id) {
                 case OF_ACTION_GROUP:
                     of_action_group_group_id_get(&act.group, &value->lag_id);
+                    seen_lag_id = true;
                     break;
                 default:
                     AIM_LOG_WARN("Unexpected action %s in L2 table", of_object_id_str[act.header.object_id]);
@@ -79,6 +79,11 @@ parse_value(of_flow_add_t *obj, struct l2_value *value)
             AIM_LOG_WARN("Unexpected instruction %s in L2 table", of_object_id_str[inst.header.object_id]);
             break;
         }
+    }
+
+    if (!seen_lag_id) {
+        AIM_LOG_WARN("Missing required instruction in L2 table");
+        return INDIGO_ERROR_COMPAT;
     }
 
     return INDIGO_ERROR_NONE;
