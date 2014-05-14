@@ -76,6 +76,7 @@ static void
 pipeline_bvs_init(const char *name)
 {
     indigo_cxn_async_channel_selector_register(pipeline_bvs_cxn_async_channel_selector);
+    pipeline_bvs_table_vlan_xlate_register();
     pipeline_bvs_table_l2_register();
     pipeline_bvs_table_l3_host_route_register();
 }
@@ -84,6 +85,7 @@ static void
 pipeline_bvs_finish(void)
 {
     indigo_cxn_async_channel_selector_unregister(pipeline_bvs_cxn_async_channel_selector);
+    pipeline_bvs_table_vlan_xlate_unregister();
     pipeline_bvs_table_l2_unregister();
     pipeline_bvs_table_l3_host_route_unregister();
 }
@@ -808,28 +810,20 @@ lookup_port(uint32_t port_no,
 static indigo_error_t
 lookup_vlan_xlate(uint32_t port_no, uint32_t lag_id, uint16_t vlan_vid, uint16_t *new_vlan_vid)
 {
-    struct ind_ovs_cfr cfr;
-    memset(&cfr, 0, sizeof(cfr));
+    struct vlan_xlate_key key = {
+        .lag_id = lag_id,
+        .vlan_vid = vlan_vid,
+        .pad = 0
+    };
 
-    cfr.in_port = port_no;
-    cfr.lag_id = lag_id;
-    cfr.dl_vlan = htons(VLAN_TCI(vlan_vid, 0) | VLAN_CFI_BIT);
-
-    struct ind_ovs_flow_effects *effects =
-        ind_ovs_fwd_pipeline_lookup(TABLE_ID_VLAN_XLATE, &cfr, NULL);
-    if (effects == NULL) {
+    struct vlan_xlate_entry *entry = pipeline_bvs_table_vlan_xlate_lookup(&key);
+    if (entry == NULL) {
         return INDIGO_ERROR_NOT_FOUND;
     }
 
-    struct nlattr *attr;
-    XBUF_FOREACH2(&effects->apply_actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_SET_VLAN_VID) {
-            *new_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
-            return INDIGO_ERROR_NONE;
-        }
-    }
+    *new_vlan_vid = entry->value.new_vlan_vid;
 
-    return INDIGO_ERROR_PARAM;
+    return INDIGO_ERROR_NONE;
 }
 
 static indigo_error_t
