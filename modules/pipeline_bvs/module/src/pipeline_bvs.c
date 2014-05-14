@@ -32,6 +32,7 @@ static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tag
 static bool is_vlan_configured( uint16_t vlan_vid);
 static indigo_error_t flood_vlan( uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash, struct pipeline_result *result);
 static void mirror(uint8_t table_id, uint32_t port_no, uint32_t hash, struct pipeline_result *result);
+static void ingress_mirror(uint32_t port_no, uint32_t hash, struct pipeline_result *result);
 static void span(uint32_t span_id, uint32_t hash, struct pipeline_result *result);
 static indigo_error_t lookup_port( uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id, bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload, bool *allow_packet_of_death, uint32_t *egr_port_group_id);
 static indigo_error_t lookup_vlan_xlate( uint32_t port_no, uint32_t lag_id, uint16_t vlan_vid, uint16_t *new_vlan_vid);
@@ -80,6 +81,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_egr_vlan_xlate_register();
     pipeline_bvs_table_l2_register();
     pipeline_bvs_table_l3_host_route_register();
+    pipeline_bvs_table_ingress_mirror_register();
 }
 
 static void
@@ -90,6 +92,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_egr_vlan_xlate_unregister();
     pipeline_bvs_table_l2_unregister();
     pipeline_bvs_table_l3_host_route_unregister();
+    pipeline_bvs_table_ingress_mirror_unregister();
 }
 
 static indigo_error_t
@@ -105,7 +108,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     uint32_t hash = murmur_hash(&cfr, sizeof(cfr), 0);
     uint16_t orig_vlan_vid = VLAN_VID(ntohs(cfr.dl_vlan));
 
-    mirror(TABLE_ID_INGRESS_MIRROR, cfr.in_port, hash, result);
+    ingress_mirror(cfr.in_port, hash, result);
 
     bool packet_of_death = false;
     if (cfr.dl_type == htons(0x88cc)) {
@@ -731,6 +734,17 @@ mirror(uint8_t table_id, uint32_t port_no, uint32_t hash,
     }
 
     span(span_group_id, hash, result);
+}
+
+static void
+ingress_mirror(uint32_t port_no, uint32_t hash, struct pipeline_result *result)
+{
+    struct ingress_mirror_key key = { .in_port = port_no };
+
+    struct ingress_mirror_entry *entry = pipeline_bvs_table_ingress_mirror_lookup(&key);
+    if (entry != NULL) {
+        span(entry->value.span_id, hash, result);
+    }
 }
 
 static void
