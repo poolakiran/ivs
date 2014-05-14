@@ -31,8 +31,8 @@ static indigo_error_t lookup_l2( uint16_t vlan_vid, const uint8_t *eth_addr, str
 static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, bool *global_vrf_allowed, uint32_t *l3_interface_class_id, of_mac_addr_t *vrouter_mac);
 static bool is_vlan_configured( uint16_t vlan_vid);
 static indigo_error_t flood_vlan( uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash, struct pipeline_result *result);
-static void mirror(uint8_t table_id, uint32_t port_no, uint32_t hash, struct pipeline_result *result);
 static void ingress_mirror(uint32_t port_no, uint32_t hash, struct pipeline_result *result);
+static void egress_mirror(uint32_t port_no, uint32_t hash, struct pipeline_result *result);
 static void span(uint32_t span_id, uint32_t hash, struct pipeline_result *result);
 static indigo_error_t lookup_port( uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id, bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload, bool *allow_packet_of_death, uint32_t *egr_port_group_id);
 static indigo_error_t lookup_vlan_xlate( uint32_t port_no, uint32_t lag_id, uint16_t vlan_vid, uint16_t *new_vlan_vid);
@@ -82,6 +82,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_l2_register();
     pipeline_bvs_table_l3_host_route_register();
     pipeline_bvs_table_ingress_mirror_register();
+    pipeline_bvs_table_egress_mirror_register();
 }
 
 static void
@@ -93,6 +94,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_l2_unregister();
     pipeline_bvs_table_l3_host_route_unregister();
     pipeline_bvs_table_ingress_mirror_unregister();
+    pipeline_bvs_table_egress_mirror_register();
 }
 
 static indigo_error_t
@@ -358,7 +360,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
         }
     }
 
-    mirror(TABLE_ID_EGRESS_MIRROR, dst_port_no, hash, result);
+    egress_mirror(dst_port_no, hash, result);
     output(result, dst_port_no);
     return INDIGO_ERROR_NONE;
 }
@@ -482,7 +484,7 @@ process_l3(struct ind_ovs_cfr *cfr,
     }
     set_eth_dst(result, new_eth_dst);
     dec_nw_ttl(result);
-    mirror(TABLE_ID_EGRESS_MIRROR, out_port, hash, result);
+    egress_mirror(out_port, hash, result);
     output(result, out_port);
     return INDIGO_ERROR_NONE;
 }
@@ -695,7 +697,7 @@ flood_vlan(uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash,
                 tag = new_tag;
             }
 
-            mirror(TABLE_ID_EGRESS_MIRROR, port_no, hash, result);
+            egress_mirror(port_no, hash, result);
             output(result, port_no);
         }
     }
@@ -704,44 +706,22 @@ flood_vlan(uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash,
 }
 
 static void
-mirror(uint8_t table_id, uint32_t port_no, uint32_t hash,
-       struct pipeline_result *result)
-{
-    struct ind_ovs_cfr cfr;
-    memset(&cfr, 0, sizeof(cfr));
-
-    cfr.in_port = port_no;
-
-    struct ind_ovs_flow_effects *effects =
-        ind_ovs_fwd_pipeline_lookup(table_id, &cfr, NULL);
-    if (effects == NULL) {
-        return;
-    }
-
-    AIM_LOG_VERBOSE("Hit in mirror table for port %d", port_no);
-
-    uint32_t span_group_id = OF_GROUP_ANY;
-    struct nlattr *attr;
-    XBUF_FOREACH2(&effects->apply_actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_GROUP) {
-            span_group_id = *XBUF_PAYLOAD(attr, uint32_t);
-        }
-    }
-
-    if (span_group_id == OF_GROUP_ANY) {
-        AIM_LOG_ERROR("No span group action");
-        return;
-    }
-
-    span(span_group_id, hash, result);
-}
-
-static void
 ingress_mirror(uint32_t port_no, uint32_t hash, struct pipeline_result *result)
 {
     struct ingress_mirror_key key = { .in_port = port_no };
 
     struct ingress_mirror_entry *entry = pipeline_bvs_table_ingress_mirror_lookup(&key);
+    if (entry != NULL) {
+        span(entry->value.span_id, hash, result);
+    }
+}
+
+static void
+egress_mirror(uint32_t port_no, uint32_t hash, struct pipeline_result *result)
+{
+    struct egress_mirror_key key = { .out_port = port_no };
+
+    struct egress_mirror_entry *entry = pipeline_bvs_table_egress_mirror_lookup(&key);
     if (entry != NULL) {
         span(entry->value.span_id, hash, result);
     }

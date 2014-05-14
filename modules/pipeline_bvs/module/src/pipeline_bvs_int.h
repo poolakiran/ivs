@@ -40,6 +40,7 @@
 #include "table_l2.h"
 #include "table_l3_host_route.h"
 #include "table_ingress_mirror.h"
+#include "table_egress_mirror.h"
 
 #define AIM_LOG_MODULE_NAME pipeline_bvs
 #include <AIM/aim_log.h>
