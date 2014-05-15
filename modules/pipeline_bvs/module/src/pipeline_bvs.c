@@ -77,6 +77,7 @@ static void
 pipeline_bvs_init(const char *name)
 {
     indigo_cxn_async_channel_selector_register(pipeline_bvs_cxn_async_channel_selector);
+    pipeline_bvs_table_port_register();
     pipeline_bvs_table_vlan_xlate_register();
     pipeline_bvs_table_egr_vlan_xlate_register();
     pipeline_bvs_table_l2_register();
@@ -89,6 +90,7 @@ static void
 pipeline_bvs_finish(void)
 {
     indigo_cxn_async_channel_selector_unregister(pipeline_bvs_cxn_async_channel_selector);
+    pipeline_bvs_table_port_unregister();
     pipeline_bvs_table_vlan_xlate_unregister();
     pipeline_bvs_table_egr_vlan_xlate_unregister();
     pipeline_bvs_table_l2_unregister();
@@ -765,40 +767,20 @@ lookup_port(uint32_t port_no,
             bool *allow_packet_of_death,
             uint32_t *egr_port_group_id)
 {
-    struct ind_ovs_cfr cfr;
-    memset(&cfr, 0, sizeof(cfr));
+    struct port_key key = { .port = port_no };
 
-    cfr.in_port = port_no;
-
-    *default_vlan_vid = 0;
-    *lag_id = OF_GROUP_ANY;
-    *disable_src_mac_check = false;
-    *arp_offload = false;
-    *dhcp_offload = false;
-    *allow_packet_of_death = false;
-    *egr_port_group_id = 0;
-
-    struct ind_ovs_flow_effects *effects =
-        ind_ovs_fwd_pipeline_lookup(TABLE_ID_PORT, &cfr, NULL);
-    if (effects == NULL) {
+    struct port_entry *entry = pipeline_bvs_table_port_lookup(&key);
+    if (entry == NULL) {
         return INDIGO_ERROR_NOT_FOUND;
     }
 
-    struct nlattr *attr;
-    XBUF_FOREACH2(&effects->apply_actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_SET_VLAN_VID) {
-            *default_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_LAG_ID) {
-            *lag_id = *XBUF_PAYLOAD(attr, uint32_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_EGR_PORT_GROUP_ID) {
-            *egr_port_group_id = *XBUF_PAYLOAD(attr, uint32_t);
-        }
-    }
-
-    *disable_src_mac_check = effects->disable_src_mac_check;
-    *arp_offload = effects->arp_offload;
-    *dhcp_offload = effects->dhcp_offload;
-    *allow_packet_of_death = effects->packet_of_death;
+    *default_vlan_vid = entry->value.default_vlan_vid;
+    *lag_id = entry->value.lag_id;
+    *disable_src_mac_check = entry->value.disable_src_mac_check;
+    *arp_offload = entry->value.arp_offload;
+    *dhcp_offload = entry->value.dhcp_offload;
+    *allow_packet_of_death = entry->value.packet_of_death;
+    *egr_port_group_id = entry->value.egr_port_group_id;
 
     return INDIGO_ERROR_NONE;
 }
