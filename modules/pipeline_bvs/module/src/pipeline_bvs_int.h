@@ -38,6 +38,7 @@
 #include "table_port.h"
 #include "table_vlan_xlate.h"
 #include "table_egr_vlan_xlate.h"
+#include "table_vlan.h"
 #include "table_l2.h"
 #include "table_l3_host_route.h"
 #include "table_ingress_mirror.h"

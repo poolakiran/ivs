@@ -80,6 +80,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_port_register();
     pipeline_bvs_table_vlan_xlate_register();
     pipeline_bvs_table_egr_vlan_xlate_register();
+    pipeline_bvs_table_vlan_register();
     pipeline_bvs_table_l2_register();
     pipeline_bvs_table_l3_host_route_register();
     pipeline_bvs_table_ingress_mirror_register();
@@ -93,6 +94,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_port_unregister();
     pipeline_bvs_table_vlan_xlate_unregister();
     pipeline_bvs_table_egr_vlan_xlate_unregister();
+    pipeline_bvs_table_vlan_unregister();
     pipeline_bvs_table_l2_unregister();
     pipeline_bvs_table_l3_host_route_unregister();
     pipeline_bvs_table_ingress_mirror_unregister();
@@ -549,18 +551,8 @@ lookup_l2(uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats,
 static bool
 is_vlan_configured(uint16_t vlan_vid)
 {
-    struct ind_ovs_cfr cfr;
-    memset(&cfr, 0, sizeof(cfr));
-
-    cfr.dl_vlan = htons(VLAN_TCI(vlan_vid, 0) | VLAN_CFI_BIT);
-
-    struct ind_ovs_flow_effects *effects =
-        ind_ovs_fwd_pipeline_lookup(TABLE_ID_VLAN, &cfr, NULL);
-    if (effects != NULL) {
-        return true;
-    }
-
-    return false;
+    struct vlan_key key = { .vlan_vid = vlan_vid & ~VLAN_CFI_BIT };
+    return pipeline_bvs_table_vlan_lookup(&key) != NULL;
 }
 
 static indigo_error_t
@@ -568,40 +560,22 @@ check_vlan(uint16_t vlan_vid, uint32_t in_port,
            bool *tagged, uint32_t *vrf, bool *global_vrf_allowed,
            uint32_t *l3_interface_class_id, of_mac_addr_t *vrouter_mac)
 {
-    struct ind_ovs_cfr cfr;
-    memset(&cfr, 0, sizeof(cfr));
-
-    cfr.dl_vlan = htons(VLAN_TCI(vlan_vid, 0) | VLAN_CFI_BIT);
-
-    struct ind_ovs_flow_effects *effects =
-        ind_ovs_fwd_pipeline_lookup(TABLE_ID_VLAN, &cfr, NULL);
-    if (effects == NULL) {
+    struct vlan_key key = { .vlan_vid = vlan_vid & ~VLAN_CFI_BIT};
+    struct vlan_entry *entry = pipeline_bvs_table_vlan_lookup(&key);
+    if (entry == NULL) {
         return INDIGO_ERROR_NOT_FOUND;
     }
 
-    *tagged = true;
-    *vrf = 0;
+    *vrf = entry->value.vrf;
+    *l3_interface_class_id = entry->value.l3_interface_class_id;
     *global_vrf_allowed = false;
-    *l3_interface_class_id = 0;
     memset(vrouter_mac, 0, sizeof(*vrouter_mac));
 
-    struct nlattr *attr;
-    XBUF_FOREACH2(&effects->apply_actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_OUTPUT) {
-            uint32_t port_no = *XBUF_PAYLOAD(attr, uint32_t);
-            if (port_no == in_port) {
-                return INDIGO_ERROR_NONE;
-            }
-        } else if (attr->nla_type == IND_OVS_ACTION_POP_VLAN) {
-            *tagged = false;
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_VRF) {
-            *vrf = *XBUF_PAYLOAD(attr, uint32_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_GLOBAL_VRF_ALLOWED) {
-            *global_vrf_allowed = *XBUF_PAYLOAD(attr, uint8_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_L3_INTERFACE_CLASS_ID) {
-            *l3_interface_class_id = *XBUF_PAYLOAD(attr, uint32_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
-            memcpy(vrouter_mac->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
+    int i;
+    for (i = 0; i < entry->value.num_ports; i++) {
+        if (entry->value.ports[i] == in_port) {
+            *tagged = i < entry->value.num_tagged_ports;
+            return INDIGO_ERROR_NONE;
         }
     }
 
