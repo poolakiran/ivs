@@ -191,7 +191,7 @@ pipeline_bvs_table_vlan_entry_stats_get(
     void *table_priv, indigo_cxn_id_t cxn_id, void *entry_priv,
     indigo_fi_flow_stats_t *flow_stats)
 {
-    return INDIGO_ERROR_NOT_SUPPORTED;
+    return INDIGO_ERROR_NONE;
 }
 
 static indigo_error_t
