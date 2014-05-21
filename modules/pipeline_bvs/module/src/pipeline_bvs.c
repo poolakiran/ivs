@@ -77,10 +77,13 @@ static void
 pipeline_bvs_init(const char *name)
 {
     indigo_cxn_async_channel_selector_register(pipeline_bvs_cxn_async_channel_selector);
+    pipeline_bvs_table_port_register();
     pipeline_bvs_table_vlan_xlate_register();
     pipeline_bvs_table_egr_vlan_xlate_register();
+    pipeline_bvs_table_vlan_register();
     pipeline_bvs_table_l2_register();
     pipeline_bvs_table_l3_host_route_register();
+    pipeline_bvs_table_flood_register();
     pipeline_bvs_table_ingress_mirror_register();
     pipeline_bvs_table_egress_mirror_register();
 }
@@ -89,10 +92,13 @@ static void
 pipeline_bvs_finish(void)
 {
     indigo_cxn_async_channel_selector_unregister(pipeline_bvs_cxn_async_channel_selector);
+    pipeline_bvs_table_port_unregister();
     pipeline_bvs_table_vlan_xlate_unregister();
     pipeline_bvs_table_egr_vlan_xlate_unregister();
+    pipeline_bvs_table_vlan_unregister();
     pipeline_bvs_table_l2_unregister();
     pipeline_bvs_table_l3_host_route_unregister();
+    pipeline_bvs_table_flood_unregister();
     pipeline_bvs_table_ingress_mirror_unregister();
     pipeline_bvs_table_egress_mirror_unregister();
 }
@@ -547,18 +553,8 @@ lookup_l2(uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats,
 static bool
 is_vlan_configured(uint16_t vlan_vid)
 {
-    struct ind_ovs_cfr cfr;
-    memset(&cfr, 0, sizeof(cfr));
-
-    cfr.dl_vlan = htons(VLAN_TCI(vlan_vid, 0) | VLAN_CFI_BIT);
-
-    struct ind_ovs_flow_effects *effects =
-        ind_ovs_fwd_pipeline_lookup(TABLE_ID_VLAN, &cfr, NULL);
-    if (effects != NULL) {
-        return true;
-    }
-
-    return false;
+    struct vlan_key key = { .vlan_vid = vlan_vid & ~VLAN_CFI_BIT };
+    return pipeline_bvs_table_vlan_lookup(&key) != NULL;
 }
 
 static indigo_error_t
@@ -566,40 +562,22 @@ check_vlan(uint16_t vlan_vid, uint32_t in_port,
            bool *tagged, uint32_t *vrf, bool *global_vrf_allowed,
            uint32_t *l3_interface_class_id, of_mac_addr_t *vrouter_mac)
 {
-    struct ind_ovs_cfr cfr;
-    memset(&cfr, 0, sizeof(cfr));
-
-    cfr.dl_vlan = htons(VLAN_TCI(vlan_vid, 0) | VLAN_CFI_BIT);
-
-    struct ind_ovs_flow_effects *effects =
-        ind_ovs_fwd_pipeline_lookup(TABLE_ID_VLAN, &cfr, NULL);
-    if (effects == NULL) {
+    struct vlan_key key = { .vlan_vid = vlan_vid & ~VLAN_CFI_BIT};
+    struct vlan_entry *entry = pipeline_bvs_table_vlan_lookup(&key);
+    if (entry == NULL) {
         return INDIGO_ERROR_NOT_FOUND;
     }
 
-    *tagged = true;
-    *vrf = 0;
+    *vrf = entry->value.vrf;
+    *l3_interface_class_id = entry->value.l3_interface_class_id;
     *global_vrf_allowed = false;
-    *l3_interface_class_id = 0;
     memset(vrouter_mac, 0, sizeof(*vrouter_mac));
 
-    struct nlattr *attr;
-    XBUF_FOREACH2(&effects->apply_actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_OUTPUT) {
-            uint32_t port_no = *XBUF_PAYLOAD(attr, uint32_t);
-            if (port_no == in_port) {
-                return INDIGO_ERROR_NONE;
-            }
-        } else if (attr->nla_type == IND_OVS_ACTION_POP_VLAN) {
-            *tagged = false;
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_VRF) {
-            *vrf = *XBUF_PAYLOAD(attr, uint32_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_GLOBAL_VRF_ALLOWED) {
-            *global_vrf_allowed = *XBUF_PAYLOAD(attr, uint8_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_L3_INTERFACE_CLASS_ID) {
-            *l3_interface_class_id = *XBUF_PAYLOAD(attr, uint32_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
-            memcpy(vrouter_mac->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
+    int i;
+    for (i = 0; i < entry->value.num_ports; i++) {
+        if (entry->value.ports[i] == in_port) {
+            *tagged = i < entry->value.num_tagged_ports;
+            return INDIGO_ERROR_NONE;
         }
     }
 
@@ -615,91 +593,79 @@ static indigo_error_t
 flood_vlan(uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash,
            struct pipeline_result *result)
 {
-    struct ind_ovs_cfr cfr;
-    memset(&cfr, 0, sizeof(cfr));
-
-    cfr.lag_id = lag_id;
-
-    struct ind_ovs_flow_effects *effects =
-        ind_ovs_fwd_pipeline_lookup(TABLE_ID_FLOOD, &cfr, NULL);
-    if (effects == NULL) {
+    struct flood_key key = { .lag_id = lag_id };
+    struct flood_entry *entry = pipeline_bvs_table_flood_lookup(&key);
+    if (entry == NULL) {
         return INDIGO_ERROR_NOT_FOUND;
     }
 
     uint16_t tag = vlan_vid;
-    struct nlattr *attr;
-    XBUF_FOREACH2(&effects->apply_actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_OUTPUT ||
-                attr->nla_type == IND_OVS_ACTION_GROUP) {
-            uint32_t port_no;
+    int i;
+    for (i = 0; i < entry->value.num_lag_ids; i++) {
+        uint32_t group_id = entry->value.lag_ids[i];
+        uint32_t port_no;
 
-            if (attr->nla_type == IND_OVS_ACTION_OUTPUT) {
-                port_no = *XBUF_PAYLOAD(attr, uint32_t);
-            } else {
-                uint32_t group_id = *XBUF_PAYLOAD(attr, uint32_t);
-                if (select_lag_port(group_id, hash, &port_no) < 0) {
-                    AIM_LOG_VERBOSE("LAG %u is empty", group_id);
-                    continue;
-                }
-                AIM_LOG_VERBOSE("selected LAG %u port %u", group_id, port_no);
-            }
-
-            bool tagged;
-            UNUSED bool out_global_vrf_allowed;
-            UNUSED uint32_t out_vrf;
-            UNUSED uint32_t out_l3_interface_class_id;
-            UNUSED of_mac_addr_t out_vrouter_mac;
-            if (check_vlan(vlan_vid, port_no, &tagged, &out_vrf, &out_global_vrf_allowed, &out_l3_interface_class_id, &out_vrouter_mac) < 0) {
-                AIM_LOG_VERBOSE("not flooding vlan %u to port %u", vlan_vid, port_no);
-                continue;
-            }
-
-            if (port_no == in_port) {
-                AIM_LOG_VERBOSE("not flooding vlan %u to ingress port %u", vlan_vid, port_no);
-                continue;
-            }
-
-            uint16_t out_default_vlan_vid;
-            uint32_t out_lag_id;
-            bool out_disable_src_mac_check;
-            bool out_arp_offload;
-            bool out_dhcp_offload;
-            bool out_allow_packet_of_death;
-            UNUSED uint32_t out_egr_port_group_id;
-            if (lookup_port(port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_allow_packet_of_death, &out_egr_port_group_id) < 0) {
-                AIM_LOG_WARN("port %u not found during flood", port_no);
-                continue;
-            }
-
-            if (out_lag_id != OF_GROUP_ANY && out_lag_id == lag_id) {
-                AIM_LOG_VERBOSE("skipping ingress LAG %u", lag_id);
-                continue;
-            }
-
-            uint16_t new_tag;
-            if (tagged) {
-                if (lookup_egr_vlan_xlate(port_no, vlan_vid, &new_tag) < 0) {
-                    new_tag = vlan_vid;
-                }
-            } else {
-                new_tag = 0;
-            }
-
-            if (new_tag != tag) {
-                if (new_tag == 0) {
-                    pop_vlan(result);
-                } else {
-                    if (tag == 0) {
-                        push_vlan(result, 0x8100);
-                    }
-                    set_vlan_vid(result, new_tag);
-                }
-                tag = new_tag;
-            }
-
-            egress_mirror(port_no, hash, result);
-            output(result, port_no);
+        if (select_lag_port(group_id, hash, &port_no) < 0) {
+            AIM_LOG_VERBOSE("LAG %u is empty", group_id);
+            continue;
         }
+        AIM_LOG_VERBOSE("selected LAG %u port %u", group_id, port_no);
+
+        bool tagged;
+        UNUSED bool out_global_vrf_allowed;
+        UNUSED uint32_t out_vrf;
+        UNUSED uint32_t out_l3_interface_class_id;
+        UNUSED of_mac_addr_t out_vrouter_mac;
+        if (check_vlan(vlan_vid, port_no, &tagged, &out_vrf, &out_global_vrf_allowed, &out_l3_interface_class_id, &out_vrouter_mac) < 0) {
+            AIM_LOG_VERBOSE("not flooding vlan %u to port %u", vlan_vid, port_no);
+            continue;
+        }
+
+        if (port_no == in_port) {
+            AIM_LOG_VERBOSE("not flooding vlan %u to ingress port %u", vlan_vid, port_no);
+            continue;
+        }
+
+        uint16_t out_default_vlan_vid;
+        uint32_t out_lag_id;
+        bool out_disable_src_mac_check;
+        bool out_arp_offload;
+        bool out_dhcp_offload;
+        bool out_allow_packet_of_death;
+        UNUSED uint32_t out_egr_port_group_id;
+        if (lookup_port(port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_allow_packet_of_death, &out_egr_port_group_id) < 0) {
+            AIM_LOG_WARN("port %u not found during flood", port_no);
+            continue;
+        }
+
+        if (out_lag_id != OF_GROUP_ANY && out_lag_id == lag_id) {
+            AIM_LOG_VERBOSE("skipping ingress LAG %u", lag_id);
+            continue;
+        }
+
+        uint16_t new_tag;
+        if (tagged) {
+            if (lookup_egr_vlan_xlate(port_no, vlan_vid, &new_tag) < 0) {
+                new_tag = vlan_vid;
+            }
+        } else {
+            new_tag = 0;
+        }
+
+        if (new_tag != tag) {
+            if (new_tag == 0) {
+                pop_vlan(result);
+            } else {
+                if (tag == 0) {
+                    push_vlan(result, 0x8100);
+                }
+                set_vlan_vid(result, new_tag);
+            }
+            tag = new_tag;
+        }
+
+        egress_mirror(port_no, hash, result);
+        output(result, port_no);
     }
 
     return INDIGO_ERROR_NONE;
@@ -765,40 +731,20 @@ lookup_port(uint32_t port_no,
             bool *allow_packet_of_death,
             uint32_t *egr_port_group_id)
 {
-    struct ind_ovs_cfr cfr;
-    memset(&cfr, 0, sizeof(cfr));
+    struct port_key key = { .port = port_no };
 
-    cfr.in_port = port_no;
-
-    *default_vlan_vid = 0;
-    *lag_id = OF_GROUP_ANY;
-    *disable_src_mac_check = false;
-    *arp_offload = false;
-    *dhcp_offload = false;
-    *allow_packet_of_death = false;
-    *egr_port_group_id = 0;
-
-    struct ind_ovs_flow_effects *effects =
-        ind_ovs_fwd_pipeline_lookup(TABLE_ID_PORT, &cfr, NULL);
-    if (effects == NULL) {
+    struct port_entry *entry = pipeline_bvs_table_port_lookup(&key);
+    if (entry == NULL) {
         return INDIGO_ERROR_NOT_FOUND;
     }
 
-    struct nlattr *attr;
-    XBUF_FOREACH2(&effects->apply_actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_SET_VLAN_VID) {
-            *default_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_LAG_ID) {
-            *lag_id = *XBUF_PAYLOAD(attr, uint32_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_EGR_PORT_GROUP_ID) {
-            *egr_port_group_id = *XBUF_PAYLOAD(attr, uint32_t);
-        }
-    }
-
-    *disable_src_mac_check = effects->disable_src_mac_check;
-    *arp_offload = effects->arp_offload;
-    *dhcp_offload = effects->dhcp_offload;
-    *allow_packet_of_death = effects->packet_of_death;
+    *default_vlan_vid = entry->value.default_vlan_vid;
+    *lag_id = entry->value.lag_id;
+    *disable_src_mac_check = entry->value.disable_src_mac_check;
+    *arp_offload = entry->value.arp_offload;
+    *dhcp_offload = entry->value.dhcp_offload;
+    *allow_packet_of_death = entry->value.packet_of_death;
+    *egr_port_group_id = entry->value.egr_port_group_id;
 
     return INDIGO_ERROR_NONE;
 }
