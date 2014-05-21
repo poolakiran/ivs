@@ -83,6 +83,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_l3_host_route_register();
     pipeline_bvs_table_ingress_mirror_register();
     pipeline_bvs_table_egress_mirror_register();
+    pipeline_bvs_table_qos_weight_register();
 }
 
 static void
@@ -95,6 +96,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_l3_host_route_unregister();
     pipeline_bvs_table_ingress_mirror_unregister();
     pipeline_bvs_table_egress_mirror_unregister();
+    pipeline_bvs_table_qos_weight_unregister();
 }
 
 static indigo_error_t
