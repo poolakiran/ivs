@@ -42,6 +42,7 @@
 #include "table_vlan.h"
 #include "table_l2.h"
 #include "table_l3_host_route.h"
+#include "table_ingress_acl.h"
 #include "table_flood.h"
 #include "table_ingress_mirror.h"
 #include "table_egress_mirror.h"

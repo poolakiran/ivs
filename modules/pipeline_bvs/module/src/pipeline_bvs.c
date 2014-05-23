@@ -84,6 +84,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_l2_register();
     pipeline_bvs_table_l3_host_route_register();
     pipeline_bvs_table_flood_register();
+    pipeline_bvs_table_ingress_acl_register();
     pipeline_bvs_table_ingress_mirror_register();
     pipeline_bvs_table_egress_mirror_register();
     pipeline_bvs_table_egress_acl_register();
@@ -102,6 +103,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_l2_unregister();
     pipeline_bvs_table_l3_host_route_unregister();
     pipeline_bvs_table_flood_unregister();
+    pipeline_bvs_table_ingress_acl_unregister();
     pipeline_bvs_table_ingress_mirror_unregister();
     pipeline_bvs_table_egress_mirror_unregister();
     pipeline_bvs_table_egress_acl_unregister();
@@ -1092,50 +1094,58 @@ lookup_ingress_acl(struct ind_ovs_cfr *cfr, uint32_t hash, struct xbuf *stats,
 {
     /* Assumes return value memory is initialized */
 
-    struct ind_ovs_flow_effects *effects =
-        ind_ovs_fwd_pipeline_lookup(TABLE_ID_INGRESS_ACL, cfr, stats);
-    if (effects == NULL) {
+    struct ingress_acl_key key = {
+        .in_port = cfr->in_port,
+        .vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan)),
+        .ip_proto = cfr->nw_proto,
+        .pad = 0,
+        .vrf = cfr->vrf,
+        .l3_interface_class_id = cfr->l3_interface_class_id,
+        .l3_src_class_id = cfr->l3_src_class_id,
+        .ipv4_src = ntohl(cfr->nw_src),
+        .ipv4_dst = ntohl(cfr->nw_dst),
+        .tp_src = ntohs(cfr->tp_src),
+        .tp_dst = ntohs(cfr->tp_dst),
+    };
+
+    struct ingress_acl_entry *entry = pipeline_bvs_table_ingress_acl_lookup(&key);
+    if (entry == NULL) {
         return;
     }
 
-    AIM_LOG_VERBOSE("hit in ingress_acl table drop=%d", effects->deny);
     *hit = true;
 
-    if (effects->deny) {
-        *drop = effects->deny;
+    if (entry->value.drop) {
+        *drop = true;
     }
 
-    struct nlattr *attr;
-    uint32_t group_id = OF_GROUP_ANY;
-    XBUF_FOREACH2(&effects->write_actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_GROUP) {
-            group_id = *XBUF_PAYLOAD(attr, uint32_t);
-            *valid_next_hop = true;
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
-            memcpy(new_eth_src->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_DST) {
-            memcpy(new_eth_dst->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_VLAN_VID) {
-            *new_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_CONTROLLER) {
-            *cpu = true;
-        }
+    if (entry->value.cpu) {
+        *cpu = true;
     }
 
-    if (group_id != OF_GROUP_ANY) {
-        switch (group_to_table_id(group_id)) {
+    if (entry->value.group_id != OF_GROUP_ANY) {
+        switch (group_to_table_id(entry->value.group_id)) {
         case GROUP_TABLE_ID_LAG:
-            *lag_id = group_id;
+            *lag_id = entry->value.group_id;
+            memcpy(new_eth_src->addr, entry->value.new_eth_src.addr, OF_MAC_ADDR_BYTES);
+            memcpy(new_eth_dst->addr, entry->value.new_eth_dst.addr, OF_MAC_ADDR_BYTES);
+            *new_vlan_vid = entry->value.new_vlan_vid;
+            *valid_next_hop = true;
             break;
         case GROUP_TABLE_ID_ECMP:
-            if (select_ecmp_route(group_id, hash, new_eth_src, new_eth_dst, new_vlan_vid, lag_id) < 0) {
+            if (select_ecmp_route(entry->value.group_id, hash, new_eth_src, new_eth_dst, new_vlan_vid, lag_id) < 0) {
                 AIM_LOG_ERROR("failed to get ecmp route from ingress_acl action");
                 return;
             }
+            *valid_next_hop = true;
             break;
         default:
             AIM_LOG_ERROR("unexpected group table in ingress_acl action");
         }
+    }
+
+    if (stats != NULL) {
+        xbuf_append_ptr(stats, &entry->stats);
     }
 }
 
