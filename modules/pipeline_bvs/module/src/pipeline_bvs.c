@@ -87,6 +87,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_ingress_mirror_register();
     pipeline_bvs_table_egress_mirror_register();
     pipeline_bvs_table_egress_acl_register();
+    pipeline_bvs_table_vlan_acl_register();
     pipeline_bvs_table_qos_weight_register();
 }
 
@@ -104,6 +105,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_ingress_mirror_unregister();
     pipeline_bvs_table_egress_mirror_unregister();
     pipeline_bvs_table_egress_acl_unregister();
+    pipeline_bvs_table_vlan_acl_unregister();
     pipeline_bvs_table_qos_weight_unregister();
 }
 
@@ -1058,29 +1060,26 @@ lookup_debug(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *span_id, boo
 static indigo_error_t
 lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint32_t *l3_interface_class_id, uint32_t *l3_src_class_id, of_mac_addr_t *vrouter_mac)
 {
-    *vrf = 0;
-    *l3_interface_class_id = 0;
-    *l3_src_class_id = 0;
+    struct vlan_acl_key key = {
+        .vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan)),
+        .pad = 0,
+    };
+    memcpy(&key.eth_src, cfr->dl_src, OF_MAC_ADDR_BYTES);
+    memcpy(&key.eth_dst, cfr->dl_dst, OF_MAC_ADDR_BYTES);
+
     memset(vrouter_mac, 0, sizeof(*vrouter_mac));
 
-    struct ind_ovs_flow_effects *effects =
-        ind_ovs_fwd_pipeline_lookup(TABLE_ID_VLAN_ACL, cfr, stats);
-    if (effects == NULL) {
+    struct vlan_acl_entry *entry = pipeline_bvs_table_vlan_acl_lookup(&key);
+    if (entry == NULL) {
+        *vrf = 0;
+        *l3_interface_class_id = 0;
+        *l3_src_class_id = 0;
         return INDIGO_ERROR_NOT_FOUND;
     }
 
-    struct nlattr *attr;
-    XBUF_FOREACH2(&effects->apply_actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_SET_VRF) {
-            *vrf = *XBUF_PAYLOAD(attr, uint32_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_L3_INTERFACE_CLASS_ID) {
-            *l3_interface_class_id = *XBUF_PAYLOAD(attr, uint32_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_L3_SRC_CLASS_ID) {
-            *l3_src_class_id = *XBUF_PAYLOAD(attr, uint32_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
-            memcpy(vrouter_mac->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
-        }
-    }
+    *vrf = entry->value.vrf;
+    *l3_interface_class_id = entry->value.l3_interface_class_id;
+    *l3_src_class_id = entry->value.l3_src_class_id;
 
     return INDIGO_ERROR_NONE;
 }

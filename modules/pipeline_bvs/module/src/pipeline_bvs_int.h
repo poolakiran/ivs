@@ -46,6 +46,7 @@
 #include "table_ingress_mirror.h"
 #include "table_egress_mirror.h"
 #include "table_egress_acl.h"
+#include "table_vlan_acl.h"
 #include "table_qos_weight.h"
 
 #define AIM_LOG_MODULE_NAME pipeline_bvs
