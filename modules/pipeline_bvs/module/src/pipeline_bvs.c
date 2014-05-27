@@ -85,6 +85,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_l3_host_route_register();
     pipeline_bvs_table_flood_register();
     pipeline_bvs_table_ingress_acl_register();
+    pipeline_bvs_table_debug_register();
     pipeline_bvs_table_ingress_mirror_register();
     pipeline_bvs_table_egress_mirror_register();
     pipeline_bvs_table_egress_acl_register();
@@ -104,6 +105,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_l3_host_route_unregister();
     pipeline_bvs_table_flood_unregister();
     pipeline_bvs_table_ingress_acl_unregister();
+    pipeline_bvs_table_debug_unregister();
     pipeline_bvs_table_ingress_mirror_unregister();
     pipeline_bvs_table_egress_mirror_unregister();
     pipeline_bvs_table_egress_acl_unregister();
@@ -1035,28 +1037,37 @@ lookup_l3_cidr_route(uint32_t hash,
 static void
 lookup_debug(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *span_id, bool *cpu, bool *drop)
 {
-    *span_id = OF_GROUP_ANY;
-    *cpu = false;
-    *drop = false;
+    struct debug_key key = {
+        .in_port = cfr->in_port,
+        .eth_type = ntohs(cfr->dl_type),
+        .vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan)),
+        .ipv4_src = ntohl(cfr->nw_src),
+        .ipv4_dst = ntohl(cfr->nw_dst),
+        .ip_proto = cfr->nw_proto,
+        .ip_tos = cfr->nw_tos,
+        .tp_src = ntohs(cfr->tp_src),
+        .tp_dst = ntohs(cfr->tp_dst),
+        .pad = 0,
+    };
 
-    struct ind_ovs_flow_effects *effects =
-        ind_ovs_fwd_pipeline_lookup(TABLE_ID_DEBUG, cfr, stats);
-    if (effects == NULL) {
+    memcpy(&key.eth_src, cfr->dl_src, OF_MAC_ADDR_BYTES);
+    memcpy(&key.eth_dst, cfr->dl_dst, OF_MAC_ADDR_BYTES);
+
+    struct debug_entry *entry = pipeline_bvs_table_debug_lookup(&key);
+    if (entry == NULL) {
+        *span_id = OF_GROUP_ANY;
+        *drop = false;
+        *cpu = false;
         return;
     }
 
-    *drop = effects->deny;
+    *span_id = entry->value.span_id;
+    *drop = entry->value.drop;
+    *cpu = entry->value.cpu;
 
-    struct nlattr *attr;
-    XBUF_FOREACH2(&effects->apply_actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_GROUP) {
-            *span_id = *XBUF_PAYLOAD(attr, uint32_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_CONTROLLER) {
-            *cpu = true;
-        }
+    if (stats != NULL) {
+        xbuf_append_ptr(stats, &entry->stats);
     }
-
-    AIM_LOG_VERBOSE("hit in debug table: span_id=0x%x cpu=%d drop=%d", *span_id, *cpu, *drop);
 }
 
 static indigo_error_t

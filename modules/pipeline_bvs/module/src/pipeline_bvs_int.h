@@ -44,6 +44,7 @@
 #include "table_l3_host_route.h"
 #include "table_ingress_acl.h"
 #include "table_flood.h"
+#include "table_debug.h"
 #include "table_ingress_mirror.h"
 #include "table_egress_mirror.h"
 #include "table_egress_acl.h"
