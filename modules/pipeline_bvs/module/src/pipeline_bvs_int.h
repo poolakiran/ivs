@@ -41,6 +41,7 @@
 #include "table_egr_vlan_xlate.h"
 #include "table_vlan.h"
 #include "table_l2.h"
+#include "table_my_station.h"
 #include "table_l3_host_route.h"
 #include "table_l3_cidr_route.h"
 #include "table_ingress_acl.h"

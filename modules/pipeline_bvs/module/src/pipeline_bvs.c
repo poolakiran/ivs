@@ -82,6 +82,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_egr_vlan_xlate_register();
     pipeline_bvs_table_vlan_register();
     pipeline_bvs_table_l2_register();
+    pipeline_bvs_table_my_station_register();
     pipeline_bvs_table_l3_host_route_register();
     pipeline_bvs_table_l3_cidr_route_register();
     pipeline_bvs_table_flood_register();
@@ -103,6 +104,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_egr_vlan_xlate_unregister();
     pipeline_bvs_table_vlan_unregister();
     pipeline_bvs_table_l2_unregister();
+    pipeline_bvs_table_my_station_unregister();
     pipeline_bvs_table_l3_host_route_unregister();
     pipeline_bvs_table_l3_cidr_route_unregister();
     pipeline_bvs_table_flood_unregister();
@@ -862,14 +864,14 @@ select_ecmp_route(
 static indigo_error_t
 lookup_my_station(const uint8_t *eth_addr)
 {
-    struct ind_ovs_cfr cfr;
-    memset(&cfr, 0, sizeof(cfr));
+    struct my_station_key key = {
+        .pad = 0,
+    };
+    memcpy(&key.mac, eth_addr, OF_MAC_ADDR_BYTES);
 
-    memcpy(&cfr.dl_dst, eth_addr, sizeof(cfr.dl_dst));
-
-    struct ind_ovs_flow_effects *effects =
-        ind_ovs_fwd_pipeline_lookup(TABLE_ID_MY_STATION, &cfr, NULL);
-    if (effects == NULL) {
+    struct my_station_entry *entry =
+        pipeline_bvs_table_my_station_lookup(&key);
+    if (entry == NULL) {
         return INDIGO_ERROR_NOT_FOUND;
     }
 
