@@ -40,7 +40,7 @@ parse_key(of_flow_add_t *obj, struct egress_acl_key *key, struct egress_acl_key 
     }
 
     if (!pipeline_bvs_check_tcam_mask(&match.masks, &minimum_mask, &maximum_mask)) {
-        return INDIGO_ERROR_COMPAT;
+        return INDIGO_ERROR_BAD_MATCH;
     }
 
     key->vlan_vid = match.fields.vlan_vid & ~VLAN_CFI_BIT;
@@ -49,13 +49,13 @@ parse_key(of_flow_add_t *obj, struct egress_acl_key *key, struct egress_acl_key 
     key->egr_port_group_id = match.fields.bsn_egr_port_group_id;
     mask->egr_port_group_id = 0xff;
     if (key->egr_port_group_id != match.fields.bsn_egr_port_group_id) {
-        return INDIGO_ERROR_COMPAT;
+        return INDIGO_ERROR_BAD_MATCH;
     }
 
     key->l3_interface_class_id = match.fields.bsn_l3_interface_class_id;
     mask->l3_interface_class_id = match.masks.bsn_l3_interface_class_id;
     if (key->l3_interface_class_id != match.fields.bsn_l3_interface_class_id) {
-        return INDIGO_ERROR_COMPAT;
+        return INDIGO_ERROR_BAD_MATCH;
     }
 
     uint16_t priority;
