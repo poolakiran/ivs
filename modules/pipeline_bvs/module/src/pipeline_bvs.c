@@ -83,6 +83,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_vlan_register();
     pipeline_bvs_table_l2_register();
     pipeline_bvs_table_l3_host_route_register();
+    pipeline_bvs_table_l3_cidr_route_register();
     pipeline_bvs_table_flood_register();
     pipeline_bvs_table_ingress_acl_register();
     pipeline_bvs_table_debug_register();
@@ -103,6 +104,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_vlan_unregister();
     pipeline_bvs_table_l2_unregister();
     pipeline_bvs_table_l3_host_route_unregister();
+    pipeline_bvs_table_l3_cidr_route_unregister();
     pipeline_bvs_table_flood_unregister();
     pipeline_bvs_table_ingress_acl_unregister();
     pipeline_bvs_table_debug_unregister();
@@ -980,51 +982,37 @@ lookup_l3_cidr_route(uint32_t hash,
                      uint16_t *new_vlan_vid, uint32_t *lag_id,
                      bool *valid_next_hop, bool *cpu)
 {
-    struct ind_ovs_cfr cfr;
-    memset(&cfr, 0, sizeof(cfr));
-
-    cfr.dl_type = htons(0x0800);
-    cfr.vrf = vrf;
-    cfr.nw_dst = ipv4_dst;
-
-    struct ind_ovs_flow_effects *effects =
-        ind_ovs_fwd_pipeline_lookup(TABLE_ID_L3_CIDR_ROUTE, &cfr, NULL);
-    if (effects == NULL) {
-        return INDIGO_ERROR_NOT_FOUND;
-    }
-
-    uint32_t group_id = OF_GROUP_ANY;
     memset(new_eth_src, 0, sizeof(*new_eth_src));
     memset(new_eth_dst, 0, sizeof(*new_eth_dst));
     *new_vlan_vid = 0;
     *valid_next_hop = false;
     *cpu = false;
 
-    struct nlattr *attr;
-    XBUF_FOREACH2(&effects->write_actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_GROUP) {
-            group_id = *XBUF_PAYLOAD(attr, uint32_t);
-            *valid_next_hop = true;
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
-            memcpy(new_eth_src->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_DST) {
-            memcpy(new_eth_dst->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_VLAN_VID) {
-            *new_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_CONTROLLER) {
-            *cpu = true;
-        }
+    struct l3_cidr_route_key key;
+    key.vrf = vrf;
+    key.ipv4 = htonl(ipv4_dst);
+
+    struct l3_cidr_route_entry *entry = pipeline_bvs_table_l3_cidr_route_lookup(&key);
+    if (entry == NULL) {
+        return INDIGO_ERROR_NOT_FOUND;
     }
 
-    if (group_id != OF_GROUP_ANY) {
-        switch (group_to_table_id(group_id)) {
+    *cpu = entry->value.cpu;
+
+    if (entry->value.group_id != OF_GROUP_ANY) {
+        switch (group_to_table_id(entry->value.group_id)) {
         case GROUP_TABLE_ID_LAG:
-            *lag_id = group_id;
+            *lag_id = entry->value.group_id;
+            memcpy(new_eth_src, &entry->value.new_eth_src, sizeof(*new_eth_src));
+            memcpy(new_eth_dst, &entry->value.new_eth_dst, sizeof(*new_eth_dst));
+            *new_vlan_vid = entry->value.new_vlan_vid;
+            *valid_next_hop = true;
             break;
         case GROUP_TABLE_ID_ECMP:
-            if (select_ecmp_route(group_id, hash, new_eth_src, new_eth_dst, new_vlan_vid, lag_id) < 0) {
+            if (select_ecmp_route(entry->value.group_id, hash, new_eth_src, new_eth_dst, new_vlan_vid, lag_id) < 0) {
                 return INDIGO_ERROR_NOT_FOUND;
             }
+            *valid_next_hop = true;
             break;
         default:
             return INDIGO_ERROR_COMPAT;
