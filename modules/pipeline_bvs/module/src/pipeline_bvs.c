@@ -86,6 +86,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_flood_register();
     pipeline_bvs_table_ingress_mirror_register();
     pipeline_bvs_table_egress_mirror_register();
+    pipeline_bvs_table_egress_acl_register();
     pipeline_bvs_table_qos_weight_register();
 }
 
@@ -102,6 +103,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_flood_unregister();
     pipeline_bvs_table_ingress_mirror_unregister();
     pipeline_bvs_table_egress_mirror_unregister();
+    pipeline_bvs_table_egress_acl_unregister();
     pipeline_bvs_table_qos_weight_unregister();
 }
 
@@ -1141,17 +1143,21 @@ lookup_ingress_acl(struct ind_ovs_cfr *cfr, uint32_t hash, struct xbuf *stats,
 static void
 lookup_egress_acl(struct ind_ovs_cfr *cfr, bool *drop)
 {
+    struct egress_acl_key key = {
+        .vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan)),
+        .egr_port_group_id = cfr->egr_port_group_id,
+        .l3_interface_class_id = cfr->l3_interface_class_id,
+    };
+
     *drop = false;
 
-    struct ind_ovs_flow_effects *effects =
-        ind_ovs_fwd_pipeline_lookup(TABLE_ID_EGRESS_ACL, cfr, NULL);
-    if (effects == NULL) {
+    struct egress_acl_entry *entry =
+        pipeline_bvs_table_egress_acl_lookup(&key);
+    if (entry == NULL) {
         return;
     }
 
-    *drop = effects->deny;
-
-    AIM_LOG_VERBOSE("hit in egress_acl table: drop=%d", *drop);
+    *drop = entry->value.drop;
 }
 
 static void

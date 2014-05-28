@@ -194,6 +194,7 @@ indigo_error_t ind_ovs_group_indirect(uint32_t id, struct xbuf **actions);
 void ind_ovs_kflow_invalidate_all(void);
 void ind_ovs_fwd_write_lock();
 void ind_ovs_fwd_write_unlock();
+extern uint32_t ind_ovs_salt;
 
 /* Translate an OVS key into a CFR */
 void ind_ovs_key_to_cfr(const struct ind_ovs_parsed_key *pkey, struct ind_ovs_cfr *cfr);

@@ -34,6 +34,7 @@
 #include <indigo/of_state_manager.h>
 #include <BigHash/bighash.h>
 #include <AIM/aim_list.h>
+#include <tcam/tcam.h>
 
 #include "table_port.h"
 #include "table_vlan_xlate.h"
@@ -44,6 +45,7 @@
 #include "table_flood.h"
 #include "table_ingress_mirror.h"
 #include "table_egress_mirror.h"
+#include "table_egress_acl.h"
 #include "table_qos_weight.h"
 
 #define AIM_LOG_MODULE_NAME pipeline_bvs
@@ -160,5 +162,7 @@ group_to_table_id(uint32_t group_id)
 {
     return group_id >> 24;
 }
+
+bool pipeline_bvs_check_tcam_mask(const of_match_fields_t *_mask, const of_match_fields_t *_minimum, const of_match_fields_t *_maximum);
 
 #endif
