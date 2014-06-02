@@ -41,11 +41,16 @@
 #include "table_egr_vlan_xlate.h"
 #include "table_vlan.h"
 #include "table_l2.h"
+#include "table_my_station.h"
 #include "table_l3_host_route.h"
+#include "table_l3_cidr_route.h"
+#include "table_ingress_acl.h"
 #include "table_flood.h"
+#include "table_debug.h"
 #include "table_ingress_mirror.h"
 #include "table_egress_mirror.h"
 #include "table_egress_acl.h"
+#include "table_vlan_acl.h"
 #include "table_qos_weight.h"
 
 #define AIM_LOG_MODULE_NAME pipeline_bvs
