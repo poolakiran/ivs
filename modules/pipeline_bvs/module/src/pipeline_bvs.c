@@ -300,6 +300,12 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
         return INDIGO_ERROR_NONE;
     }
 
+    if (ctx.pktin_metadata & OFP_BSN_PKTIN_FLAG_NEW_HOST) {
+        process_debug(&cfr, hash, orig_vlan_vid, result, &ctx);
+        process_pktin(&ctx, result);
+        return INDIGO_ERROR_NONE;
+    }
+
     if (lookup_my_station(cfr.dl_dst) == 0) {
         AIM_LOG_VERBOSE("hit in MyStation table, entering L3 processing");
         return process_l3(&cfr, hash, lag_id, vrouter_mac, orig_vlan_vid, key->ipv4.ipv4_ttl, result, &ctx);
