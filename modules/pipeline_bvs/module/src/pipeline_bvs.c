@@ -532,7 +532,10 @@ process_debug(struct ind_ovs_cfr *cfr,
     }
 
     if (cpu) {
-        mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_DEBUG);
+        if (!(ctx->pktin_metadata & (OFP_BSN_PKTIN_FLAG_ARP|
+                                     OFP_BSN_PKTIN_FLAG_STATION_MOVE))) {
+            mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_DEBUG);
+        }
     }
 
     if (drop) {
