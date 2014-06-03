@@ -254,6 +254,11 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 
         AIM_LOG_VERBOSE("hit in source l2table lookup, src_port_no=%u src_group_id=%u", src_port_no, src_group_id);
 
+        if (src_group_id == OF_GROUP_ANY) {
+            AIM_LOG_VERBOSE("L2 source discard");
+            mark_drop(&ctx);
+        }
+
         if (src_port_no != OF_PORT_DEST_NONE && src_port_no != cfr.in_port) {
             AIM_LOG_VERBOSE("incorrect port in source l2table lookup (station move)");
             mark_pktin_controller(&ctx, OFP_BSN_PKTIN_FLAG_STATION_MOVE);
@@ -328,6 +333,11 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     }
 
     AIM_LOG_VERBOSE("hit in destination l2table lookup, dst_port_no=%u dst_group_id=%u", dst_port_no, dst_group_id);
+
+    if (dst_group_id == OF_GROUP_ANY) {
+        AIM_LOG_VERBOSE("L2 destination discard");
+        mark_drop(&ctx);
+    }
 
     process_debug(&cfr, hash, orig_vlan_vid, result, &ctx);
     process_pktin(&ctx, result);
