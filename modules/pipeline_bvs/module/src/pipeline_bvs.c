@@ -413,7 +413,13 @@ process_l3(struct ind_ovs_cfr *cfr,
     if (ttl <= 1) {
         AIM_LOG_VERBOSE("sending TTL expired packet to agent");
         mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_TTL_EXPIRED);
-        mark_drop(ctx);
+        process_debug(cfr, hash, orig_vlan_vid, result, ctx);
+        lookup_ingress_acl(cfr, hash, &result->stats, &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id, &valid_next_hop, &cpu, &drop, &hit);
+        if (cpu) {
+            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_L3_CPU);
+        }
+        process_pktin(ctx, result);
+        return INDIGO_ERROR_NONE;
     }
 
     lookup_l3_route(hash, cfr->vrf, cfr->nw_dst, cfr->global_vrf_allowed,
