@@ -70,6 +70,7 @@ parse_value(of_flow_add_t *obj, struct vlan_xlate_value *value)
                     switch (oxm.header.object_id) {
                     case OF_OXM_VLAN_VID:
                         of_oxm_vlan_vid_value_get(&oxm.vlan_vid, &value->new_vlan_vid);
+                        value->new_vlan_vid &= ~VLAN_CFI_BIT;
                         seen_new_vlan_vid = true;
                         break;
                     default:
