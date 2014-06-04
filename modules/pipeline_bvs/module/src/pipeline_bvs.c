@@ -26,10 +26,10 @@ static const of_mac_addr_t slow_protocols_mac = { { 0x01, 0x80, 0xC2, 0x00, 0x00
 static const of_mac_addr_t packet_of_death_mac = { { 0x5C, 0x16, 0xC7, 0xFF, 0xFF, 0x04 } };
 static const of_mac_addr_t cdp_mac = { { 0x01, 0x00, 0x0c, 0xcc, 0xcc, 0xcc } };
 
-static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, uint32_t ingress_lag_id, of_mac_addr_t vrouter_mac, uint16_t orig_vlan_vid, uint8_t ttl, struct pipeline_result *result, struct ctx *ctx);
+static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, uint32_t ingress_lag_id, uint16_t orig_vlan_vid, uint8_t ttl, struct pipeline_result *result, struct ctx *ctx);
 static void process_debug(struct ind_ovs_cfr *cfr, uint32_t hash, uint16_t orig_vlan_vid, struct pipeline_result *result, struct ctx *ctx);
 static indigo_error_t lookup_l2( uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats, uint32_t *port_no, uint32_t *group_id);
-static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, uint32_t *l3_interface_class_id, of_mac_addr_t *vrouter_mac);
+static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, uint32_t *l3_interface_class_id);
 static bool is_vlan_configured( uint16_t vlan_vid);
 static indigo_error_t flood_vlan( uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash, struct pipeline_result *result);
 static void ingress_mirror(uint32_t port_no, uint32_t hash, struct pipeline_result *result);
@@ -43,7 +43,7 @@ static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, struct
 static indigo_error_t lookup_my_station( const uint8_t *eth_addr);
 static indigo_error_t lookup_l3_route(uint32_t vrf, uint32_t ipv4_dst, struct next_hop **next_hop, bool *cpu);
 static void lookup_debug(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *span_id, bool *cpu, bool *drop);
-static indigo_error_t lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint32_t *l3_interface_clas_id, uint32_t *l3_src_class_id, of_mac_addr_t *vrouter_mac);
+static indigo_error_t lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint32_t *l3_interface_clas_id, uint32_t *l3_src_class_id);
 static void lookup_ingress_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, struct next_hop **next_hop, bool *cpu, bool *drop);
 static void lookup_egress_acl(struct ind_ovs_cfr *cfr, bool *drop);
 static uint32_t group_to_table_id(uint32_t group_id);
@@ -194,10 +194,9 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     uint32_t vrf;
     uint32_t l3_interface_class_id;
     uint32_t l3_src_class_id;
-    of_mac_addr_t vrouter_mac;
     bool vlan_acl_hit = false;
     uint16_t vlan_vid = 0;
-    if (lookup_vlan_acl(&cfr, &result->stats, &vrf, &l3_interface_class_id, &l3_src_class_id, &vrouter_mac) == 0) {
+    if (lookup_vlan_acl(&cfr, &result->stats, &vrf, &l3_interface_class_id, &l3_src_class_id) == 0) {
         AIM_LOG_VERBOSE("Hit in vlan_acl table: vrf=%u l3_interface_class_id=%u l3_src_class_id=%u", vrf, l3_interface_class_id, l3_src_class_id);
         cfr.vrf = vrf;
         cfr.l3_interface_class_id = l3_interface_class_id;
@@ -229,8 +228,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 
     UNUSED bool in_port_tagged;
     uint32_t vlan_l3_interface_class_id;
-    of_mac_addr_t vlan_vrouter_mac;
-    if (check_vlan(vlan_vid, cfr.in_port, &in_port_tagged, &vrf, &vlan_l3_interface_class_id, &vlan_vrouter_mac) < 0) {
+    if (check_vlan(vlan_vid, cfr.in_port, &in_port_tagged, &vrf, &vlan_l3_interface_class_id) < 0) {
         AIM_LOG_VERBOSE("port %u not allowed on vlan %u", cfr.in_port, vlan_vid);
         mark_drop(&ctx);
         return INDIGO_ERROR_NONE;
@@ -240,7 +238,6 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
         AIM_LOG_VERBOSE("VLAN %u: vrf=%u", vlan_vid, vrf);
         cfr.vrf = vrf;
         cfr.l3_interface_class_id = vlan_l3_interface_class_id;
-        memcpy(vrouter_mac.addr, vlan_vrouter_mac.addr, OF_MAC_ADDR_BYTES);
     }
 
     /* Source lookup */
@@ -315,7 +312,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 
     if (lookup_my_station(cfr.dl_dst) == 0) {
         AIM_LOG_VERBOSE("hit in MyStation table, entering L3 processing");
-        return process_l3(&cfr, hash, lag_id, vrouter_mac, orig_vlan_vid, key->ipv4.ipv4_ttl, result, &ctx);
+        return process_l3(&cfr, hash, lag_id, orig_vlan_vid, key->ipv4.ipv4_ttl, result, &ctx);
     }
 
     /* Destination lookup */
@@ -381,8 +378,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     bool out_port_tagged;
     UNUSED uint32_t out_vrf;
     UNUSED uint32_t out_l3_interface_class_id;
-    UNUSED of_mac_addr_t out_vrouter_mac;
-    if (check_vlan(vlan_vid, dst_port_no, &out_port_tagged, &out_vrf, &out_l3_interface_class_id, &out_vrouter_mac) < 0) {
+    if (check_vlan(vlan_vid, dst_port_no, &out_port_tagged, &out_vrf, &out_l3_interface_class_id) < 0) {
         AIM_LOG_WARN("output port %u not allowed on vlan %u", dst_port_no, vlan_vid);
         return INDIGO_ERROR_NONE;
     }
@@ -406,7 +402,6 @@ static indigo_error_t
 process_l3(struct ind_ovs_cfr *cfr,
            uint32_t hash,
            uint32_t ingress_lag_id,
-           of_mac_addr_t vrouter_mac,
            uint16_t orig_vlan_vid,
            uint8_t ttl,
            struct pipeline_result *result,
@@ -492,8 +487,7 @@ process_l3(struct ind_ovs_cfr *cfr,
     bool out_port_tagged;
     UNUSED uint32_t out_vrf;
     UNUSED uint32_t out_l3_interface_class_id;
-    UNUSED of_mac_addr_t out_vrouter_mac;
-    if (check_vlan(next_hop->new_vlan_vid, out_port, &out_port_tagged, &out_vrf, &out_l3_interface_class_id, &out_vrouter_mac) < 0) {
+    if (check_vlan(next_hop->new_vlan_vid, out_port, &out_port_tagged, &out_vrf, &out_l3_interface_class_id) < 0) {
         AIM_LOG_WARN("output port %u not allowed on vlan %u", out_port, next_hop->new_vlan_vid);
         return INDIGO_ERROR_NONE;
     }
@@ -604,7 +598,7 @@ is_vlan_configured(uint16_t vlan_vid)
 static indigo_error_t
 check_vlan(uint16_t vlan_vid, uint32_t in_port,
            bool *tagged, uint32_t *vrf,
-           uint32_t *l3_interface_class_id, of_mac_addr_t *vrouter_mac)
+           uint32_t *l3_interface_class_id)
 {
     struct vlan_key key = { .vlan_vid = vlan_vid & ~VLAN_CFI_BIT};
     struct vlan_entry *entry = pipeline_bvs_table_vlan_lookup(&key);
@@ -614,7 +608,6 @@ check_vlan(uint16_t vlan_vid, uint32_t in_port,
 
     *vrf = entry->value.vrf;
     *l3_interface_class_id = entry->value.l3_interface_class_id;
-    memset(vrouter_mac, 0, sizeof(*vrouter_mac));
 
     int i;
     for (i = 0; i < entry->value.num_ports; i++) {
@@ -657,8 +650,7 @@ flood_vlan(uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash,
         bool tagged;
         UNUSED uint32_t out_vrf;
         UNUSED uint32_t out_l3_interface_class_id;
-        UNUSED of_mac_addr_t out_vrouter_mac;
-        if (check_vlan(vlan_vid, port_no, &tagged, &out_vrf, &out_l3_interface_class_id, &out_vrouter_mac) < 0) {
+        if (check_vlan(vlan_vid, port_no, &tagged, &out_vrf, &out_l3_interface_class_id) < 0) {
             AIM_LOG_VERBOSE("not flooding vlan %u to port %u", vlan_vid, port_no);
             continue;
         }
@@ -982,7 +974,7 @@ lookup_debug(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *span_id, boo
 }
 
 static indigo_error_t
-lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint32_t *l3_interface_class_id, uint32_t *l3_src_class_id, of_mac_addr_t *vrouter_mac)
+lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint32_t *l3_interface_class_id, uint32_t *l3_src_class_id)
 {
     struct vlan_acl_key key = {
         .vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan)),
@@ -990,8 +982,6 @@ lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint
     };
     memcpy(&key.eth_src, cfr->dl_src, OF_MAC_ADDR_BYTES);
     memcpy(&key.eth_dst, cfr->dl_dst, OF_MAC_ADDR_BYTES);
-
-    memset(vrouter_mac, 0, sizeof(*vrouter_mac));
 
     struct vlan_acl_entry *entry = pipeline_bvs_table_vlan_acl_lookup(&key);
     if (entry == NULL) {
