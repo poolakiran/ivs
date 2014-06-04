@@ -29,7 +29,7 @@ static const of_mac_addr_t cdp_mac = { { 0x01, 0x00, 0x0c, 0xcc, 0xcc, 0xcc } };
 static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, uint32_t ingress_lag_id, of_mac_addr_t vrouter_mac, uint16_t orig_vlan_vid, uint8_t ttl, struct pipeline_result *result, struct ctx *ctx);
 static void process_debug(struct ind_ovs_cfr *cfr, uint32_t hash, uint16_t orig_vlan_vid, struct pipeline_result *result, struct ctx *ctx);
 static indigo_error_t lookup_l2( uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats, uint32_t *port_no, uint32_t *group_id);
-static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, bool *global_vrf_allowed, uint32_t *l3_interface_class_id, of_mac_addr_t *vrouter_mac);
+static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, uint32_t *l3_interface_class_id, of_mac_addr_t *vrouter_mac);
 static bool is_vlan_configured( uint16_t vlan_vid);
 static indigo_error_t flood_vlan( uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash, struct pipeline_result *result);
 static void ingress_mirror(uint32_t port_no, uint32_t hash, struct pipeline_result *result);
@@ -41,7 +41,7 @@ static indigo_error_t lookup_egr_vlan_xlate( uint32_t port_no, uint16_t vlan_vid
 static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
 static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id);
 static indigo_error_t lookup_my_station( const uint8_t *eth_addr);
-static indigo_error_t lookup_l3_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, bool global_vrf_allowed, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *valid_next_hop, bool *valid_cpu, bool *hit);
+static indigo_error_t lookup_l3_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *valid_next_hop, bool *valid_cpu, bool *hit);
 static indigo_error_t lookup_l3_host_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *valid_next_hop, bool *valid_cpu);
 static indigo_error_t lookup_l3_cidr_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *valid_next_hop, bool *valid_cpu);
 static void lookup_debug(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *span_id, bool *cpu, bool *drop);
@@ -230,19 +230,17 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     }
 
     UNUSED bool in_port_tagged;
-    bool global_vrf_allowed;
     uint32_t vlan_l3_interface_class_id;
     of_mac_addr_t vlan_vrouter_mac;
-    if (check_vlan(vlan_vid, cfr.in_port, &in_port_tagged, &vrf, &global_vrf_allowed, &vlan_l3_interface_class_id, &vlan_vrouter_mac) < 0) {
+    if (check_vlan(vlan_vid, cfr.in_port, &in_port_tagged, &vrf, &vlan_l3_interface_class_id, &vlan_vrouter_mac) < 0) {
         AIM_LOG_VERBOSE("port %u not allowed on vlan %u", cfr.in_port, vlan_vid);
         mark_drop(&ctx);
         return INDIGO_ERROR_NONE;
     }
 
     if (!vlan_acl_hit) {
-        AIM_LOG_VERBOSE("VLAN %u: vrf=%u global_vrf_allowed=%d", vlan_vid, vrf, global_vrf_allowed);
+        AIM_LOG_VERBOSE("VLAN %u: vrf=%u", vlan_vid, vrf);
         cfr.vrf = vrf;
-        cfr.global_vrf_allowed = global_vrf_allowed;
         cfr.l3_interface_class_id = vlan_l3_interface_class_id;
         memcpy(vrouter_mac.addr, vlan_vrouter_mac.addr, OF_MAC_ADDR_BYTES);
     }
@@ -383,11 +381,10 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     }
 
     bool out_port_tagged;
-    UNUSED bool out_global_vrf_allowed;
     UNUSED uint32_t out_vrf;
     UNUSED uint32_t out_l3_interface_class_id;
     UNUSED of_mac_addr_t out_vrouter_mac;
-    if (check_vlan(vlan_vid, dst_port_no, &out_port_tagged, &out_vrf, &out_global_vrf_allowed, &out_l3_interface_class_id, &out_vrouter_mac) < 0) {
+    if (check_vlan(vlan_vid, dst_port_no, &out_port_tagged, &out_vrf, &out_l3_interface_class_id, &out_vrouter_mac) < 0) {
         AIM_LOG_WARN("output port %u not allowed on vlan %u", dst_port_no, vlan_vid);
         return INDIGO_ERROR_NONE;
     }
@@ -438,7 +435,7 @@ process_l3(struct ind_ovs_cfr *cfr,
         return INDIGO_ERROR_NONE;
     }
 
-    lookup_l3_route(hash, cfr->vrf, cfr->nw_dst, cfr->global_vrf_allowed,
+    lookup_l3_route(hash, cfr->vrf, cfr->nw_dst,
                     &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id,
                     &valid_next_hop, &cpu, &hit);
 
@@ -488,11 +485,10 @@ process_l3(struct ind_ovs_cfr *cfr,
     AIM_LOG_VERBOSE("selected LAG port %u", out_port);
 
     bool out_port_tagged;
-    UNUSED bool out_global_vrf_allowed;
     UNUSED uint32_t out_vrf;
     UNUSED uint32_t out_l3_interface_class_id;
     UNUSED of_mac_addr_t out_vrouter_mac;
-    if (check_vlan(new_vlan_vid, out_port, &out_port_tagged, &out_vrf, &out_global_vrf_allowed, &out_l3_interface_class_id, &out_vrouter_mac) < 0) {
+    if (check_vlan(new_vlan_vid, out_port, &out_port_tagged, &out_vrf, &out_l3_interface_class_id, &out_vrouter_mac) < 0) {
         AIM_LOG_WARN("output port %u not allowed on vlan %u", out_port, new_vlan_vid);
         return INDIGO_ERROR_NONE;
     }
@@ -605,7 +601,7 @@ is_vlan_configured(uint16_t vlan_vid)
 
 static indigo_error_t
 check_vlan(uint16_t vlan_vid, uint32_t in_port,
-           bool *tagged, uint32_t *vrf, bool *global_vrf_allowed,
+           bool *tagged, uint32_t *vrf,
            uint32_t *l3_interface_class_id, of_mac_addr_t *vrouter_mac)
 {
     struct vlan_key key = { .vlan_vid = vlan_vid & ~VLAN_CFI_BIT};
@@ -616,7 +612,6 @@ check_vlan(uint16_t vlan_vid, uint32_t in_port,
 
     *vrf = entry->value.vrf;
     *l3_interface_class_id = entry->value.l3_interface_class_id;
-    *global_vrf_allowed = false;
     memset(vrouter_mac, 0, sizeof(*vrouter_mac));
 
     int i;
@@ -658,11 +653,10 @@ flood_vlan(uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash,
         AIM_LOG_VERBOSE("selected LAG %u port %u", group_id, port_no);
 
         bool tagged;
-        UNUSED bool out_global_vrf_allowed;
         UNUSED uint32_t out_vrf;
         UNUSED uint32_t out_l3_interface_class_id;
         UNUSED of_mac_addr_t out_vrouter_mac;
-        if (check_vlan(vlan_vid, port_no, &tagged, &out_vrf, &out_global_vrf_allowed, &out_l3_interface_class_id, &out_vrouter_mac) < 0) {
+        if (check_vlan(vlan_vid, port_no, &tagged, &out_vrf, &out_l3_interface_class_id, &out_vrouter_mac) < 0) {
             AIM_LOG_VERBOSE("not flooding vlan %u to port %u", vlan_vid, port_no);
             continue;
         }
@@ -912,15 +906,15 @@ lookup_my_station(const uint8_t *eth_addr)
 
 static indigo_error_t
 lookup_l3_route(uint32_t hash,
-                uint32_t vrf, uint32_t ipv4_dst, bool global_vrf_allowed,
+                uint32_t vrf, uint32_t ipv4_dst,
                 of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst,
                 uint16_t *new_vlan_vid, uint32_t *lag_id,
                 bool *valid_next_hop, bool *cpu, bool *hit)
 {
     indigo_error_t ret;
 
-    AIM_LOG_VERBOSE("looking up route for VRF=%u ip="FORMAT_IPV4" global_vrf_allowed=%u",
-                    vrf, VALUE_IPV4((uint8_t *)&ipv4_dst), global_vrf_allowed);
+    AIM_LOG_VERBOSE("looking up route for VRF=%u ip="FORMAT_IPV4,
+                    vrf, VALUE_IPV4((uint8_t *)&ipv4_dst));
 
     *valid_next_hop = false;
     *cpu = false;
@@ -939,24 +933,6 @@ lookup_l3_route(uint32_t hash,
         AIM_LOG_VERBOSE("hit in CIDR route table");
         *hit = true;
         return INDIGO_ERROR_NONE;
-    }
-
-    if (global_vrf_allowed) {
-        if ((ret = lookup_l3_host_route(
-            hash, 0, ipv4_dst,
-            new_eth_src, new_eth_dst, new_vlan_vid, lag_id, valid_next_hop, cpu)) == 0) {
-            AIM_LOG_VERBOSE("hit in global host route table");
-            *hit = true;
-            return INDIGO_ERROR_NONE;
-        }
-
-        if ((ret = lookup_l3_cidr_route(
-            hash, 0, ipv4_dst,
-            new_eth_src, new_eth_dst, new_vlan_vid, lag_id, valid_next_hop, cpu)) == 0) {
-            AIM_LOG_VERBOSE("hit in global CIDR route table");
-            *hit = true;
-            return INDIGO_ERROR_NONE;
-        }
     }
 
     return INDIGO_ERROR_NOT_FOUND;
