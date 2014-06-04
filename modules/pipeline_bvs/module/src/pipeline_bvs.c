@@ -24,6 +24,7 @@ AIM_LOG_STRUCT_DEFINE(AIM_LOG_OPTIONS_DEFAULT, AIM_LOG_BITS_DEFAULT, NULL, 0);
 static const bool flood_on_dlf = true;
 static const of_mac_addr_t slow_protocols_mac = { { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x02 } };
 static const of_mac_addr_t packet_of_death_mac = { { 0x5C, 0x16, 0xC7, 0xFF, 0xFF, 0x04 } };
+static const of_mac_addr_t cdp_mac = { { 0x01, 0x00, 0x0c, 0xcc, 0xcc, 0xcc } };
 
 static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, uint32_t ingress_lag_id, of_mac_addr_t vrouter_mac, uint16_t orig_vlan_vid, uint8_t ttl, struct pipeline_result *result, struct ctx *ctx);
 static void process_debug(struct ind_ovs_cfr *cfr, uint32_t hash, uint16_t orig_vlan_vid, struct pipeline_result *result, struct ctx *ctx);
@@ -136,6 +137,9 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     if (cfr.dl_type == htons(0x88cc)) {
         if (!memcmp(cfr.dl_src, packet_of_death_mac.addr, OF_MAC_ADDR_BYTES)) {
             packet_of_death = true;
+        } else if (!memcmp(cfr.dl_dst, cdp_mac.addr, OF_MAC_ADDR_BYTES)) {
+            AIM_LOG_VERBOSE("dropping CDP packet");
+            mark_drop(&ctx);
         } else {
             AIM_LOG_VERBOSE("sending ethertype %#x directly to controller", ntohs(cfr.dl_type));
             mark_pktin_agent(&ctx, OFP_BSN_PKTIN_FLAG_PDU);
@@ -300,6 +304,12 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
         return INDIGO_ERROR_NONE;
     }
 
+    if (ctx.pktin_metadata & OFP_BSN_PKTIN_FLAG_NEW_HOST) {
+        process_debug(&cfr, hash, orig_vlan_vid, result, &ctx);
+        process_pktin(&ctx, result);
+        return INDIGO_ERROR_NONE;
+    }
+
     if (lookup_my_station(cfr.dl_dst) == 0) {
         AIM_LOG_VERBOSE("hit in MyStation table, entering L3 processing");
         return process_l3(&cfr, hash, lag_id, vrouter_mac, orig_vlan_vid, key->ipv4.ipv4_ttl, result, &ctx);
@@ -407,7 +417,13 @@ process_l3(struct ind_ovs_cfr *cfr,
     if (ttl <= 1) {
         AIM_LOG_VERBOSE("sending TTL expired packet to agent");
         mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_TTL_EXPIRED);
-        mark_drop(ctx);
+        process_debug(cfr, hash, orig_vlan_vid, result, ctx);
+        lookup_ingress_acl(cfr, hash, &result->stats, &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id, &valid_next_hop, &cpu, &drop, &hit);
+        if (cpu) {
+            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_L3_CPU);
+        }
+        process_pktin(ctx, result);
+        return INDIGO_ERROR_NONE;
     }
 
     lookup_l3_route(hash, cfr->vrf, cfr->nw_dst, cfr->global_vrf_allowed,
@@ -532,7 +548,11 @@ process_debug(struct ind_ovs_cfr *cfr,
     }
 
     if (cpu) {
-        mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_DEBUG);
+        if (!(ctx->pktin_metadata & (OFP_BSN_PKTIN_FLAG_ARP|
+                                     OFP_BSN_PKTIN_FLAG_DHCP|
+                                     OFP_BSN_PKTIN_FLAG_STATION_MOVE))) {
+            mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_DEBUG);
+        }
     }
 
     if (drop) {
