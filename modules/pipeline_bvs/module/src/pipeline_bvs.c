@@ -243,15 +243,15 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
         memcpy(vrouter_mac.addr, vlan_vrouter_mac.addr, OF_MAC_ADDR_BYTES);
     }
 
-    if (!disable_src_mac_check) {
-        /* Source lookup */
-        uint32_t src_port_no, src_group_id;
-        if (lookup_l2(vlan_vid, cfr.dl_src, &result->stats, &src_port_no, &src_group_id) < 0) {
+    /* Source lookup */
+    uint32_t src_port_no, src_group_id;
+    if (lookup_l2(vlan_vid, cfr.dl_src, &result->stats, &src_port_no, &src_group_id) < 0) {
+        if (!disable_src_mac_check) {
             AIM_LOG_VERBOSE("miss in source l2table lookup (new host)");
             mark_pktin_controller(&ctx, OFP_BSN_PKTIN_FLAG_NEW_HOST);
             mark_drop(&ctx);
         }
-
+    } else {
         AIM_LOG_VERBOSE("hit in source l2table lookup, src_port_no=%u src_group_id=%u", src_port_no, src_group_id);
 
         if (src_group_id == OF_GROUP_ANY) {
@@ -259,14 +259,16 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
             mark_drop(&ctx);
         }
 
-        if (src_port_no != OF_PORT_DEST_NONE && src_port_no != cfr.in_port) {
-            AIM_LOG_VERBOSE("incorrect port in source l2table lookup (station move)");
-            mark_pktin_controller(&ctx, OFP_BSN_PKTIN_FLAG_STATION_MOVE);
-            mark_drop(&ctx);
-        } else if (src_group_id != OF_GROUP_ANY && src_group_id != lag_id) {
-            AIM_LOG_VERBOSE("incorrect lag_id in source l2table lookup (station move)");
-            mark_pktin_controller(&ctx, OFP_BSN_PKTIN_FLAG_STATION_MOVE);
-            mark_drop(&ctx);
+        if (!disable_src_mac_check) {
+            if (src_port_no != OF_PORT_DEST_NONE && src_port_no != cfr.in_port) {
+                AIM_LOG_VERBOSE("incorrect port in source l2table lookup (station move)");
+                mark_pktin_controller(&ctx, OFP_BSN_PKTIN_FLAG_STATION_MOVE);
+                mark_drop(&ctx);
+            } else if (src_group_id != OF_GROUP_ANY && src_group_id != lag_id) {
+                AIM_LOG_VERBOSE("incorrect lag_id in source l2table lookup (station move)");
+                mark_pktin_controller(&ctx, OFP_BSN_PKTIN_FLAG_STATION_MOVE);
+                mark_drop(&ctx);
+            }
         }
     }
 
