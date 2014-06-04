@@ -76,6 +76,7 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
                     switch (oxm.header.object_id) {
                     case OF_OXM_VLAN_VID:
                         of_oxm_vlan_vid_value_get(&oxm.vlan_vid, &value->default_vlan_vid);
+                        value->default_vlan_vid &= ~VLAN_CFI_BIT;
                         break;
                     case OF_OXM_BSN_LAG_ID:
                         of_oxm_bsn_lag_id_value_get(&oxm.vlan_vid, &value->lag_id);
