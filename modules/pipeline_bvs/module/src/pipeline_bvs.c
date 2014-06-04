@@ -986,17 +986,17 @@ lookup_l3_host_route(uint32_t hash,
 
     *cpu = entry->value.cpu;
 
-    if (entry->value.group_id != OF_GROUP_ANY) {
-        switch (group_to_table_id(entry->value.group_id)) {
+    if (entry->value.next_hop.group_id != OF_GROUP_ANY) {
+        switch (group_to_table_id(entry->value.next_hop.group_id)) {
         case GROUP_TABLE_ID_LAG:
-            *lag_id = entry->value.group_id;
-            memcpy(new_eth_src, &entry->value.new_eth_src, sizeof(*new_eth_src));
-            memcpy(new_eth_dst, &entry->value.new_eth_dst, sizeof(*new_eth_dst));
-            *new_vlan_vid = entry->value.new_vlan_vid;
+            *lag_id = entry->value.next_hop.group_id;
+            memcpy(new_eth_src, &entry->value.next_hop.new_eth_src, sizeof(*new_eth_src));
+            memcpy(new_eth_dst, &entry->value.next_hop.new_eth_dst, sizeof(*new_eth_dst));
+            *new_vlan_vid = entry->value.next_hop.new_vlan_vid;
             *valid_next_hop = true;
             break;
         case GROUP_TABLE_ID_ECMP:
-            if (select_ecmp_route(entry->value.group_id, hash, new_eth_src, new_eth_dst, new_vlan_vid, lag_id) < 0) {
+            if (select_ecmp_route(entry->value.next_hop.group_id, hash, new_eth_src, new_eth_dst, new_vlan_vid, lag_id) < 0) {
                 return INDIGO_ERROR_NOT_FOUND;
             }
             *valid_next_hop = true;
@@ -1033,17 +1033,17 @@ lookup_l3_cidr_route(uint32_t hash,
 
     *cpu = entry->value.cpu;
 
-    if (entry->value.group_id != OF_GROUP_ANY) {
-        switch (group_to_table_id(entry->value.group_id)) {
+    if (entry->value.next_hop.group_id != OF_GROUP_ANY) {
+        switch (group_to_table_id(entry->value.next_hop.group_id)) {
         case GROUP_TABLE_ID_LAG:
-            *lag_id = entry->value.group_id;
-            memcpy(new_eth_src, &entry->value.new_eth_src, sizeof(*new_eth_src));
-            memcpy(new_eth_dst, &entry->value.new_eth_dst, sizeof(*new_eth_dst));
-            *new_vlan_vid = entry->value.new_vlan_vid;
+            *lag_id = entry->value.next_hop.group_id;
+            memcpy(new_eth_src, &entry->value.next_hop.new_eth_src, sizeof(*new_eth_src));
+            memcpy(new_eth_dst, &entry->value.next_hop.new_eth_dst, sizeof(*new_eth_dst));
+            *new_vlan_vid = entry->value.next_hop.new_vlan_vid;
             *valid_next_hop = true;
             break;
         case GROUP_TABLE_ID_ECMP:
-            if (select_ecmp_route(entry->value.group_id, hash, new_eth_src, new_eth_dst, new_vlan_vid, lag_id) < 0) {
+            if (select_ecmp_route(entry->value.next_hop.group_id, hash, new_eth_src, new_eth_dst, new_vlan_vid, lag_id) < 0) {
                 return INDIGO_ERROR_NOT_FOUND;
             }
             *valid_next_hop = true;
@@ -1156,17 +1156,17 @@ lookup_ingress_acl(struct ind_ovs_cfr *cfr, uint32_t hash, struct xbuf *stats,
         *cpu = true;
     }
 
-    if (entry->value.group_id != OF_GROUP_ANY) {
-        switch (group_to_table_id(entry->value.group_id)) {
+    if (entry->value.next_hop.group_id != OF_GROUP_ANY) {
+        switch (group_to_table_id(entry->value.next_hop.group_id)) {
         case GROUP_TABLE_ID_LAG:
-            *lag_id = entry->value.group_id;
-            memcpy(new_eth_src->addr, entry->value.new_eth_src.addr, OF_MAC_ADDR_BYTES);
-            memcpy(new_eth_dst->addr, entry->value.new_eth_dst.addr, OF_MAC_ADDR_BYTES);
-            *new_vlan_vid = entry->value.new_vlan_vid;
+            *lag_id = entry->value.next_hop.group_id;
+            memcpy(new_eth_src->addr, entry->value.next_hop.new_eth_src.addr, OF_MAC_ADDR_BYTES);
+            memcpy(new_eth_dst->addr, entry->value.next_hop.new_eth_dst.addr, OF_MAC_ADDR_BYTES);
+            *new_vlan_vid = entry->value.next_hop.new_vlan_vid;
             *valid_next_hop = true;
             break;
         case GROUP_TABLE_ID_ECMP:
-            if (select_ecmp_route(entry->value.group_id, hash, new_eth_src, new_eth_dst, new_vlan_vid, lag_id) < 0) {
+            if (select_ecmp_route(entry->value.next_hop.group_id, hash, new_eth_src, new_eth_dst, new_vlan_vid, lag_id) < 0) {
                 AIM_LOG_ERROR("failed to get ecmp route from ingress_acl action");
                 return;
             }

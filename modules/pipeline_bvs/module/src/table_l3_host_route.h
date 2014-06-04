@@ -27,15 +27,7 @@ struct l3_host_route_key {
 AIM_STATIC_ASSERT(l3_host_route_KEY_SIZE, sizeof(struct l3_host_route_key) == 8);
 
 struct l3_host_route_value {
-    /* Either LAG or ECMP */
-    uint32_t group_id;
-
-    /* Only used if group_id is a LAG */
-    of_mac_addr_t new_eth_src;
-    of_mac_addr_t new_eth_dst;
-    uint16_t new_vlan_vid;
-
-    /* Always used */
+    struct next_hop next_hop;
     bool cpu;
 };
 
