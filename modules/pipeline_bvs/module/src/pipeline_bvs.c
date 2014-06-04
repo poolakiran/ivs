@@ -28,6 +28,7 @@ static const of_mac_addr_t cdp_mac = { { 0x01, 0x00, 0x0c, 0xcc, 0xcc, 0xcc } };
 
 static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, uint32_t ingress_lag_id, uint16_t orig_vlan_vid, uint8_t ttl, struct pipeline_result *result, struct ctx *ctx);
 static void process_debug(struct ind_ovs_cfr *cfr, uint32_t hash, uint16_t orig_vlan_vid, struct pipeline_result *result, struct ctx *ctx);
+static void process_egress(uint32_t out_port, uint16_t vlan_vid, uint32_t ingress_lag_id, uint32_t l3_interface_class_id, uint32_t hash, struct pipeline_result *result, struct ctx *ctx);
 static indigo_error_t lookup_l2( uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats, uint32_t *port_no, uint32_t *group_id);
 static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, uint32_t *l3_interface_class_id);
 static bool is_vlan_configured( uint16_t vlan_vid);
@@ -45,7 +46,6 @@ static indigo_error_t lookup_l3_route(uint32_t vrf, uint32_t ipv4_dst, struct ne
 static void lookup_debug(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *span_id, bool *cpu, bool *drop);
 static indigo_error_t lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint32_t *l3_interface_clas_id, uint32_t *l3_src_class_id);
 static void lookup_ingress_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, struct next_hop **next_hop, bool *cpu, bool *drop);
-static void lookup_egress_acl(struct ind_ovs_cfr *cfr, bool *drop);
 static uint32_t group_to_table_id(uint32_t group_id);
 static void mark_pktin_agent(struct ctx *ctx, uint64_t flag);
 static void mark_pktin_controller(struct ctx *ctx, uint64_t flag);
@@ -484,48 +484,16 @@ process_l3(struct ind_ovs_cfr *cfr,
 
     AIM_LOG_VERBOSE("selected LAG port %u", out_port);
 
-    bool out_port_tagged;
-    UNUSED uint32_t out_vrf;
-    UNUSED uint32_t out_l3_interface_class_id;
-    if (check_vlan(next_hop->new_vlan_vid, out_port, &out_port_tagged, &out_vrf, &out_l3_interface_class_id) < 0) {
-        AIM_LOG_WARN("output port %u not allowed on vlan %u", out_port, next_hop->new_vlan_vid);
-        return INDIGO_ERROR_NONE;
-    }
-
-    UNUSED uint16_t out_default_vlan_vid;
-    uint32_t out_lag_id;
-    UNUSED bool out_disable_src_mac_check;
-    UNUSED bool out_arp_offload;
-    UNUSED bool out_dhcp_offload;
-    UNUSED bool out_allow_packet_of_death;
-    uint32_t out_egr_port_group_id;
-    if (lookup_port(out_port, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_allow_packet_of_death, &out_egr_port_group_id) < 0) {
-        AIM_LOG_WARN("port %u not found during egress", out_port);
-        return INDIGO_ERROR_NONE;
-    }
-
-    cfr->egr_port_group_id = out_egr_port_group_id;
-
-    if (!out_port_tagged) {
-        pop_vlan(result);
-        cfr->dl_vlan = 0;
-    } else {
-        uint16_t egress_vlan_vid = next_hop->new_vlan_vid;
-        lookup_egr_vlan_xlate(out_port, next_hop->new_vlan_vid, &egress_vlan_vid);
-        set_vlan_vid(result, egress_vlan_vid);
-        cfr->dl_vlan = htons(VLAN_TCI(egress_vlan_vid, VLAN_PCP(ntohs(cfr->dl_vlan))) | VLAN_CFI_BIT);
-    }
-
-    lookup_egress_acl(cfr, &drop);
-    if (drop) {
-        return INDIGO_ERROR_NONE;
-    }
-
     set_eth_src(result, next_hop->new_eth_src);
     set_eth_dst(result, next_hop->new_eth_dst);
     dec_nw_ttl(result);
-    egress_mirror(out_port, hash, result);
-    output(result, out_port);
+
+    process_egress(out_port,
+                   next_hop->new_vlan_vid,
+                   ingress_lag_id,
+                   cfr->l3_interface_class_id,
+                   hash, result, ctx);
+
     return INDIGO_ERROR_NONE;
 }
 
@@ -562,6 +530,64 @@ process_debug(struct ind_ovs_cfr *cfr,
     if (drop) {
         mark_drop(ctx);
     }
+}
+
+static void
+process_egress(uint32_t out_port,
+               uint16_t vlan_vid, /* internal VLAN */
+               uint32_t ingress_lag_id,
+               uint32_t l3_interface_class_id,
+               uint32_t hash,
+               struct pipeline_result *result,
+               struct ctx *ctx)
+{
+    bool out_port_tagged;
+    UNUSED uint32_t out_vrf;
+    UNUSED uint32_t out_l3_interface_class_id;
+    if (check_vlan(vlan_vid, out_port, &out_port_tagged, &out_vrf, &out_l3_interface_class_id) < 0) {
+        AIM_LOG_WARN("output port %u not allowed on vlan %u", out_port, vlan_vid);
+        return;
+    }
+
+    UNUSED uint16_t out_default_vlan_vid;
+    uint32_t out_lag_id;
+    UNUSED bool out_disable_src_mac_check;
+    UNUSED bool out_arp_offload;
+    UNUSED bool out_dhcp_offload;
+    UNUSED bool out_allow_packet_of_death;
+    uint32_t out_egr_port_group_id;
+    if (lookup_port(out_port, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_allow_packet_of_death, &out_egr_port_group_id) < 0) {
+        AIM_LOG_WARN("port %u not found during egress", out_port);
+        return;
+    }
+
+    /* Egress VLAN translation */
+    uint16_t tag = vlan_vid;
+    if (!out_port_tagged) {
+        pop_vlan(result);
+        tag = 0;
+    } else {
+        lookup_egr_vlan_xlate(out_port, vlan_vid, &tag);
+        set_vlan_vid(result, tag);
+    }
+
+    /* Egress ACL */
+    {
+        struct egress_acl_key key = {
+            .vlan_vid = tag,
+            .egr_port_group_id = out_egr_port_group_id,
+            .l3_interface_class_id = l3_interface_class_id,
+        };
+
+        struct egress_acl_entry *entry =
+            pipeline_bvs_table_egress_acl_lookup(&key);
+        if (entry && entry->value.drop) {
+            return;
+        }
+    }
+
+    egress_mirror(out_port, hash, result);
+    output(result, out_port);
 }
 
 static indigo_error_t
@@ -1038,26 +1064,6 @@ lookup_ingress_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats,
     if (stats != NULL) {
         xbuf_append_ptr(stats, &entry->stats);
     }
-}
-
-static void
-lookup_egress_acl(struct ind_ovs_cfr *cfr, bool *drop)
-{
-    struct egress_acl_key key = {
-        .vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan)),
-        .egr_port_group_id = cfr->egr_port_group_id,
-        .l3_interface_class_id = cfr->l3_interface_class_id,
-    };
-
-    *drop = false;
-
-    struct egress_acl_entry *entry =
-        pipeline_bvs_table_egress_acl_lookup(&key);
-    if (entry == NULL) {
-        return;
-    }
-
-    *drop = entry->value.drop;
 }
 
 static void
