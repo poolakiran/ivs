@@ -39,12 +39,12 @@ static indigo_error_t lookup_port( uint32_t port_no, uint16_t *default_vlan_vid,
 static indigo_error_t lookup_vlan_xlate( uint32_t port_no, uint32_t lag_id, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t lookup_egr_vlan_xlate( uint32_t port_no, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
-static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id);
+static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, struct next_hop **next_hop);
 static indigo_error_t lookup_my_station( const uint8_t *eth_addr);
-static indigo_error_t lookup_l3_route( uint32_t hash, uint32_t vrf, uint32_t ipv4_dst, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *valid_next_hop, bool *valid_cpu, bool *hit);
+static indigo_error_t lookup_l3_route(uint32_t vrf, uint32_t ipv4_dst, struct next_hop **next_hop, bool *cpu);
 static void lookup_debug(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *span_id, bool *cpu, bool *drop);
 static indigo_error_t lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint32_t *l3_interface_clas_id, uint32_t *l3_src_class_id, of_mac_addr_t *vrouter_mac);
-static void lookup_ingress_acl(struct ind_ovs_cfr *cfr, uint32_t hash, struct xbuf *stats, of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst, uint16_t *new_vlan_vid, uint32_t *lag_id, bool *valid_next_hop, bool *cpu, bool *drop, bool *hit);
+static void lookup_ingress_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, struct next_hop **next_hop, bool *cpu, bool *drop);
 static void lookup_egress_acl(struct ind_ovs_cfr *cfr, bool *drop);
 static uint32_t group_to_table_id(uint32_t group_id);
 static void mark_pktin_agent(struct ctx *ctx, uint64_t flag);
@@ -412,20 +412,15 @@ process_l3(struct ind_ovs_cfr *cfr,
            struct pipeline_result *result,
            struct ctx *ctx)
 {
-    UNUSED of_mac_addr_t new_eth_src;
-    of_mac_addr_t new_eth_dst;
-    uint16_t new_vlan_vid;
-    uint32_t lag_id;
+    struct next_hop *next_hop = NULL;
     bool cpu = false;
-    bool valid_next_hop = false;
     bool drop = false;
-    bool hit = false;
 
     if (ttl <= 1) {
         AIM_LOG_VERBOSE("sending TTL expired packet to agent");
         mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_TTL_EXPIRED);
         process_debug(cfr, hash, orig_vlan_vid, result, ctx);
-        lookup_ingress_acl(cfr, hash, &result->stats, &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id, &valid_next_hop, &cpu, &drop, &hit);
+        lookup_ingress_acl(cfr, &result->stats, &next_hop, &cpu, &drop);
         if (cpu) {
             mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_L3_CPU);
         }
@@ -433,13 +428,14 @@ process_l3(struct ind_ovs_cfr *cfr,
         return INDIGO_ERROR_NONE;
     }
 
-    lookup_l3_route(hash, cfr->vrf, cfr->nw_dst,
-                    &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id,
-                    &valid_next_hop, &cpu, &hit);
+    lookup_l3_route(cfr->vrf, cfr->nw_dst, &next_hop, &cpu);
 
     process_debug(cfr, hash, orig_vlan_vid, result, ctx);
 
-    lookup_ingress_acl(cfr, hash, &result->stats, &new_eth_src, &new_eth_dst, &new_vlan_vid, &lag_id, &valid_next_hop, &cpu, &drop, &hit);
+    lookup_ingress_acl(cfr, &result->stats, &next_hop, &cpu, &drop);
+
+    bool hit = next_hop != NULL;
+    bool valid_next_hop = next_hop != NULL && next_hop->group_id != OF_GROUP_ANY;
 
     if (cpu) {
         AIM_LOG_VERBOSE("L3 copy to CPU");
@@ -472,11 +468,22 @@ process_l3(struct ind_ovs_cfr *cfr,
         return INDIGO_ERROR_NONE;
     }
 
-    AIM_LOG_VERBOSE("next-hop: eth_src="FORMAT_MAC" eth_dst="FORMAT_MAC" vlan=%u lag_id=%u",
-                    VALUE_MAC(new_eth_src.addr), VALUE_MAC(new_eth_dst.addr), new_vlan_vid, lag_id);
+    AIM_ASSERT(valid_next_hop);
+
+    if (group_to_table_id(next_hop->group_id) == GROUP_TABLE_ID_ECMP) {
+        if (select_ecmp_route(next_hop->group_id, hash, &next_hop) < 0) {
+            return INDIGO_ERROR_NOT_FOUND;
+        }
+    }
+
+    AIM_ASSERT(group_to_table_id(next_hop->group_id) == GROUP_TABLE_ID_LAG);
+
+    AIM_LOG_VERBOSE("next-hop: eth_src=%{mac} eth_dst=%{mac} vlan=%u lag_id=%u",
+                    next_hop->new_eth_src.addr, next_hop->new_eth_dst.addr,
+                    next_hop->new_vlan_vid, next_hop->group_id);
 
     uint32_t out_port;
-    if (select_lag_port(lag_id, hash, &out_port) < 0) {
+    if (select_lag_port(next_hop->group_id, hash, &out_port) < 0) {
         return INDIGO_ERROR_NOT_FOUND;
     }
 
@@ -486,8 +493,8 @@ process_l3(struct ind_ovs_cfr *cfr,
     UNUSED uint32_t out_vrf;
     UNUSED uint32_t out_l3_interface_class_id;
     UNUSED of_mac_addr_t out_vrouter_mac;
-    if (check_vlan(new_vlan_vid, out_port, &out_port_tagged, &out_vrf, &out_l3_interface_class_id, &out_vrouter_mac) < 0) {
-        AIM_LOG_WARN("output port %u not allowed on vlan %u", out_port, new_vlan_vid);
+    if (check_vlan(next_hop->new_vlan_vid, out_port, &out_port_tagged, &out_vrf, &out_l3_interface_class_id, &out_vrouter_mac) < 0) {
+        AIM_LOG_WARN("output port %u not allowed on vlan %u", out_port, next_hop->new_vlan_vid);
         return INDIGO_ERROR_NONE;
     }
 
@@ -509,9 +516,10 @@ process_l3(struct ind_ovs_cfr *cfr,
         pop_vlan(result);
         cfr->dl_vlan = 0;
     } else {
-        lookup_egr_vlan_xlate(out_port, new_vlan_vid, &new_vlan_vid);
-        set_vlan_vid(result, new_vlan_vid);
-        cfr->dl_vlan = htons(VLAN_TCI(new_vlan_vid, VLAN_PCP(ntohs(cfr->dl_vlan))) | VLAN_CFI_BIT);
+        uint16_t egress_vlan_vid = next_hop->new_vlan_vid;
+        lookup_egr_vlan_xlate(out_port, next_hop->new_vlan_vid, &egress_vlan_vid);
+        set_vlan_vid(result, egress_vlan_vid);
+        cfr->dl_vlan = htons(VLAN_TCI(egress_vlan_vid, VLAN_PCP(ntohs(cfr->dl_vlan))) | VLAN_CFI_BIT);
     }
 
     lookup_egress_acl(cfr, &drop);
@@ -519,12 +527,8 @@ process_l3(struct ind_ovs_cfr *cfr,
         return INDIGO_ERROR_NONE;
     }
 
-    if (memcmp(&vrouter_mac.addr, of_mac_addr_all_zeros.addr, OF_MAC_ADDR_BYTES)) {
-        set_eth_src(result, vrouter_mac);
-    } else {
-        set_eth_src(result, new_eth_src);
-    }
-    set_eth_dst(result, new_eth_dst);
+    set_eth_src(result, next_hop->new_eth_src);
+    set_eth_dst(result, next_hop->new_eth_dst);
     dec_nw_ttl(result);
     egress_mirror(out_port, hash, result);
     output(result, out_port);
@@ -852,10 +856,19 @@ select_lag_port(uint32_t group_id, uint32_t hash, uint32_t *port_no)
 static indigo_error_t
 select_ecmp_route(
     uint32_t group_id, uint32_t hash,
-    of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst,
-    uint16_t *new_vlan_vid, uint32_t *lag_id)
+    struct next_hop **next_hop)
 {
     indigo_error_t rv;
+
+    /*
+     * HACK
+     *
+     * Eventually we will manage the memory allocated for ECMP groups
+     * and we'll be able to just return a pointer to an already
+     * parsed next_hop. The group infrastructure doesn't exist yet,
+     * so fake it by returning a pointer to thread-local memory.
+     */
+    static __thread struct next_hop static_next_hop;
 
     struct xbuf *actions;
     rv = ind_ovs_group_select(group_id, hash, &actions);
@@ -864,23 +877,23 @@ select_ecmp_route(
         return rv;
     }
 
-    *lag_id = OF_GROUP_ANY;
-    memset(new_eth_src, 0, sizeof(*new_eth_src));
-    memset(new_eth_dst, 0, sizeof(*new_eth_dst));
-    *new_vlan_vid = 0;
+    memset(&static_next_hop, 0, sizeof(static_next_hop));
+    static_next_hop.group_id = OF_GROUP_ANY;
 
     struct nlattr *attr;
     XBUF_FOREACH2(actions, attr) {
         if (attr->nla_type == IND_OVS_ACTION_GROUP) {
-            *lag_id = *XBUF_PAYLOAD(attr, uint32_t);
+            static_next_hop.group_id = *XBUF_PAYLOAD(attr, uint32_t);
         } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
-            memcpy(new_eth_src->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
+            memcpy(static_next_hop.new_eth_src.addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
         } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_DST) {
-            memcpy(new_eth_dst->addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
+            memcpy(static_next_hop.new_eth_dst.addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
         } else if (attr->nla_type == IND_OVS_ACTION_SET_VLAN_VID) {
-            *new_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
+            static_next_hop.new_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
         }
     }
+
+    *next_hop = &static_next_hop;
 
     return INDIGO_ERROR_NONE;
 }
@@ -903,61 +916,29 @@ lookup_my_station(const uint8_t *eth_addr)
 }
 
 static indigo_error_t
-lookup_l3_route(uint32_t hash,
-                uint32_t vrf, uint32_t ipv4_dst,
-                of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst,
-                uint16_t *new_vlan_vid, uint32_t *lag_id,
-                bool *valid_next_hop, bool *cpu, bool *hit)
+lookup_l3_route(uint32_t vrf, uint32_t ipv4_dst,
+                struct next_hop **next_hop, bool *cpu)
 {
-    struct next_hop *next_hop = NULL;
-
     AIM_LOG_VERBOSE("looking up route for VRF=%u ip=%{ipv4a}", vrf, htonl(ipv4_dst));
 
-    memset(new_eth_src, 0, sizeof(*new_eth_src));
-    memset(new_eth_dst, 0, sizeof(*new_eth_dst));
-    *new_vlan_vid = 0;
-    *valid_next_hop = false;
+    *next_hop = NULL;
     *cpu = false;
 
     {
         struct l3_host_route_key key = { .vrf=vrf, .ipv4 = htonl(ipv4_dst) };
         struct l3_host_route_entry *entry = pipeline_bvs_table_l3_host_route_lookup(&key);
         if (entry != NULL) {
-            next_hop = &entry->value.next_hop;
+            *next_hop = &entry->value.next_hop;
             *cpu = entry->value.cpu;
         }
     }
 
-    if (!next_hop) {
+    if (!*next_hop) {
         struct l3_cidr_route_key key = { .vrf=vrf, .ipv4 = htonl(ipv4_dst) };
         struct l3_cidr_route_entry *entry = pipeline_bvs_table_l3_cidr_route_lookup(&key);
         if (entry != NULL) {
-            next_hop = &entry->value.next_hop;
+            *next_hop = &entry->value.next_hop;
             *cpu = entry->value.cpu;
-        }
-    }
-
-    if (next_hop) {
-        *hit = true;
-
-        if (next_hop->group_id != OF_GROUP_ANY) {
-            switch (group_to_table_id(next_hop->group_id)) {
-            case GROUP_TABLE_ID_LAG:
-                *lag_id = next_hop->group_id;
-                memcpy(new_eth_src, &next_hop->new_eth_src, sizeof(*new_eth_src));
-                memcpy(new_eth_dst, &next_hop->new_eth_dst, sizeof(*new_eth_dst));
-                *new_vlan_vid = next_hop->new_vlan_vid;
-                *valid_next_hop = true;
-                break;
-            case GROUP_TABLE_ID_ECMP:
-                if (select_ecmp_route(next_hop->group_id, hash, new_eth_src, new_eth_dst, new_vlan_vid, lag_id) < 0) {
-                    return INDIGO_ERROR_NOT_FOUND;
-                }
-                *valid_next_hop = true;
-                break;
-            default:
-                return INDIGO_ERROR_COMPAT;
-            }
         }
     }
 
@@ -1028,10 +1009,8 @@ lookup_vlan_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats, uint32_t *vrf, uint
 }
 
 static void
-lookup_ingress_acl(struct ind_ovs_cfr *cfr, uint32_t hash, struct xbuf *stats,
-                   of_mac_addr_t *new_eth_src, of_mac_addr_t *new_eth_dst,
-                   uint16_t *new_vlan_vid, uint32_t *lag_id,
-                   bool *valid_next_hop, bool *cpu, bool *drop, bool *hit)
+lookup_ingress_acl(struct ind_ovs_cfr *cfr, struct xbuf *stats,
+                   struct next_hop **next_hop, bool *cpu, bool *drop)
 {
     /* Assumes return value memory is initialized */
 
@@ -1054,8 +1033,6 @@ lookup_ingress_acl(struct ind_ovs_cfr *cfr, uint32_t hash, struct xbuf *stats,
         return;
     }
 
-    *hit = true;
-
     if (entry->value.drop) {
         *drop = true;
     }
@@ -1065,24 +1042,7 @@ lookup_ingress_acl(struct ind_ovs_cfr *cfr, uint32_t hash, struct xbuf *stats,
     }
 
     if (entry->value.next_hop.group_id != OF_GROUP_ANY) {
-        switch (group_to_table_id(entry->value.next_hop.group_id)) {
-        case GROUP_TABLE_ID_LAG:
-            *lag_id = entry->value.next_hop.group_id;
-            memcpy(new_eth_src->addr, entry->value.next_hop.new_eth_src.addr, OF_MAC_ADDR_BYTES);
-            memcpy(new_eth_dst->addr, entry->value.next_hop.new_eth_dst.addr, OF_MAC_ADDR_BYTES);
-            *new_vlan_vid = entry->value.next_hop.new_vlan_vid;
-            *valid_next_hop = true;
-            break;
-        case GROUP_TABLE_ID_ECMP:
-            if (select_ecmp_route(entry->value.next_hop.group_id, hash, new_eth_src, new_eth_dst, new_vlan_vid, lag_id) < 0) {
-                AIM_LOG_ERROR("failed to get ecmp route from ingress_acl action");
-                return;
-            }
-            *valid_next_hop = true;
-            break;
-        default:
-            AIM_LOG_ERROR("unexpected group table in ingress_acl action");
-        }
+        *next_hop = &entry->value.next_hop;
     }
 
     if (stats != NULL) {
