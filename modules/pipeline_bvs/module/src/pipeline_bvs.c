@@ -28,7 +28,7 @@ static const of_mac_addr_t cdp_mac = { { 0x01, 0x00, 0x0c, 0xcc, 0xcc, 0xcc } };
 
 static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, uint32_t ingress_lag_id, uint16_t orig_vlan_vid, uint8_t ttl, struct pipeline_result *result, struct ctx *ctx);
 static void process_debug(struct ind_ovs_cfr *cfr, uint32_t hash, uint16_t orig_vlan_vid, struct pipeline_result *result, struct ctx *ctx);
-static void process_egress(uint32_t out_port, uint16_t vlan_vid, uint32_t ingress_lag_id, uint32_t l3_interface_class_id, uint32_t hash, struct pipeline_result *result, struct ctx *ctx);
+static void process_egress(uint32_t out_port, uint16_t vlan_vid, uint32_t ingress_lag_id, uint32_t l3_interface_class_id, bool l3, uint32_t hash, struct pipeline_result *result, struct ctx *ctx);
 static indigo_error_t lookup_l2( uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats, uint32_t *port_no, uint32_t *group_id);
 static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, uint32_t *l3_interface_class_id);
 static bool is_vlan_configured( uint16_t vlan_vid);
@@ -358,43 +358,13 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
         AIM_LOG_VERBOSE("selected LAG port %u", dst_port_no);
     }
 
-    UNUSED uint16_t out_default_vlan_vid;
-    uint32_t out_lag_id;
-    UNUSED bool out_disable_src_mac_check;
-    UNUSED bool out_arp_offload;
-    UNUSED bool out_dhcp_offload;
-    UNUSED bool out_allow_packet_of_death;
-    UNUSED uint32_t out_egr_port_group_id;
-    if (lookup_port(dst_port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_allow_packet_of_death, &egr_port_group_id) < 0) {
-        AIM_LOG_WARN("port %u not found during egress", dst_port_no);
-        return INDIGO_ERROR_NONE;
-    }
+    process_egress(dst_port_no,
+                   vlan_vid,
+                   lag_id,
+                   0, /* l3_interface_class_id */
+                   false, /* l3 */
+                   hash, result, &ctx);
 
-    if (out_lag_id != OF_GROUP_ANY && out_lag_id == lag_id) {
-        AIM_LOG_VERBOSE("skipping ingress LAG %u", lag_id);
-        return INDIGO_ERROR_NONE;
-    }
-
-    bool out_port_tagged;
-    UNUSED uint32_t out_vrf;
-    UNUSED uint32_t out_l3_interface_class_id;
-    if (check_vlan(vlan_vid, dst_port_no, &out_port_tagged, &out_vrf, &out_l3_interface_class_id) < 0) {
-        AIM_LOG_WARN("output port %u not allowed on vlan %u", dst_port_no, vlan_vid);
-        return INDIGO_ERROR_NONE;
-    }
-
-    if (!out_port_tagged) {
-        pop_vlan(result);
-    } else {
-        uint16_t new_vlan_vid;
-        if (lookup_egr_vlan_xlate(dst_port_no, vlan_vid, &new_vlan_vid) == 0) {
-            vlan_vid = new_vlan_vid;
-            set_vlan_vid(result, vlan_vid);
-        }
-    }
-
-    egress_mirror(dst_port_no, hash, result);
-    output(result, dst_port_no);
     return INDIGO_ERROR_NONE;
 }
 
@@ -492,6 +462,7 @@ process_l3(struct ind_ovs_cfr *cfr,
                    next_hop->new_vlan_vid,
                    ingress_lag_id,
                    cfr->l3_interface_class_id,
+                   true, /* l3 */
                    hash, result, ctx);
 
     return INDIGO_ERROR_NONE;
@@ -537,6 +508,7 @@ process_egress(uint32_t out_port,
                uint16_t vlan_vid, /* internal VLAN */
                uint32_t ingress_lag_id,
                uint32_t l3_interface_class_id,
+               bool l3,
                uint32_t hash,
                struct pipeline_result *result,
                struct ctx *ctx)
@@ -561,6 +533,11 @@ process_egress(uint32_t out_port,
         return;
     }
 
+    if (!l3 && out_lag_id != OF_GROUP_ANY && out_lag_id == ingress_lag_id) {
+        AIM_LOG_VERBOSE("skipping ingress LAG %u", ingress_lag_id);
+        return;
+    }
+
     /* Egress VLAN translation */
     uint16_t tag = vlan_vid;
     if (!out_port_tagged) {
@@ -572,7 +549,7 @@ process_egress(uint32_t out_port,
     }
 
     /* Egress ACL */
-    {
+    if (l3) {
         struct egress_acl_key key = {
             .vlan_vid = tag,
             .egr_port_group_id = out_egr_port_group_id,
