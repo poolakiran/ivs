@@ -418,8 +418,8 @@ process_l3(struct ind_ovs_cfr *cfr,
     of_mac_addr_t new_eth_dst;
     uint16_t new_vlan_vid;
     uint32_t lag_id;
-    bool cpu;
-    bool valid_next_hop;
+    bool cpu = false;
+    bool valid_next_hop = false;
     bool drop = false;
     bool hit = false;
 
