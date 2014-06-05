@@ -38,7 +38,6 @@ static void ingress_mirror(struct ctx *ctx, uint32_t port_no);
 static void egress_mirror(struct ctx *ctx, uint32_t port_no);
 static void span(struct ctx *ctx, uint32_t span_id);
 static indigo_error_t lookup_port( uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id, bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload, bool *allow_packet_of_death, uint32_t *egr_port_group_id);
-static indigo_error_t lookup_vlan_xlate( uint32_t port_no, uint32_t lag_id, uint16_t vlan_vid, uint16_t *new_vlan_vid);
 static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
 static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, struct next_hop **next_hop);
 static indigo_error_t lookup_my_station( const uint8_t *eth_addr);
@@ -216,9 +215,10 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
     } else {
         if (cfr->dl_vlan & htons(VLAN_CFI_BIT)) {
             vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan));
-            uint16_t new_vlan_vid;
-            if (lookup_vlan_xlate(cfr->in_port, lag_id, vlan_vid, &new_vlan_vid) == 0) {
-                vlan_vid = new_vlan_vid;
+            struct vlan_xlate_entry *vlan_xlate_entry =
+                pipeline_bvs_table_vlan_xlate_lookup(lag_id, vlan_vid);
+            if (vlan_xlate_entry) {
+                vlan_vid = vlan_xlate_entry->value.new_vlan_vid;
                 set_vlan_vid(ctx->result, vlan_vid);
             }
         } else {
@@ -735,25 +735,6 @@ lookup_port(uint32_t port_no,
     *dhcp_offload = entry->value.dhcp_offload;
     *allow_packet_of_death = entry->value.packet_of_death;
     *egr_port_group_id = entry->value.egr_port_group_id;
-
-    return INDIGO_ERROR_NONE;
-}
-
-static indigo_error_t
-lookup_vlan_xlate(uint32_t port_no, uint32_t lag_id, uint16_t vlan_vid, uint16_t *new_vlan_vid)
-{
-    struct vlan_xlate_key key = {
-        .lag_id = lag_id,
-        .vlan_vid = vlan_vid,
-        .pad = 0
-    };
-
-    struct vlan_xlate_entry *entry = pipeline_bvs_table_vlan_xlate_lookup(&key);
-    if (entry == NULL) {
-        return INDIGO_ERROR_NOT_FOUND;
-    }
-
-    *new_vlan_vid = entry->value.new_vlan_vid;
 
     return INDIGO_ERROR_NONE;
 }
