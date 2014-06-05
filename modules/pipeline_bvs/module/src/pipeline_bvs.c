@@ -37,7 +37,7 @@ static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_
 static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, struct next_hop **next_hop);
 static indigo_error_t lookup_l3_route(uint32_t vrf, uint32_t ipv4_dst, struct next_hop **next_hop, bool *cpu);
 static void lookup_debug(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint32_t *span_id, bool *cpu, bool *drop);
-static indigo_error_t lookup_vlan_acl(struct ind_ovs_cfr *cfr, uint32_t *vrf, uint32_t *l3_interface_clas_id, uint32_t *l3_src_class_id);
+static struct vlan_acl_key make_vlan_acl_key(struct ind_ovs_cfr *cfr);
 static void lookup_ingress_acl(struct ctx *ctx, struct ind_ovs_cfr *cfr, struct next_hop **next_hop, bool *cpu, bool *drop);
 static uint32_t group_to_table_id(uint32_t group_id);
 static void mark_pktin_agent(struct ctx *ctx, uint64_t flag);
@@ -180,21 +180,17 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
         return;
     }
 
-    uint32_t vrf;
-    uint32_t l3_interface_class_id;
-    uint32_t l3_src_class_id;
-    bool vlan_acl_hit = false;
-    uint16_t vlan_vid = 0;
-    if (lookup_vlan_acl(cfr, &vrf, &l3_interface_class_id, &l3_src_class_id) == 0) {
-        AIM_LOG_VERBOSE("Hit in vlan_acl table: vrf=%u l3_interface_class_id=%u l3_src_class_id=%u", vrf, l3_interface_class_id, l3_src_class_id);
-        cfr->vrf = vrf;
-        cfr->l3_interface_class_id = l3_interface_class_id;
-        cfr->l3_src_class_id = l3_src_class_id;
-        vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan));
-        vlan_acl_hit = true;
+    uint16_t vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan));
+
+    struct vlan_acl_key vlan_acl_key = make_vlan_acl_key(cfr);
+    struct vlan_acl_entry *vlan_acl_entry =
+        pipeline_bvs_table_vlan_acl_lookup(&vlan_acl_key);
+    if (vlan_acl_entry) {
+        cfr->vrf = vlan_acl_entry->value.vrf;
+        cfr->l3_interface_class_id = vlan_acl_entry->value.l3_interface_class_id;
+        cfr->l3_src_class_id = vlan_acl_entry->value.l3_src_class_id;
     } else {
         if (cfr->dl_vlan & htons(VLAN_CFI_BIT)) {
-            vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan));
             struct vlan_xlate_entry *vlan_xlate_entry =
                 pipeline_bvs_table_vlan_xlate_lookup(port_entry->value.lag_id, vlan_vid);
             if (vlan_xlate_entry) {
@@ -223,7 +219,7 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
         return;
     }
 
-    if (!vlan_acl_hit) {
+    if (!vlan_acl_entry) {
         AIM_LOG_VERBOSE("VLAN %u: vrf=%u", vlan_vid, vlan_entry->value.vrf);
         cfr->vrf = vlan_entry->value.vrf;
         cfr->l3_interface_class_id = vlan_entry->value.l3_interface_class_id;
@@ -760,8 +756,8 @@ lookup_debug(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint32_t *span_id, bool *
     apply_stats(ctx->result, &entry->stats);
 }
 
-static indigo_error_t
-lookup_vlan_acl(struct ind_ovs_cfr *cfr, uint32_t *vrf, uint32_t *l3_interface_class_id, uint32_t *l3_src_class_id)
+static struct vlan_acl_key
+make_vlan_acl_key(struct ind_ovs_cfr *cfr)
 {
     struct vlan_acl_key key = {
         .vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan)),
@@ -770,19 +766,7 @@ lookup_vlan_acl(struct ind_ovs_cfr *cfr, uint32_t *vrf, uint32_t *l3_interface_c
     memcpy(&key.eth_src, cfr->dl_src, OF_MAC_ADDR_BYTES);
     memcpy(&key.eth_dst, cfr->dl_dst, OF_MAC_ADDR_BYTES);
 
-    struct vlan_acl_entry *entry = pipeline_bvs_table_vlan_acl_lookup(&key);
-    if (entry == NULL) {
-        *vrf = 0;
-        *l3_interface_class_id = 0;
-        *l3_src_class_id = 0;
-        return INDIGO_ERROR_NOT_FOUND;
-    }
-
-    *vrf = entry->value.vrf;
-    *l3_interface_class_id = entry->value.l3_interface_class_id;
-    *l3_src_class_id = entry->value.l3_src_class_id;
-
-    return INDIGO_ERROR_NONE;
+    return key;
 }
 
 static void
