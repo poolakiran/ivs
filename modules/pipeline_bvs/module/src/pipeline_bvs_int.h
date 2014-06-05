@@ -173,4 +173,10 @@ group_to_table_id(uint32_t group_id)
 
 bool pipeline_bvs_check_tcam_mask(const of_match_fields_t *_mask, const of_match_fields_t *_minimum, const of_match_fields_t *_maximum);
 
+static inline void
+apply_stats(struct pipeline_result *result, struct ind_ovs_flow_stats *stats)
+{
+    xbuf_append_ptr(&result->stats, stats);
+}
+
 #endif
