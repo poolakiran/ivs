@@ -39,6 +39,6 @@ struct egr_vlan_xlate_entry {
 
 void pipeline_bvs_table_egr_vlan_xlate_register(void);
 void pipeline_bvs_table_egr_vlan_xlate_unregister(void);
-struct egr_vlan_xlate_entry *pipeline_bvs_table_egr_vlan_xlate_lookup(const struct egr_vlan_xlate_key *key);
+struct egr_vlan_xlate_entry *pipeline_bvs_table_egr_vlan_xlate_lookup(uint32_t in_port, uint16_t vlan_vid);
 
 #endif
