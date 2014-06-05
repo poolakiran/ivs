@@ -38,7 +38,7 @@ static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, struct
 static indigo_error_t lookup_l3_route(uint32_t vrf, uint32_t ipv4_dst, struct next_hop **next_hop, bool *cpu);
 static void lookup_debug(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint32_t *span_id, bool *cpu, bool *drop);
 static struct vlan_acl_key make_vlan_acl_key(struct ind_ovs_cfr *cfr);
-static void lookup_ingress_acl(struct ctx *ctx, struct ind_ovs_cfr *cfr, struct next_hop **next_hop, bool *cpu, bool *drop);
+static struct ingress_acl_key make_ingress_acl_key(struct ind_ovs_cfr *cfr);
 static uint32_t group_to_table_id(uint32_t group_id);
 static void mark_pktin_agent(struct ctx *ctx, uint64_t flag);
 static void mark_pktin_controller(struct ctx *ctx, uint64_t flag);
@@ -361,7 +361,17 @@ process_l3(struct ctx *ctx,
 
     process_debug(ctx, cfr, orig_vlan_vid);
 
-    lookup_ingress_acl(ctx, cfr, &next_hop, &cpu, &drop);
+    struct ingress_acl_key ingress_acl_key = make_ingress_acl_key(cfr);
+    struct ingress_acl_entry *ingress_acl_entry =
+        pipeline_bvs_table_ingress_acl_lookup(&ingress_acl_key);
+    if (ingress_acl_entry) {
+        apply_stats(ctx->result, &ingress_acl_entry->stats);
+        drop = drop || ingress_acl_entry->value.drop;
+        cpu = cpu || ingress_acl_entry->value.cpu;
+        if (ingress_acl_entry->value.next_hop.group_id != OF_GROUP_ANY) {
+            next_hop = &ingress_acl_entry->value.next_hop;
+        }
+    }
 
     bool hit = next_hop != NULL;
     bool valid_next_hop = next_hop != NULL && next_hop->group_id != OF_GROUP_ANY;
@@ -768,12 +778,9 @@ make_vlan_acl_key(struct ind_ovs_cfr *cfr)
     return key;
 }
 
-static void
-lookup_ingress_acl(struct ctx *ctx, struct ind_ovs_cfr *cfr,
-                   struct next_hop **next_hop, bool *cpu, bool *drop)
+static struct ingress_acl_key
+make_ingress_acl_key(struct ind_ovs_cfr *cfr)
 {
-    /* Assumes return value memory is initialized */
-
     struct ingress_acl_key key = {
         .in_port = cfr->in_port,
         .vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan)),
@@ -788,24 +795,7 @@ lookup_ingress_acl(struct ctx *ctx, struct ind_ovs_cfr *cfr,
         .tp_dst = ntohs(cfr->tp_dst),
     };
 
-    struct ingress_acl_entry *entry = pipeline_bvs_table_ingress_acl_lookup(&key);
-    if (entry == NULL) {
-        return;
-    }
-
-    if (entry->value.drop) {
-        *drop = true;
-    }
-
-    if (entry->value.cpu) {
-        *cpu = true;
-    }
-
-    if (entry->value.next_hop.group_id != OF_GROUP_ANY) {
-        *next_hop = &entry->value.next_hop;
-    }
-
-    apply_stats(ctx->result, &entry->stats);
+    return key;
 }
 
 static void
