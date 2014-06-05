@@ -31,7 +31,7 @@ static void process_l3(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint32_t ingres
 static void process_debug(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint16_t orig_vlan_vid);
 static void process_egress(struct ctx *ctx, uint32_t out_port, uint16_t vlan_vid, uint32_t ingress_lag_id, uint32_t l3_interface_class_id, bool l3);
 static bool check_vlan_membership(struct vlan_entry *vlan_entry, uint32_t in_port, bool *tagged);
-static indigo_error_t flood_vlan(struct ctx *ctx, uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id);
+static void flood_vlan(struct ctx *ctx, uint16_t vlan_vid, uint32_t lag_id);
 static void span(struct ctx *ctx, uint32_t span_id);
 static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
 static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, struct next_hop **next_hop);
@@ -282,9 +282,7 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
             return;
         }
 
-        if (flood_vlan(ctx, vlan_vid, cfr->in_port, port_entry->value.lag_id) < 0) {
-            AIM_LOG_WARN("missing VLAN entry for vlan %u", vlan_vid);
-        }
+        flood_vlan(ctx, vlan_vid, port_entry->value.lag_id);
 
         return;
     }
@@ -313,13 +311,8 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
             return;
         }
 
-        if (flood_on_dlf) {
-            if (flood_vlan(ctx, vlan_vid, cfr->in_port, port_entry->value.lag_id) < 0) {
-                AIM_LOG_VERBOSE("missing VLAN entry for vlan %u", vlan_vid);
-            }
-        } else {
-            /* not implemented */
-        }
+        flood_vlan(ctx, vlan_vid, port_entry->value.lag_id);
+
         return;
     }
 
@@ -573,13 +566,14 @@ check_vlan_membership(struct vlan_entry *vlan_entry, uint32_t in_port, bool *tag
     return false;
 }
 
-static indigo_error_t
-flood_vlan(struct ctx *ctx, uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id)
+static void
+flood_vlan(struct ctx *ctx, uint16_t vlan_vid, uint32_t lag_id)
 {
     struct flood_key key = { .lag_id = lag_id };
     struct flood_entry *entry = pipeline_bvs_table_flood_lookup(&key);
     if (entry == NULL) {
-        return INDIGO_ERROR_NOT_FOUND;
+        AIM_LOG_VERBOSE("missing VLAN entry for vlan %u", vlan_vid);
+        return;
     }
 
     int i;
@@ -600,8 +594,6 @@ flood_vlan(struct ctx *ctx, uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id
                        0, /* l3_interface_class_id */
                        false); /* l3 */
     }
-
-    return INDIGO_ERROR_NONE;
 }
 
 static void
