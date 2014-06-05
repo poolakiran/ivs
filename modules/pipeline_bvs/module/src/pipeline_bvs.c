@@ -30,8 +30,7 @@ static void process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_tt
 static void process_l3(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint32_t ingress_lag_id, uint16_t orig_vlan_vid, uint8_t ttl);
 static void process_debug(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint16_t orig_vlan_vid);
 static void process_egress(struct ctx *ctx, uint32_t out_port, uint16_t vlan_vid, uint32_t ingress_lag_id, uint32_t l3_interface_class_id, bool l3);
-static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, uint32_t *l3_interface_class_id);
-static bool is_vlan_configured( uint16_t vlan_vid);
+static bool check_vlan_membership(struct vlan_entry *vlan_entry, uint32_t in_port, bool *tagged);
 static indigo_error_t flood_vlan(struct ctx *ctx, uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id);
 static void ingress_mirror(struct ctx *ctx, uint32_t port_no);
 static void egress_mirror(struct ctx *ctx, uint32_t port_no);
@@ -208,24 +207,23 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
 
     cfr->dl_vlan = htons(VLAN_TCI(vlan_vid, VLAN_PCP(ntohs(cfr->dl_vlan))) | VLAN_CFI_BIT);
 
-    if (is_vlan_configured(vlan_vid) == false) {
+    struct vlan_entry *vlan_entry = pipeline_bvs_table_vlan_lookup(vlan_vid);
+    if (!vlan_entry) {
         AIM_LOG_VERBOSE("Packet received on unconfigured vlan %u (bad VLAN)", vlan_vid);
         mark_drop(ctx);
         return;
     }
 
-    UNUSED bool in_port_tagged;
-    uint32_t vlan_l3_interface_class_id;
-    if (check_vlan(vlan_vid, cfr->in_port, &in_port_tagged, &vrf, &vlan_l3_interface_class_id) < 0) {
+    if (!check_vlan_membership(vlan_entry, cfr->in_port, NULL)) {
         AIM_LOG_VERBOSE("port %u not allowed on vlan %u", cfr->in_port, vlan_vid);
         mark_drop(ctx);
         return;
     }
 
     if (!vlan_acl_hit) {
-        AIM_LOG_VERBOSE("VLAN %u: vrf=%u", vlan_vid, vrf);
-        cfr->vrf = vrf;
-        cfr->l3_interface_class_id = vlan_l3_interface_class_id;
+        AIM_LOG_VERBOSE("VLAN %u: vrf=%u", vlan_vid, vlan_entry->value.vrf);
+        cfr->vrf = vlan_entry->value.vrf;
+        cfr->l3_interface_class_id = vlan_entry->value.l3_interface_class_id;
     }
 
     /* Source lookup */
@@ -314,7 +312,7 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
 
         if (flood_on_dlf) {
             if (flood_vlan(ctx, vlan_vid, cfr->in_port, port_entry->value.lag_id) < 0) {
-                AIM_LOG_WARN("missing VLAN entry for vlan %u", vlan_vid);
+                AIM_LOG_VERBOSE("missing VLAN entry for vlan %u", vlan_vid);
             }
         } else {
             /* not implemented */
@@ -487,11 +485,15 @@ process_egress(struct ctx *ctx,
                uint32_t l3_interface_class_id,
                bool l3)
 {
+    struct vlan_entry *vlan_entry = pipeline_bvs_table_vlan_lookup(vlan_vid);
+    if (!vlan_entry) {
+        AIM_LOG_VERBOSE("Packet routed to unconfigured vlan %u", vlan_vid);
+        return;
+    }
+
     bool out_port_tagged;
-    UNUSED uint32_t out_vrf;
-    UNUSED uint32_t out_l3_interface_class_id;
-    if (check_vlan(vlan_vid, out_port, &out_port_tagged, &out_vrf, &out_l3_interface_class_id) < 0) {
-        AIM_LOG_WARN("output port %u not allowed on vlan %u", out_port, vlan_vid);
+    if (!check_vlan_membership(vlan_entry, out_port, &out_port_tagged)) {
+        AIM_LOG_VERBOSE("output port %u not allowed on vlan %u", out_port, vlan_vid);
         return;
     }
 
@@ -540,40 +542,26 @@ process_egress(struct ctx *ctx,
 }
 
 static bool
-is_vlan_configured(uint16_t vlan_vid)
+check_vlan_membership(struct vlan_entry *vlan_entry, uint32_t in_port, bool *tagged)
 {
-    struct vlan_key key = { .vlan_vid = vlan_vid & ~VLAN_CFI_BIT };
-    return pipeline_bvs_table_vlan_lookup(&key) != NULL;
-}
-
-static indigo_error_t
-check_vlan(uint16_t vlan_vid, uint32_t in_port,
-           bool *tagged, uint32_t *vrf,
-           uint32_t *l3_interface_class_id)
-{
-    struct vlan_key key = { .vlan_vid = vlan_vid & ~VLAN_CFI_BIT};
-    struct vlan_entry *entry = pipeline_bvs_table_vlan_lookup(&key);
-    if (entry == NULL) {
-        return INDIGO_ERROR_NOT_FOUND;
-    }
-
-    *vrf = entry->value.vrf;
-    *l3_interface_class_id = entry->value.l3_interface_class_id;
-
     int i;
-    for (i = 0; i < entry->value.num_ports; i++) {
-        if (entry->value.ports[i] == in_port) {
-            *tagged = i < entry->value.num_tagged_ports;
-            return INDIGO_ERROR_NONE;
+    for (i = 0; i < vlan_entry->value.num_ports; i++) {
+        if (vlan_entry->value.ports[i] == in_port) {
+            if (tagged) {
+                *tagged = i < vlan_entry->value.num_tagged_ports;
+            }
+            return true;
         }
     }
 
     if (in_port == OF_PORT_DEST_LOCAL) {
-        *tagged = true;
-        return INDIGO_ERROR_NONE;
+        if (tagged) {
+            *tagged = true;
+        }
+        return true;
     }
 
-    return INDIGO_ERROR_NOT_FOUND;
+    return false;
 }
 
 static indigo_error_t
