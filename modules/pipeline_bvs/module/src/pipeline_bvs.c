@@ -28,7 +28,7 @@ static const of_mac_addr_t cdp_mac = { { 0x01, 0x00, 0x0c, 0xcc, 0xcc, 0xcc } };
 
 static indigo_error_t process_l3( struct ind_ovs_cfr *cfr, uint32_t hash, uint32_t ingress_lag_id, uint16_t orig_vlan_vid, uint8_t ttl, struct pipeline_result *result, struct ctx *ctx);
 static void process_debug(struct ind_ovs_cfr *cfr, uint32_t hash, uint16_t orig_vlan_vid, struct pipeline_result *result, struct ctx *ctx);
-static void process_egress(uint32_t out_port, uint16_t vlan_vid, uint32_t ingress_lag_id, uint32_t l3_interface_class_id, bool l3, uint32_t hash, struct pipeline_result *result, struct ctx *ctx);
+static void process_egress(uint32_t out_port, uint16_t vlan_vid, uint32_t ingress_lag_id, uint32_t l3_interface_class_id, bool l3, uint32_t hash, struct pipeline_result *result);
 static indigo_error_t lookup_l2( uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats, uint32_t *port_no, uint32_t *group_id);
 static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, uint32_t *l3_interface_class_id);
 static bool is_vlan_configured( uint16_t vlan_vid);
@@ -363,7 +363,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
                    lag_id,
                    0, /* l3_interface_class_id */
                    false, /* l3 */
-                   hash, result, &ctx);
+                   hash, result);
 
     return INDIGO_ERROR_NONE;
 }
@@ -463,7 +463,7 @@ process_l3(struct ind_ovs_cfr *cfr,
                    ingress_lag_id,
                    cfr->l3_interface_class_id,
                    true, /* l3 */
-                   hash, result, ctx);
+                   hash, result);
 
     return INDIGO_ERROR_NONE;
 }
@@ -510,8 +510,7 @@ process_egress(uint32_t out_port,
                uint32_t l3_interface_class_id,
                bool l3,
                uint32_t hash,
-               struct pipeline_result *result,
-               struct ctx *ctx)
+               struct pipeline_result *result)
 {
     bool out_port_tagged;
     UNUSED uint32_t out_vrf;
