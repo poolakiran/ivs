@@ -290,9 +290,10 @@ pipeline_bvs_table_l3_cidr_route_unregister(void)
 }
 
 struct l3_cidr_route_entry *
-pipeline_bvs_table_l3_cidr_route_lookup(const struct l3_cidr_route_key *key)
+pipeline_bvs_table_l3_cidr_route_lookup(uint32_t vrf, uint32_t ipv4)
 {
-    struct tcam_entry *tcam_entry = tcam_match(l3_cidr_route_tcam, key);
+    struct l3_cidr_route_key key = { .vrf=vrf, .ipv4 = ntohl(ipv4) };
+    struct tcam_entry *tcam_entry = tcam_match(l3_cidr_route_tcam, &key);
     if (tcam_entry) {
         struct l3_cidr_route_entry *entry = container_of(tcam_entry, tcam_entry, struct l3_cidr_route_entry);
         const struct l3_cidr_route_key *entry_key = tcam_entry->key;
@@ -303,7 +304,7 @@ pipeline_bvs_table_l3_cidr_route_lookup(const struct l3_cidr_route_key *key)
                         entry->value.next_hop.group_id, entry->value.next_hop.new_vlan_vid, &entry->value.next_hop.new_eth_src, &entry->value.next_hop.new_eth_dst, entry->value.cpu);
         return entry;
     } else {
-        AIM_LOG_VERBOSE("Miss l3_cidr_route entry vrf=%u ipv4=%{ipv4a}", key->vrf, key->ipv4);
+        AIM_LOG_VERBOSE("Miss l3_cidr_route entry vrf=%u ipv4=%{ipv4a}", key.vrf, key.ipv4);
         return NULL;
     }
 }

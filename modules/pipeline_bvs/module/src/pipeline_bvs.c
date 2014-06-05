@@ -35,7 +35,6 @@ static void flood_vlan(struct ctx *ctx, uint16_t vlan_vid, uint32_t lag_id);
 static void span(struct ctx *ctx, uint32_t span_id);
 static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
 static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, struct next_hop **next_hop);
-static indigo_error_t lookup_l3_route(uint32_t vrf, uint32_t ipv4_dst, struct next_hop **next_hop, bool *cpu);
 static struct debug_key make_debug_key(struct ind_ovs_cfr *cfr);
 static struct vlan_acl_key make_vlan_acl_key(struct ind_ovs_cfr *cfr);
 static struct ingress_acl_key make_ingress_acl_key(struct ind_ovs_cfr *cfr);
@@ -356,7 +355,19 @@ process_l3(struct ctx *ctx,
         mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_TTL_EXPIRED);
         mark_drop(ctx);
     } else {
-        lookup_l3_route(cfr->vrf, cfr->nw_dst, &next_hop, &cpu);
+        struct l3_host_route_entry *l3_host_route_entry =
+            pipeline_bvs_table_l3_host_route_lookup(cfr->vrf, cfr->nw_dst);
+        if (l3_host_route_entry != NULL) {
+            next_hop = &l3_host_route_entry->value.next_hop;
+            cpu = l3_host_route_entry->value.cpu;
+        } else {
+            struct l3_cidr_route_entry *l3_cidr_route_entry =
+                pipeline_bvs_table_l3_cidr_route_lookup(cfr->vrf, cfr->nw_dst);
+            if (l3_cidr_route_entry != NULL) {
+                next_hop = &l3_cidr_route_entry->value.next_hop;
+                cpu = l3_cidr_route_entry->value.cpu;
+            }
+        }
     }
 
     process_debug(ctx, cfr, orig_vlan_vid);
@@ -703,36 +714,6 @@ select_ecmp_route(
     *next_hop = &static_next_hop;
 
     return INDIGO_ERROR_NONE;
-}
-
-static indigo_error_t
-lookup_l3_route(uint32_t vrf, uint32_t ipv4_dst,
-                struct next_hop **next_hop, bool *cpu)
-{
-    AIM_LOG_VERBOSE("looking up route for VRF=%u ip=%{ipv4a}", vrf, htonl(ipv4_dst));
-
-    *next_hop = NULL;
-    *cpu = false;
-
-    {
-        struct l3_host_route_key key = { .vrf=vrf, .ipv4 = htonl(ipv4_dst) };
-        struct l3_host_route_entry *entry = pipeline_bvs_table_l3_host_route_lookup(&key);
-        if (entry != NULL) {
-            *next_hop = &entry->value.next_hop;
-            *cpu = entry->value.cpu;
-        }
-    }
-
-    if (!*next_hop) {
-        struct l3_cidr_route_key key = { .vrf=vrf, .ipv4 = htonl(ipv4_dst) };
-        struct l3_cidr_route_entry *entry = pipeline_bvs_table_l3_cidr_route_lookup(&key);
-        if (entry != NULL) {
-            *next_hop = &entry->value.next_hop;
-            *cpu = entry->value.cpu;
-        }
-    }
-
-    return INDIGO_ERROR_NOT_FOUND;
 }
 
 static struct debug_key

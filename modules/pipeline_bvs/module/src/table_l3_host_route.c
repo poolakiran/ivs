@@ -259,9 +259,10 @@ pipeline_bvs_table_l3_host_route_unregister(void)
 }
 
 struct l3_host_route_entry *
-pipeline_bvs_table_l3_host_route_lookup(const struct l3_host_route_key *key)
+pipeline_bvs_table_l3_host_route_lookup(uint32_t vrf, uint32_t ipv4)
 {
-    struct l3_host_route_entry *entry = l3_host_route_hashtable_first(l3_host_route_hashtable, key);
+    struct l3_host_route_key key = { .vrf=vrf, .ipv4 = ntohl(ipv4) };
+    struct l3_host_route_entry *entry = l3_host_route_hashtable_first(l3_host_route_hashtable, &key);
     if (entry) {
         switch (group_to_table_id(entry->value.next_hop.group_id)) {
         case GROUP_TABLE_ID_LAG:
@@ -279,7 +280,7 @@ pipeline_bvs_table_l3_host_route_lookup(const struct l3_host_route_key *key)
         }
     } else {
         AIM_LOG_VERBOSE("Miss l3_host_route entry vrf=%u, ip=%{ipv4a}",
-                        key->vrf, key->ipv4);
+                        key.vrf, key.ipv4);
     }
     return entry;
 }

@@ -38,6 +38,6 @@ struct l3_cidr_route_entry {
 
 void pipeline_bvs_table_l3_cidr_route_register(void);
 void pipeline_bvs_table_l3_cidr_route_unregister(void);
-struct l3_cidr_route_entry *pipeline_bvs_table_l3_cidr_route_lookup(const struct l3_cidr_route_key *key);
+struct l3_cidr_route_entry *pipeline_bvs_table_l3_cidr_route_lookup(uint32_t vrf, uint32_t ipv4);
 
 #endif
