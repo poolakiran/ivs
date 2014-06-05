@@ -36,7 +36,7 @@ static void span(struct ctx *ctx, uint32_t span_id);
 static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
 static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, struct next_hop **next_hop);
 static indigo_error_t lookup_l3_route(uint32_t vrf, uint32_t ipv4_dst, struct next_hop **next_hop, bool *cpu);
-static void lookup_debug(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint32_t *span_id, bool *cpu, bool *drop);
+static struct debug_key make_debug_key(struct ind_ovs_cfr *cfr);
 static struct vlan_acl_key make_vlan_acl_key(struct ind_ovs_cfr *cfr);
 static struct ingress_acl_key make_ingress_acl_key(struct ind_ovs_cfr *cfr);
 static uint32_t group_to_table_id(uint32_t group_id);
@@ -450,22 +450,26 @@ process_debug(struct ctx *ctx,
               struct ind_ovs_cfr *cfr,
               uint16_t orig_vlan_vid)
 {
-    uint32_t span_id;
-    bool cpu, drop;
+    struct debug_key debug_key = make_debug_key(cfr);
+    struct debug_entry *debug_entry =
+        pipeline_bvs_table_debug_lookup(&debug_key);
+    if (!debug_entry) {
+        return;
+    }
 
-    lookup_debug(ctx, cfr, &span_id, &cpu, &drop);
+    apply_stats(ctx->result, &debug_entry->stats);
 
-    if (span_id != OF_GROUP_ANY) {
+    if (debug_entry->value.span_id != OF_GROUP_ANY) {
         if (orig_vlan_vid != 0) {
             set_vlan_vid(ctx->result, orig_vlan_vid);
         } else {
             pop_vlan(ctx->result);
         }
-        span(ctx, span_id);
+        span(ctx, debug_entry->value.span_id);
         set_vlan_vid(ctx->result, VLAN_VID(ntohs(cfr->dl_vlan)));
     }
 
-    if (cpu) {
+    if (debug_entry->value.cpu) {
         if (!(ctx->pktin_metadata & (OFP_BSN_PKTIN_FLAG_ARP|
                                      OFP_BSN_PKTIN_FLAG_DHCP|
                                      OFP_BSN_PKTIN_FLAG_STATION_MOVE))) {
@@ -473,7 +477,7 @@ process_debug(struct ctx *ctx,
         }
     }
 
-    if (drop) {
+    if (debug_entry->value.drop) {
         mark_drop(ctx);
     }
 }
@@ -731,8 +735,8 @@ lookup_l3_route(uint32_t vrf, uint32_t ipv4_dst,
     return INDIGO_ERROR_NOT_FOUND;
 }
 
-static void
-lookup_debug(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint32_t *span_id, bool *cpu, bool *drop)
+static struct debug_key
+make_debug_key(struct ind_ovs_cfr *cfr)
 {
     struct debug_key key = {
         .in_port = cfr->in_port,
@@ -750,19 +754,7 @@ lookup_debug(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint32_t *span_id, bool *
     memcpy(&key.eth_src, cfr->dl_src, OF_MAC_ADDR_BYTES);
     memcpy(&key.eth_dst, cfr->dl_dst, OF_MAC_ADDR_BYTES);
 
-    struct debug_entry *entry = pipeline_bvs_table_debug_lookup(&key);
-    if (entry == NULL) {
-        *span_id = OF_GROUP_ANY;
-        *drop = false;
-        *cpu = false;
-        return;
-    }
-
-    *span_id = entry->value.span_id;
-    *drop = entry->value.drop;
-    *cpu = entry->value.cpu;
-
-    apply_stats(ctx->result, &entry->stats);
+    return key;
 }
 
 static struct vlan_acl_key
