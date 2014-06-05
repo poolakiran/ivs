@@ -354,16 +354,10 @@ process_l3(struct ctx *ctx,
     if (ttl <= 1) {
         AIM_LOG_VERBOSE("sending TTL expired packet to agent");
         mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_TTL_EXPIRED);
-        process_debug(ctx, cfr, orig_vlan_vid);
-        lookup_ingress_acl(ctx, cfr, &next_hop, &cpu, &drop);
-        if (cpu) {
-            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_L3_CPU);
-        }
-        process_pktin(ctx);
-        return;
+        mark_drop(ctx);
+    } else {
+        lookup_l3_route(cfr->vrf, cfr->nw_dst, &next_hop, &cpu);
     }
-
-    lookup_l3_route(cfr->vrf, cfr->nw_dst, &next_hop, &cpu);
 
     process_debug(ctx, cfr, orig_vlan_vid);
 
@@ -372,7 +366,12 @@ process_l3(struct ctx *ctx,
     bool hit = next_hop != NULL;
     bool valid_next_hop = next_hop != NULL && next_hop->group_id != OF_GROUP_ANY;
 
-    if (cpu) {
+    if (ttl <= 1) {
+        if (cpu) {
+            AIM_LOG_VERBOSE("L3 copy to CPU");
+            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_L3_CPU);
+        }
+    } else if (cpu) {
         AIM_LOG_VERBOSE("L3 copy to CPU");
         mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_L3_CPU);
 
