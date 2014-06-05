@@ -30,7 +30,6 @@ static void process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_tt
 static void process_l3(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint32_t ingress_lag_id, uint16_t orig_vlan_vid, uint8_t ttl);
 static void process_debug(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint16_t orig_vlan_vid);
 static void process_egress(struct ctx *ctx, uint32_t out_port, uint16_t vlan_vid, uint32_t ingress_lag_id, uint32_t l3_interface_class_id, bool l3);
-static indigo_error_t lookup_l2(struct ctx *ctx, uint16_t vlan_vid, const uint8_t *eth_addr, bool update_stats, uint32_t *group_id);
 static indigo_error_t check_vlan( uint16_t vlan_vid, uint32_t in_port, bool *tagged, uint32_t *vrf, uint32_t *l3_interface_class_id);
 static bool is_vlan_configured( uint16_t vlan_vid);
 static indigo_error_t flood_vlan(struct ctx *ctx, uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id);
@@ -251,27 +250,27 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
     }
 
     /* Source lookup */
-    uint32_t src_group_id;
-    if (lookup_l2(ctx, vlan_vid, cfr->dl_src, true, &src_group_id) < 0) {
-        if (!disable_src_mac_check) {
-            AIM_LOG_VERBOSE("miss in source l2table lookup (new host)");
-            mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_NEW_HOST);
-            mark_drop(ctx);
-        }
-    } else {
-        AIM_LOG_VERBOSE("hit in source l2table lookup, src_group_id=%u", src_group_id);
+    struct l2_entry *src_l2_entry =
+        pipeline_bvs_table_l2_lookup(vlan_vid, cfr->dl_src);
+    if (src_l2_entry) {
+        apply_stats(ctx->result, &src_l2_entry->stats);
 
-        if (src_group_id == OF_GROUP_ANY) {
+        if (src_l2_entry->value.lag_id == OF_GROUP_ANY) {
             AIM_LOG_VERBOSE("L2 source discard");
             mark_drop(ctx);
-        }
-
-        if (!disable_src_mac_check) {
-            if (src_group_id != OF_GROUP_ANY && src_group_id != lag_id) {
+        } else if (!disable_src_mac_check) {
+            if (src_l2_entry->value.lag_id != OF_GROUP_ANY &&
+                    src_l2_entry->value.lag_id != lag_id) {
                 AIM_LOG_VERBOSE("incorrect lag_id in source l2table lookup (station move)");
                 mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_STATION_MOVE);
                 mark_drop(ctx);
             }
+        }
+    } else {
+        if (!disable_src_mac_check) {
+            AIM_LOG_VERBOSE("miss in source l2table lookup (new host)");
+            mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_NEW_HOST);
+            mark_drop(ctx);
         }
     }
 
@@ -323,8 +322,9 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
     }
 
     /* Destination lookup */
-    uint32_t dst_group_id;
-    if (lookup_l2(ctx, vlan_vid, cfr->dl_dst, false, &dst_group_id) < 0) {
+    struct l2_entry *dst_l2_entry =
+        pipeline_bvs_table_l2_lookup(vlan_vid, cfr->dl_dst);
+    if (!dst_l2_entry) {
         AIM_LOG_VERBOSE("miss in destination l2table lookup (destination lookup failure)");
 
         process_debug(ctx, cfr, orig_vlan_vid);
@@ -344,9 +344,9 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
         return;
     }
 
-    AIM_LOG_VERBOSE("hit in destination l2table lookup, dst_group_id=%u", dst_group_id);
+    AIM_LOG_VERBOSE("hit in destination l2table lookup, lag %u", dst_l2_entry->value.lag_id);
 
-    if (dst_group_id == OF_GROUP_ANY) {
+    if (dst_l2_entry->value.lag_id == OF_GROUP_ANY) {
         AIM_LOG_VERBOSE("L2 destination discard");
         mark_drop(ctx);
     }
@@ -359,12 +359,10 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
     }
 
     uint32_t dst_port_no;
-    if (dst_group_id != OF_GROUP_ANY) {
-        if (select_lag_port(dst_group_id, ctx->hash, &dst_port_no) < 0) {
-            return;
-        }
-        AIM_LOG_VERBOSE("selected LAG port %u", dst_port_no);
+    if (select_lag_port(dst_l2_entry->value.lag_id, ctx->hash, &dst_port_no) < 0) {
+        return;
     }
+    AIM_LOG_VERBOSE("selected LAG port %u", dst_port_no);
 
     process_egress(ctx,
                    dst_port_no,
@@ -567,30 +565,6 @@ process_egress(struct ctx *ctx,
 
     egress_mirror(ctx, out_port);
     output(ctx->result, out_port);
-}
-
-static indigo_error_t
-lookup_l2(struct ctx *ctx, uint16_t vlan_vid, const uint8_t *eth_addr,
-          bool update_stats,
-          uint32_t *group_id)
-{
-    struct l2_key key;
-    key.vlan_vid = VLAN_VID(vlan_vid);
-    memcpy(&key.mac.addr, eth_addr, OF_MAC_ADDR_BYTES);
-
-    *group_id = OF_GROUP_ANY;
-
-    struct l2_entry *entry = pipeline_bvs_table_l2_lookup(&key);
-    if (entry == NULL) {
-        return INDIGO_ERROR_NOT_FOUND;
-    }
-
-    if (update_stats) {
-        apply_stats(ctx->result, &entry->stats);
-    }
-
-    *group_id = entry->value.lag_id;
-    return INDIGO_ERROR_NONE;
 }
 
 static bool

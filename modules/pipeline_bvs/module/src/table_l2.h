@@ -40,6 +40,6 @@ struct l2_entry {
 
 void pipeline_bvs_table_l2_register(void);
 void pipeline_bvs_table_l2_unregister(void);
-struct l2_entry *pipeline_bvs_table_l2_lookup(const struct l2_key *key);
+struct l2_entry *pipeline_bvs_table_l2_lookup(uint16_t vlan_vid, const uint8_t *mac);
 
 #endif
