@@ -37,6 +37,6 @@ struct egress_mirror_entry {
 
 void pipeline_bvs_table_egress_mirror_register(void);
 void pipeline_bvs_table_egress_mirror_unregister(void);
-struct egress_mirror_entry *pipeline_bvs_table_egress_mirror_lookup(const struct egress_mirror_key *key);
+struct egress_mirror_entry *pipeline_bvs_table_egress_mirror_lookup(uint32_t in_port);
 
 #endif

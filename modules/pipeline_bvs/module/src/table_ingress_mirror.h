@@ -37,6 +37,6 @@ struct ingress_mirror_entry {
 
 void pipeline_bvs_table_ingress_mirror_register(void);
 void pipeline_bvs_table_ingress_mirror_unregister(void);
-struct ingress_mirror_entry *pipeline_bvs_table_ingress_mirror_lookup(const struct ingress_mirror_key *key);
+struct ingress_mirror_entry *pipeline_bvs_table_ingress_mirror_lookup(uint32_t port_no);
 
 #endif

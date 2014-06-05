@@ -32,8 +32,6 @@ static void process_debug(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint16_t ori
 static void process_egress(struct ctx *ctx, uint32_t out_port, uint16_t vlan_vid, uint32_t ingress_lag_id, uint32_t l3_interface_class_id, bool l3);
 static bool check_vlan_membership(struct vlan_entry *vlan_entry, uint32_t in_port, bool *tagged);
 static indigo_error_t flood_vlan(struct ctx *ctx, uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id);
-static void ingress_mirror(struct ctx *ctx, uint32_t port_no);
-static void egress_mirror(struct ctx *ctx, uint32_t port_no);
 static void span(struct ctx *ctx, uint32_t span_id);
 static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
 static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, struct next_hop **next_hop);
@@ -134,7 +132,12 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
 {
     uint16_t orig_vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan));
 
-    ingress_mirror(ctx, cfr->in_port);
+    /* Ingress mirror */
+    struct ingress_mirror_entry *ingress_mirror_entry =
+        pipeline_bvs_table_ingress_mirror_lookup(cfr->in_port);
+    if (ingress_mirror_entry) {
+        span(ctx, ingress_mirror_entry->value.span_id);
+    }
 
     bool packet_of_death = false;
     if (cfr->dl_type == htons(0x88cc)) {
@@ -537,7 +540,13 @@ process_egress(struct ctx *ctx,
         }
     }
 
-    egress_mirror(ctx, out_port);
+    /* Egress mirror */
+    struct egress_mirror_entry *egress_mirror_entry =
+        pipeline_bvs_table_egress_mirror_lookup(out_port);
+    if (egress_mirror_entry) {
+        span(ctx, egress_mirror_entry->value.span_id);
+    }
+
     output(ctx->result, out_port);
 }
 
@@ -593,28 +602,6 @@ flood_vlan(struct ctx *ctx, uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id
     }
 
     return INDIGO_ERROR_NONE;
-}
-
-static void
-ingress_mirror(struct ctx *ctx, uint32_t port_no)
-{
-    struct ingress_mirror_key key = { .in_port = port_no };
-
-    struct ingress_mirror_entry *entry = pipeline_bvs_table_ingress_mirror_lookup(&key);
-    if (entry != NULL) {
-        span(ctx, entry->value.span_id);
-    }
-}
-
-static void
-egress_mirror(struct ctx *ctx, uint32_t port_no)
-{
-    struct egress_mirror_key key = { .out_port = port_no };
-
-    struct egress_mirror_entry *entry = pipeline_bvs_table_egress_mirror_lookup(&key);
-    if (entry != NULL) {
-        span(ctx, entry->value.span_id);
-    }
 }
 
 static void
