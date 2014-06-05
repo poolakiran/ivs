@@ -44,6 +44,6 @@ struct port_entry {
 
 void pipeline_bvs_table_port_register(void);
 void pipeline_bvs_table_port_unregister(void);
-struct port_entry *pipeline_bvs_table_port_lookup(const struct port_key *key);
+struct port_entry *pipeline_bvs_table_port_lookup(uint32_t port_no);
 
 #endif

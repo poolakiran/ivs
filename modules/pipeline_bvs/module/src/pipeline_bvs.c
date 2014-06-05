@@ -36,7 +36,6 @@ static indigo_error_t flood_vlan(struct ctx *ctx, uint16_t vlan_vid, uint32_t in
 static void ingress_mirror(struct ctx *ctx, uint32_t port_no);
 static void egress_mirror(struct ctx *ctx, uint32_t port_no);
 static void span(struct ctx *ctx, uint32_t span_id);
-static indigo_error_t lookup_port( uint32_t port_no, uint16_t *default_vlan_vid, uint32_t *lag_id, bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload, bool *allow_packet_of_death, uint32_t *egr_port_group_id);
 static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
 static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, struct next_hop **next_hop);
 static indigo_error_t lookup_my_station( const uint8_t *eth_addr);
@@ -165,32 +164,13 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
         return;
     }
 
-    uint16_t default_vlan_vid;
-    uint32_t lag_id;
-    bool disable_src_mac_check;
-    bool arp_offload;
-    bool dhcp_offload;
-    bool allow_packet_of_death;
-    uint32_t egr_port_group_id;
-    if (cfr->in_port == OF_PORT_DEST_LOCAL) {
-        default_vlan_vid = 0;
-        lag_id = OF_GROUP_ANY;
-        disable_src_mac_check = true;
-        arp_offload = false;
-        dhcp_offload = false;
-        allow_packet_of_death = false;
-        egr_port_group_id = 0;
-    } else {
-        if (lookup_port(cfr->in_port, &default_vlan_vid, &lag_id, &disable_src_mac_check, &arp_offload, &dhcp_offload, &allow_packet_of_death, &egr_port_group_id) < 0) {
-            AIM_LOG_WARN("port %u not found", cfr->in_port);
-            return;
-        }
+    struct port_entry *port_entry = pipeline_bvs_table_port_lookup(cfr->in_port);
+    if (!port_entry) {
+        return;
     }
 
-    AIM_LOG_VERBOSE("hit in port table lookup, default_vlan_vid=%u lag_id=%u disable_src_mac_check=%u arp_offload=%u dhcp_offload=%u allow_packet_of_death=%u", default_vlan_vid, lag_id, disable_src_mac_check, arp_offload, dhcp_offload, allow_packet_of_death);
-
     if (packet_of_death) {
-        if (allow_packet_of_death) {
+        if (port_entry->value.packet_of_death) {
             AIM_LOG_VERBOSE("sending packet of death to cpu");
             pktin(ctx->result, OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH, 0);
         } else {
@@ -215,13 +195,13 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
         if (cfr->dl_vlan & htons(VLAN_CFI_BIT)) {
             vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan));
             struct vlan_xlate_entry *vlan_xlate_entry =
-                pipeline_bvs_table_vlan_xlate_lookup(lag_id, vlan_vid);
+                pipeline_bvs_table_vlan_xlate_lookup(port_entry->value.lag_id, vlan_vid);
             if (vlan_xlate_entry) {
                 vlan_vid = vlan_xlate_entry->value.new_vlan_vid;
                 set_vlan_vid(ctx->result, vlan_vid);
             }
         } else {
-            vlan_vid = default_vlan_vid;
+            vlan_vid = port_entry->value.default_vlan_vid;
             push_vlan(ctx->result, 0x8100);
             set_vlan_vid(ctx->result, vlan_vid);
         }
@@ -258,16 +238,16 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
         if (src_l2_entry->value.lag_id == OF_GROUP_ANY) {
             AIM_LOG_VERBOSE("L2 source discard");
             mark_drop(ctx);
-        } else if (!disable_src_mac_check) {
+        } else if (!port_entry->value.disable_src_mac_check) {
             if (src_l2_entry->value.lag_id != OF_GROUP_ANY &&
-                    src_l2_entry->value.lag_id != lag_id) {
+                    src_l2_entry->value.lag_id != port_entry->value.lag_id) {
                 AIM_LOG_VERBOSE("incorrect lag_id in source l2table lookup (station move)");
                 mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_STATION_MOVE);
                 mark_drop(ctx);
             }
         }
     } else {
-        if (!disable_src_mac_check) {
+        if (!port_entry->value.disable_src_mac_check) {
             AIM_LOG_VERBOSE("miss in source l2table lookup (new host)");
             mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_NEW_HOST);
             mark_drop(ctx);
@@ -275,7 +255,7 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
     }
 
     /* ARP offload */
-    if (arp_offload) {
+    if (port_entry->value.arp_offload) {
         if (cfr->dl_type == htons(0x0806)) {
             AIM_LOG_VERBOSE("sending ARP packet to agent");
             mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_ARP);
@@ -284,7 +264,7 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
     }
 
     /* DHCP offload */
-    if (dhcp_offload) {
+    if (port_entry->value.dhcp_offload) {
         if (cfr->dl_type == htons(0x0800) && cfr->nw_proto == 17 &&
                 (cfr->tp_dst == htons(67) || cfr->tp_dst == htons(68))) {
             AIM_LOG_VERBOSE("sending DHCP packet to agent");
@@ -302,7 +282,7 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
             return;
         }
 
-        if (flood_vlan(ctx, vlan_vid, cfr->in_port, lag_id) < 0) {
+        if (flood_vlan(ctx, vlan_vid, cfr->in_port, port_entry->value.lag_id) < 0) {
             AIM_LOG_WARN("missing VLAN entry for vlan %u", vlan_vid);
         }
 
@@ -317,7 +297,7 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
 
     if (lookup_my_station(cfr->dl_dst) == 0) {
         AIM_LOG_VERBOSE("hit in MyStation table, entering L3 processing");
-        process_l3(ctx, cfr, lag_id, orig_vlan_vid, ipv4_ttl);
+        process_l3(ctx, cfr, port_entry->value.lag_id, orig_vlan_vid, ipv4_ttl);
         return;
     }
 
@@ -335,7 +315,7 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
         }
 
         if (flood_on_dlf) {
-            if (flood_vlan(ctx, vlan_vid, cfr->in_port, lag_id) < 0) {
+            if (flood_vlan(ctx, vlan_vid, cfr->in_port, port_entry->value.lag_id) < 0) {
                 AIM_LOG_WARN("missing VLAN entry for vlan %u", vlan_vid);
             }
         } else {
@@ -367,7 +347,7 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
     process_egress(ctx,
                    dst_port_no,
                    vlan_vid,
-                   lag_id,
+                   port_entry->value.lag_id,
                    0, /* l3_interface_class_id */
                    false); /* l3 */
 }
@@ -517,19 +497,13 @@ process_egress(struct ctx *ctx,
         return;
     }
 
-    UNUSED uint16_t out_default_vlan_vid;
-    uint32_t out_lag_id;
-    UNUSED bool out_disable_src_mac_check;
-    UNUSED bool out_arp_offload;
-    UNUSED bool out_dhcp_offload;
-    UNUSED bool out_allow_packet_of_death;
-    uint32_t out_egr_port_group_id;
-    if (lookup_port(out_port, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_allow_packet_of_death, &out_egr_port_group_id) < 0) {
-        AIM_LOG_WARN("port %u not found during egress", out_port);
+    struct port_entry *dst_port_entry = pipeline_bvs_table_port_lookup(out_port);
+    if (!dst_port_entry) {
         return;
     }
 
-    if (!l3 && out_lag_id != OF_GROUP_ANY && out_lag_id == ingress_lag_id) {
+    if (!l3 && dst_port_entry->value.lag_id != OF_GROUP_ANY &&
+            dst_port_entry->value.lag_id == ingress_lag_id) {
         AIM_LOG_VERBOSE("skipping ingress LAG %u", ingress_lag_id);
         return;
     }
@@ -552,7 +526,7 @@ process_egress(struct ctx *ctx,
     if (l3) {
         struct egress_acl_key key = {
             .vlan_vid = tag,
-            .egr_port_group_id = out_egr_port_group_id,
+            .egr_port_group_id = dst_port_entry->value.egr_port_group_id,
             .l3_interface_class_id = l3_interface_class_id,
         };
 
@@ -686,31 +660,6 @@ span(struct ctx *ctx, uint32_t span_id)
     AIM_LOG_VERBOSE("Selected LAG port %u", dst_port_no);
 
     output(ctx->result, dst_port_no);
-}
-
-static indigo_error_t
-lookup_port(uint32_t port_no,
-            uint16_t *default_vlan_vid, uint32_t *lag_id,
-            bool *disable_src_mac_check, bool *arp_offload, bool *dhcp_offload,
-            bool *allow_packet_of_death,
-            uint32_t *egr_port_group_id)
-{
-    struct port_key key = { .port = port_no };
-
-    struct port_entry *entry = pipeline_bvs_table_port_lookup(&key);
-    if (entry == NULL) {
-        return INDIGO_ERROR_NOT_FOUND;
-    }
-
-    *default_vlan_vid = entry->value.default_vlan_vid;
-    *lag_id = entry->value.lag_id;
-    *disable_src_mac_check = entry->value.disable_src_mac_check;
-    *arp_offload = entry->value.arp_offload;
-    *dhcp_offload = entry->value.dhcp_offload;
-    *allow_packet_of_death = entry->value.packet_of_death;
-    *egr_port_group_id = entry->value.egr_port_group_id;
-
-    return INDIGO_ERROR_NONE;
 }
 
 static indigo_error_t
