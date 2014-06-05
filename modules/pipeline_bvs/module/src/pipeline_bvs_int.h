@@ -89,6 +89,7 @@ enum group_table_id {
 };
 
 struct ctx {
+    struct pipeline_result *result;
     bool drop;
     bool pktin_agent;
     bool pktin_controller;
