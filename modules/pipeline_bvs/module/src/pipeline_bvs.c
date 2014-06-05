@@ -38,7 +38,6 @@ static void egress_mirror(struct ctx *ctx, uint32_t port_no);
 static void span(struct ctx *ctx, uint32_t span_id);
 static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
 static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, struct next_hop **next_hop);
-static indigo_error_t lookup_my_station( const uint8_t *eth_addr);
 static indigo_error_t lookup_l3_route(uint32_t vrf, uint32_t ipv4_dst, struct next_hop **next_hop, bool *cpu);
 static void lookup_debug(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint32_t *span_id, bool *cpu, bool *drop);
 static indigo_error_t lookup_vlan_acl(struct ind_ovs_cfr *cfr, uint32_t *vrf, uint32_t *l3_interface_clas_id, uint32_t *l3_src_class_id);
@@ -295,8 +294,7 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
         return;
     }
 
-    if (lookup_my_station(cfr->dl_dst) == 0) {
-        AIM_LOG_VERBOSE("hit in MyStation table, entering L3 processing");
+    if (pipeline_bvs_table_my_station_lookup(cfr->dl_dst)) {
         process_l3(ctx, cfr, port_entry->value.lag_id, orig_vlan_vid, ipv4_ttl);
         return;
     }
@@ -727,23 +725,6 @@ select_ecmp_route(
     }
 
     *next_hop = &static_next_hop;
-
-    return INDIGO_ERROR_NONE;
-}
-
-static indigo_error_t
-lookup_my_station(const uint8_t *eth_addr)
-{
-    struct my_station_key key = {
-        .pad = 0,
-    };
-    memcpy(&key.mac, eth_addr, OF_MAC_ADDR_BYTES);
-
-    struct my_station_entry *entry =
-        pipeline_bvs_table_my_station_lookup(&key);
-    if (entry == NULL) {
-        return INDIGO_ERROR_NOT_FOUND;
-    }
 
     return INDIGO_ERROR_NONE;
 }
