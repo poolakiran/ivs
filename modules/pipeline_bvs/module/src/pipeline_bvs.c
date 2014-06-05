@@ -27,7 +27,7 @@ static const of_mac_addr_t packet_of_death_mac = { { 0x5C, 0x16, 0xC7, 0xFF, 0xF
 static const of_mac_addr_t cdp_mac = { { 0x01, 0x00, 0x0c, 0xcc, 0xcc, 0xcc } };
 
 static void process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl);
-static indigo_error_t process_l3(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint32_t ingress_lag_id, uint16_t orig_vlan_vid, uint8_t ttl);
+static void process_l3(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint32_t ingress_lag_id, uint16_t orig_vlan_vid, uint8_t ttl);
 static void process_debug(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint16_t orig_vlan_vid);
 static void process_egress(struct ctx *ctx, uint32_t out_port, uint16_t vlan_vid, uint32_t ingress_lag_id, uint32_t l3_interface_class_id, bool l3);
 static indigo_error_t lookup_l2( uint16_t vlan_vid, const uint8_t *eth_addr, struct xbuf *stats, uint32_t *port_no, uint32_t *group_id);
@@ -378,7 +378,7 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
                    false); /* l3 */
 }
 
-static indigo_error_t
+static void
 process_l3(struct ctx *ctx,
            struct ind_ovs_cfr *cfr,
            uint32_t ingress_lag_id,
@@ -398,7 +398,7 @@ process_l3(struct ctx *ctx,
             mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_L3_CPU);
         }
         process_pktin(ctx);
-        return INDIGO_ERROR_NONE;
+        return;
     }
 
     lookup_l3_route(cfr->vrf, cfr->nw_dst, &next_hop, &cpu);
@@ -438,14 +438,14 @@ process_l3(struct ctx *ctx,
     process_pktin(ctx);
 
     if (ctx->drop) {
-        return INDIGO_ERROR_NONE;
+        return;
     }
 
     AIM_ASSERT(valid_next_hop);
 
     if (group_to_table_id(next_hop->group_id) == GROUP_TABLE_ID_ECMP) {
         if (select_ecmp_route(next_hop->group_id, ctx->hash, &next_hop) < 0) {
-            return INDIGO_ERROR_NOT_FOUND;
+            return;
         }
     }
 
@@ -457,7 +457,7 @@ process_l3(struct ctx *ctx,
 
     uint32_t out_port;
     if (select_lag_port(next_hop->group_id, ctx->hash, &out_port) < 0) {
-        return INDIGO_ERROR_NOT_FOUND;
+        return;
     }
 
     AIM_LOG_VERBOSE("selected LAG port %u", out_port);
@@ -472,8 +472,6 @@ process_l3(struct ctx *ctx,
                    ingress_lag_id,
                    cfr->l3_interface_class_id,
                    true); /* l3 */
-
-    return INDIGO_ERROR_NONE;
 }
 
 static void
