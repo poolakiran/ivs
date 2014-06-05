@@ -637,7 +637,6 @@ flood_vlan(uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash,
         return INDIGO_ERROR_NOT_FOUND;
     }
 
-    uint16_t tag = vlan_vid;
     int i;
     for (i = 0; i < entry->value.num_lag_ids; i++) {
         uint32_t group_id = entry->value.lag_ids[i];
@@ -649,59 +648,12 @@ flood_vlan(uint16_t vlan_vid, uint32_t in_port, uint32_t lag_id, uint32_t hash,
         }
         AIM_LOG_VERBOSE("selected LAG %u port %u", group_id, port_no);
 
-        bool tagged;
-        UNUSED uint32_t out_vrf;
-        UNUSED uint32_t out_l3_interface_class_id;
-        if (check_vlan(vlan_vid, port_no, &tagged, &out_vrf, &out_l3_interface_class_id) < 0) {
-            AIM_LOG_VERBOSE("not flooding vlan %u to port %u", vlan_vid, port_no);
-            continue;
-        }
-
-        if (port_no == in_port) {
-            AIM_LOG_VERBOSE("not flooding vlan %u to ingress port %u", vlan_vid, port_no);
-            continue;
-        }
-
-        uint16_t out_default_vlan_vid;
-        uint32_t out_lag_id;
-        bool out_disable_src_mac_check;
-        bool out_arp_offload;
-        bool out_dhcp_offload;
-        bool out_allow_packet_of_death;
-        UNUSED uint32_t out_egr_port_group_id;
-        if (lookup_port(port_no, &out_default_vlan_vid, &out_lag_id, &out_disable_src_mac_check, &out_arp_offload, &out_dhcp_offload, &out_allow_packet_of_death, &out_egr_port_group_id) < 0) {
-            AIM_LOG_WARN("port %u not found during flood", port_no);
-            continue;
-        }
-
-        if (out_lag_id != OF_GROUP_ANY && out_lag_id == lag_id) {
-            AIM_LOG_VERBOSE("skipping ingress LAG %u", lag_id);
-            continue;
-        }
-
-        uint16_t new_tag;
-        if (tagged) {
-            if (lookup_egr_vlan_xlate(port_no, vlan_vid, &new_tag) < 0) {
-                new_tag = vlan_vid;
-            }
-        } else {
-            new_tag = 0;
-        }
-
-        if (new_tag != tag) {
-            if (new_tag == 0) {
-                pop_vlan(result);
-            } else {
-                if (tag == 0) {
-                    push_vlan(result, 0x8100);
-                }
-                set_vlan_vid(result, new_tag);
-            }
-            tag = new_tag;
-        }
-
-        egress_mirror(port_no, hash, result);
-        output(result, port_no);
+        process_egress(port_no,
+                       vlan_vid,
+                       lag_id,
+                       0, /* l3_interface_class_id */
+                       false, /* l3 */
+                       hash, result);
     }
 
     return INDIGO_ERROR_NONE;
