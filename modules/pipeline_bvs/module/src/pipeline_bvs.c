@@ -25,9 +25,9 @@ static const of_mac_addr_t slow_protocols_mac = { { 0x01, 0x80, 0xC2, 0x00, 0x00
 static const of_mac_addr_t packet_of_death_mac = { { 0x5C, 0x16, 0xC7, 0xFF, 0xFF, 0x04 } };
 static const of_mac_addr_t cdp_mac = { { 0x01, 0x00, 0x0c, 0xcc, 0xcc, 0xcc } };
 
-static void process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl);
-static void process_l3(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint32_t ingress_lag_id, uint16_t orig_vlan_vid, uint8_t ttl);
-static void process_debug(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint16_t orig_vlan_vid);
+static void process_l2(struct ctx *ctx);
+static void process_l3(struct ctx *ctx, uint32_t ingress_lag_id);
+static void process_debug(struct ctx *ctx);
 static void process_egress(struct ctx *ctx, uint32_t out_port, uint16_t vlan_vid, uint32_t ingress_lag_id, uint32_t l3_interface_class_id, bool l3);
 static bool check_vlan_membership(struct vlan_entry *vlan_entry, uint32_t in_port, bool *tagged);
 static void flood_vlan(struct ctx *ctx, uint16_t vlan_vid, uint32_t lag_id);
@@ -116,18 +116,16 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     ctx.result = result;
     ctx.key = key;
 
-    struct ind_ovs_cfr cfr;
-    ind_ovs_key_to_cfr(key, &cfr);
+    /* TODO revise when TCP flags are added to the parsed key */
+    ctx.hash = murmur_hash(key, sizeof(*key), 0);
 
-    ctx.hash = murmur_hash(&cfr, sizeof(cfr), 0);
-
-    process_l2(&ctx, &cfr, key->ipv4.ipv4_ttl);
+    process_l2(&ctx);
 
     return INDIGO_ERROR_NONE;
 }
 
 static void
-process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
+process_l2(struct ctx *ctx)
 {
     ctx->original_vlan_vid = VLAN_VID(ntohs(ctx->key->vlan));
 
@@ -270,7 +268,7 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
 
     /* Check for broadcast/multicast */
     if (ctx->key->ethernet.eth_dst[0] & 1) {
-        process_debug(ctx, cfr, ctx->original_vlan_vid);
+        process_debug(ctx);
         process_pktin(ctx);
 
         if (ctx->drop) {
@@ -283,13 +281,13 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
     }
 
     if (ctx->pktin_metadata & OFP_BSN_PKTIN_FLAG_NEW_HOST) {
-        process_debug(ctx, cfr, ctx->original_vlan_vid);
+        process_debug(ctx);
         process_pktin(ctx);
         return;
     }
 
     if (pipeline_bvs_table_my_station_lookup(ctx->key->ethernet.eth_dst)) {
-        process_l3(ctx, cfr, port_entry->value.lag_id, ctx->original_vlan_vid, ipv4_ttl);
+        process_l3(ctx, port_entry->value.lag_id);
         return;
     }
 
@@ -299,7 +297,7 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
     if (!dst_l2_entry) {
         AIM_LOG_VERBOSE("miss in destination l2table lookup (destination lookup failure)");
 
-        process_debug(ctx, cfr, ctx->original_vlan_vid);
+        process_debug(ctx);
         process_pktin(ctx);
 
         if (ctx->drop) {
@@ -318,7 +316,7 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
         mark_drop(ctx);
     }
 
-    process_debug(ctx, cfr, ctx->original_vlan_vid);
+    process_debug(ctx);
     process_pktin(ctx);
 
     if (ctx->drop) {
@@ -341,16 +339,13 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
 
 static void
 process_l3(struct ctx *ctx,
-           struct ind_ovs_cfr *cfr,
-           uint32_t ingress_lag_id,
-           uint16_t orig_vlan_vid,
-           uint8_t ttl)
+           uint32_t ingress_lag_id)
 {
     struct next_hop *next_hop = NULL;
     bool cpu = false;
     bool drop = false;
 
-    if (ttl <= 1) {
+    if (ctx->key->ipv4.ipv4_ttl <= 1) {
         AIM_LOG_VERBOSE("sending TTL expired packet to agent");
         mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_TTL_EXPIRED);
         mark_drop(ctx);
@@ -370,7 +365,7 @@ process_l3(struct ctx *ctx,
         }
     }
 
-    process_debug(ctx, cfr, orig_vlan_vid);
+    process_debug(ctx);
 
     struct ingress_acl_key ingress_acl_key = make_ingress_acl_key(ctx);
     struct ingress_acl_entry *ingress_acl_entry =
@@ -387,7 +382,7 @@ process_l3(struct ctx *ctx,
     bool hit = next_hop != NULL;
     bool valid_next_hop = next_hop != NULL && next_hop->group_id != OF_GROUP_ANY;
 
-    if (ttl <= 1) {
+    if (ctx->key->ipv4.ipv4_ttl <= 1) {
         if (cpu) {
             AIM_LOG_VERBOSE("L3 copy to CPU");
             mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_L3_CPU);
@@ -457,9 +452,7 @@ process_l3(struct ctx *ctx,
 }
 
 static void
-process_debug(struct ctx *ctx,
-              struct ind_ovs_cfr *cfr,
-              uint16_t orig_vlan_vid)
+process_debug(struct ctx *ctx)
 {
     struct debug_key debug_key = make_debug_key(ctx);
     struct debug_entry *debug_entry =
@@ -471,8 +464,8 @@ process_debug(struct ctx *ctx,
     apply_stats(ctx->result, &debug_entry->stats);
 
     if (debug_entry->value.span_id != OF_GROUP_ANY) {
-        if (orig_vlan_vid != 0) {
-            set_vlan_vid(ctx->result, orig_vlan_vid);
+        if (ctx->original_vlan_vid != 0) {
+            set_vlan_vid(ctx->result, ctx->original_vlan_vid);
         } else {
             pop_vlan(ctx->result);
         }
