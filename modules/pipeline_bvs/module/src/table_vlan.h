@@ -41,6 +41,6 @@ struct vlan_entry {
 
 void pipeline_bvs_table_vlan_register(void);
 void pipeline_bvs_table_vlan_unregister(void);
-struct vlan_entry *pipeline_bvs_table_vlan_lookup(const struct vlan_key *key);
+struct vlan_entry *pipeline_bvs_table_vlan_lookup(uint16_t vlan_vid);
 
 #endif

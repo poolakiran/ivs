@@ -17,28 +17,17 @@
  *
  ****************************************************************/
 
-#ifndef TABLE_EGR_VLAN_XLATE_H
-#define TABLE_EGR_VLAN_XLATE_H
+#ifndef NEXT_HOP_H
+#define NEXT_HOP_H
 
-struct egr_vlan_xlate_key {
-    uint32_t in_port;
-    uint16_t vlan_vid;
-    uint16_t pad;
-};
-AIM_STATIC_ASSERT(EGR_VLAN_XLATE_KEY_SIZE, sizeof(struct egr_vlan_xlate_key) == 8);
+struct next_hop {
+    /* Either LAG or ECMP */
+    uint32_t group_id;
 
-struct egr_vlan_xlate_value {
+    /* Only used if group_id is a LAG */
+    of_mac_addr_t new_eth_src;
+    of_mac_addr_t new_eth_dst;
     uint16_t new_vlan_vid;
 };
-
-struct egr_vlan_xlate_entry {
-    bighash_entry_t hash_entry;
-    struct egr_vlan_xlate_key key;
-    struct egr_vlan_xlate_value value;
-};
-
-void pipeline_bvs_table_egr_vlan_xlate_register(void);
-void pipeline_bvs_table_egr_vlan_xlate_unregister(void);
-struct egr_vlan_xlate_entry *pipeline_bvs_table_egr_vlan_xlate_lookup(uint32_t in_port, uint16_t vlan_vid);
 
 #endif

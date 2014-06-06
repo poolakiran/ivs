@@ -32,6 +32,6 @@ struct my_station_entry {
 
 void pipeline_bvs_table_my_station_register(void);
 void pipeline_bvs_table_my_station_unregister(void);
-struct my_station_entry *pipeline_bvs_table_my_station_lookup(const struct my_station_key *key);
+struct my_station_entry *pipeline_bvs_table_my_station_lookup(const uint8_t *mac);
 
 #endif

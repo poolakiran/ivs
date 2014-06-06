@@ -142,9 +142,14 @@ pipeline_bvs_table_my_station_unregister(void)
 }
 
 struct my_station_entry *
-pipeline_bvs_table_my_station_lookup(const struct my_station_key *key)
+pipeline_bvs_table_my_station_lookup(const uint8_t *mac)
 {
-    struct tcam_entry *tcam_entry = tcam_match(my_station_tcam, key);
+    struct my_station_key key = {
+        .pad = 0,
+    };
+    memcpy(&key.mac, mac, OF_MAC_ADDR_BYTES);
+
+    struct tcam_entry *tcam_entry = tcam_match(my_station_tcam, &key);
     if (tcam_entry) {
         struct my_station_entry *entry = container_of(tcam_entry, tcam_entry, struct my_station_entry);
         const struct my_station_key *entry_key = tcam_entry->key;
@@ -152,7 +157,7 @@ pipeline_bvs_table_my_station_lookup(const struct my_station_key *key)
         AIM_LOG_VERBOSE("Hit my_station entry mac=%{mac}/%{mac}", &entry_key->mac, &entry_mask->mac);
         return entry;
     } else {
-        AIM_LOG_VERBOSE("Miss my_station entry mac=%{mac}", &key->mac);
+        AIM_LOG_VERBOSE("Miss my_station entry mac=%{mac}", &key.mac);
         return NULL;
     }
 }

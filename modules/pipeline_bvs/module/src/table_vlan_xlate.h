@@ -39,6 +39,6 @@ struct vlan_xlate_entry {
 
 void pipeline_bvs_table_vlan_xlate_register(void);
 void pipeline_bvs_table_vlan_xlate_unregister(void);
-struct vlan_xlate_entry *pipeline_bvs_table_vlan_xlate_lookup(const struct vlan_xlate_key *key);
+struct vlan_xlate_entry *pipeline_bvs_table_vlan_xlate_lookup(uint32_t lag_id, uint16_t vlan_vid);
 
 #endif

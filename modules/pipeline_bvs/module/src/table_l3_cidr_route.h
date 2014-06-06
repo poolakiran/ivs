@@ -27,15 +27,7 @@ struct l3_cidr_route_key {
 AIM_STATIC_ASSERT(L3_CIDR_ROUTE_KEY_SIZE, sizeof(struct l3_cidr_route_key) == 8);
 
 struct l3_cidr_route_value {
-    /* Either LAG or ECMP or OF_GROUP_ANY for null route */
-    uint32_t group_id;
-
-    /* Only used if group_id is a LAG */
-    of_mac_addr_t new_eth_src;
-    of_mac_addr_t new_eth_dst;
-    uint16_t new_vlan_vid;
-
-    /* Always used */
+    struct next_hop next_hop;
     bool cpu;
 };
 
@@ -46,6 +38,6 @@ struct l3_cidr_route_entry {
 
 void pipeline_bvs_table_l3_cidr_route_register(void);
 void pipeline_bvs_table_l3_cidr_route_unregister(void);
-struct l3_cidr_route_entry *pipeline_bvs_table_l3_cidr_route_lookup(const struct l3_cidr_route_key *key);
+struct l3_cidr_route_entry *pipeline_bvs_table_l3_cidr_route_lookup(uint32_t vrf, uint32_t ipv4);
 
 #endif

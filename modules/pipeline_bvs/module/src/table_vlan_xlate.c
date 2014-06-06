@@ -210,16 +210,22 @@ pipeline_bvs_table_vlan_xlate_unregister(void)
 }
 
 struct vlan_xlate_entry *
-pipeline_bvs_table_vlan_xlate_lookup(const struct vlan_xlate_key *key)
+pipeline_bvs_table_vlan_xlate_lookup(uint32_t lag_id, uint16_t vlan_vid)
 {
-    struct vlan_xlate_entry *entry = vlan_xlate_hashtable_first(vlan_xlate_hashtable, key);
+    struct vlan_xlate_key key = {
+        .lag_id = lag_id,
+        .vlan_vid = vlan_vid,
+        .pad = 0
+    };
+
+    struct vlan_xlate_entry *entry = vlan_xlate_hashtable_first(vlan_xlate_hashtable, &key);
     if (entry) {
         AIM_LOG_VERBOSE("Hit vlan_xlate entry lag_id=%u, vlan=%u -> vlan %u",
                         entry->key.lag_id, entry->key.vlan_vid,
                         entry->value.new_vlan_vid);
     } else {
         AIM_LOG_VERBOSE("Miss vlan_xlate entry lag_id=%u, vlan=%u",
-                        key->lag_id, key->vlan_vid);
+                        key.lag_id, key.vlan_vid);
     }
     return entry;
 }

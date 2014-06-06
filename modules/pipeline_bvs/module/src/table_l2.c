@@ -206,16 +206,20 @@ pipeline_bvs_table_l2_unregister(void)
 }
 
 struct l2_entry *
-pipeline_bvs_table_l2_lookup(const struct l2_key *key)
+pipeline_bvs_table_l2_lookup(uint16_t vlan_vid, const uint8_t *mac)
 {
-    struct l2_entry *entry = l2_hashtable_first(l2_hashtable, key);
+    struct l2_key key;
+    key.vlan_vid = VLAN_VID(vlan_vid);
+    memcpy(&key.mac.addr, mac, OF_MAC_ADDR_BYTES);
+
+    struct l2_entry *entry = l2_hashtable_first(l2_hashtable, &key);
     if (entry) {
         AIM_LOG_VERBOSE("Hit L2 entry vlan=%u, mac=%{mac} -> lag %u",
                         entry->key.vlan_vid, &entry->key.mac,
                         entry->value.lag_id);
     } else {
         AIM_LOG_VERBOSE("Miss L2 entry vlan=%u, mac=%{mac}",
-                        key->vlan_vid, &key->mac);
+                        key.vlan_vid, &key.mac);
     }
     return entry;
 }

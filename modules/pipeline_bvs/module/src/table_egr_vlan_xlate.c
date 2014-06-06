@@ -210,16 +210,22 @@ pipeline_bvs_table_egr_vlan_xlate_unregister(void)
 }
 
 struct egr_vlan_xlate_entry *
-pipeline_bvs_table_egr_vlan_xlate_lookup(const struct egr_vlan_xlate_key *key)
+pipeline_bvs_table_egr_vlan_xlate_lookup(uint32_t port_no, uint16_t vlan_vid)
 {
-    struct egr_vlan_xlate_entry *entry = egr_vlan_xlate_hashtable_first(egr_vlan_xlate_hashtable, key);
+    struct egr_vlan_xlate_key key = {
+        .in_port = port_no,
+        .vlan_vid = vlan_vid,
+        .pad = 0,
+    };
+
+    struct egr_vlan_xlate_entry *entry = egr_vlan_xlate_hashtable_first(egr_vlan_xlate_hashtable, &key);
     if (entry) {
         AIM_LOG_VERBOSE("Hit egr_vlan_xlate entry in_port=%u, vlan=%u -> vlan %u",
                         entry->key.in_port, entry->key.vlan_vid,
                         entry->value.new_vlan_vid);
     } else {
         AIM_LOG_VERBOSE("Miss egr_vlan_xlate entry in_port=%u, vlan=%u",
-                        key->in_port, key->vlan_vid);
+                        key.in_port, key.vlan_vid);
     }
     return entry;
 }

@@ -201,14 +201,15 @@ pipeline_bvs_table_egress_mirror_unregister(void)
 }
 
 struct egress_mirror_entry *
-pipeline_bvs_table_egress_mirror_lookup(const struct egress_mirror_key *key)
+pipeline_bvs_table_egress_mirror_lookup(uint32_t port_no)
 {
-    struct egress_mirror_entry *entry = egress_mirror_hashtable_first(egress_mirror_hashtable, key);
+    struct egress_mirror_key key = { .out_port = port_no };
+    struct egress_mirror_entry *entry = egress_mirror_hashtable_first(egress_mirror_hashtable, &key);
     if (entry) {
         AIM_LOG_VERBOSE("Hit egress_mirror entry out_port=%u -> span_id %u",
                         entry->key.out_port, entry->value.span_id);
     } else {
-        AIM_LOG_VERBOSE("Miss egress_mirror entry out_port=%u", key->out_port);
+        AIM_LOG_VERBOSE("Miss egress_mirror entry out_port=%u", key.out_port);
     }
     return entry;
 }

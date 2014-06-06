@@ -36,6 +36,7 @@
 #include <AIM/aim_list.h>
 #include <tcam/tcam.h>
 
+#include "next_hop.h"
 #include "table_port.h"
 #include "table_vlan_xlate.h"
 #include "table_egr_vlan_xlate.h"
@@ -88,10 +89,23 @@ enum group_table_id {
 };
 
 struct ctx {
+    struct pipeline_result *result;
+    struct ind_ovs_parsed_key *key;
+    uint32_t hash;
+
+    /* Output state */
     bool drop;
     bool pktin_agent;
     bool pktin_controller;
     uint64_t pktin_metadata;
+
+    /* Internal state */
+    uint16_t original_vlan_vid;
+    uint16_t internal_vlan_vid;
+    uint32_t vrf;
+    uint32_t l3_interface_class_id;
+    uint32_t l3_src_class_id;
+    uint32_t ingress_lag_id;
 };
 
 /* IVS action emitters */
@@ -169,5 +183,11 @@ group_to_table_id(uint32_t group_id)
 }
 
 bool pipeline_bvs_check_tcam_mask(const of_match_fields_t *_mask, const of_match_fields_t *_minimum, const of_match_fields_t *_maximum);
+
+static inline void
+apply_stats(struct pipeline_result *result, struct ind_ovs_flow_stats *stats)
+{
+    xbuf_append_ptr(&result->stats, stats);
+}
 
 #endif

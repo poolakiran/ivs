@@ -30,6 +30,20 @@ static const of_match_fields_t required_mask = {
     .in_port = 0xffffffff,
 };
 
+/* Static port table entry for OFPP_LOCAL */
+static struct port_entry local_entry = {
+    .key = { .port = OF_PORT_DEST_LOCAL },
+    .value = {
+        .lag_id = OF_GROUP_ANY,
+        .egr_port_group_id = 0,
+        .disable_src_mac_check = true,
+        .arp_offload = false,
+        .dhcp_offload = false,
+        .packet_of_death = false,
+        .prioritize_pdus = false,
+    },
+};
+
 static indigo_error_t
 parse_key(of_flow_add_t *obj, struct port_key *key)
 {
@@ -235,9 +249,11 @@ pipeline_bvs_table_port_unregister(void)
 }
 
 struct port_entry *
-pipeline_bvs_table_port_lookup(const struct port_key *key)
+pipeline_bvs_table_port_lookup(uint32_t port_no)
 {
-    struct port_entry *entry = port_hashtable_first(port_hashtable, key);
+    struct port_key key = { .port = port_no };
+
+    struct port_entry *entry = port_hashtable_first(port_hashtable, &key);
     if (entry) {
         AIM_LOG_VERBOSE("Hit port entry port=%u -> lag_id=%u egr_port_group_id=%u default_vlan_vid=%u %s%s%s%s%s",
                         entry->key.port, entry->value.lag_id, entry->value.egr_port_group_id, entry->value.default_vlan_vid,
@@ -246,8 +262,10 @@ pipeline_bvs_table_port_lookup(const struct port_key *key)
                         entry->value.dhcp_offload ? "dhcp_offload " : "",
                         entry->value.packet_of_death ? "packet_of_death " : "",
                         entry->value.prioritize_pdus ? "prioritize_pdus " : "");
+    } else if (key.port == OVSP_LOCAL) {
+        return &local_entry;
     } else {
-        AIM_LOG_VERBOSE("Miss port entry port=%u", key->port);
+        AIM_LOG_VERBOSE("Miss port entry port=%u", key.port);
     }
     return entry;
 }

@@ -36,15 +36,7 @@ struct ingress_acl_key {
 AIM_STATIC_ASSERT(INGRESS_ACL_KEY_SIZE, sizeof(struct ingress_acl_key) == 32);
 
 struct ingress_acl_value {
-    /* Either LAG or ECMP */
-    uint32_t group_id;
-
-    /* Only used if group_id is a LAG */
-    of_mac_addr_t new_eth_src;
-    of_mac_addr_t new_eth_dst;
-    uint16_t new_vlan_vid;
-
-    /* Always used */
+    struct next_hop next_hop;
     bool cpu;
     bool drop;
 };

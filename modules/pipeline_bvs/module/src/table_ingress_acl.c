@@ -154,7 +154,7 @@ parse_value(of_flow_add_t *obj, struct ingress_acl_value *value)
             OF_LIST_ACTION_ITER(&actions, &act, rv) {
                 switch (act.header.object_id) {
                 case OF_ACTION_GROUP:
-                    of_action_group_group_id_get(&act.group, &value->group_id);
+                    of_action_group_group_id_get(&act.group, &value->next_hop.group_id);
                     seen_group = true;
                     break;
                 case OF_ACTION_SET_FIELD: {
@@ -162,16 +162,16 @@ parse_value(of_flow_add_t *obj, struct ingress_acl_value *value)
                     of_action_set_field_field_bind(&act.set_field, &oxm.header);
                     switch (oxm.header.object_id) {
                     case OF_OXM_VLAN_VID:
-                        of_oxm_vlan_vid_value_get(&oxm.vlan_vid, &value->new_vlan_vid);
-                        value->new_vlan_vid &= ~VLAN_CFI_BIT;
+                        of_oxm_vlan_vid_value_get(&oxm.vlan_vid, &value->next_hop.new_vlan_vid);
+                        value->next_hop.new_vlan_vid &= ~VLAN_CFI_BIT;
                         seen_new_vlan_vid = true;
                         break;
                     case OF_OXM_ETH_SRC:
-                        of_oxm_eth_src_value_get(&oxm.eth_src, &value->new_eth_src);
+                        of_oxm_eth_src_value_get(&oxm.eth_src, &value->next_hop.new_eth_src);
                         seen_new_eth_src = true;
                         break;
                     case OF_OXM_ETH_DST:
-                        of_oxm_eth_dst_value_get(&oxm.eth_dst, &value->new_eth_dst);
+                        of_oxm_eth_dst_value_get(&oxm.eth_dst, &value->next_hop.new_eth_dst);
                         seen_new_eth_dst = true;
                         break;
                     default:
@@ -211,7 +211,7 @@ parse_value(of_flow_add_t *obj, struct ingress_acl_value *value)
     }
 
     if (seen_group) {
-        switch (group_to_table_id(value->group_id)) {
+        switch (group_to_table_id(value->next_hop.group_id)) {
         case GROUP_TABLE_ID_LAG:
             if (!seen_new_vlan_vid || !seen_new_eth_src || !seen_new_eth_dst) {
                 AIM_LOG_WARN("Missing required next-hop action in ingress_acl table");
@@ -229,7 +229,7 @@ parse_value(of_flow_add_t *obj, struct ingress_acl_value *value)
         }
     } else {
         /* No group action, null route */
-        value->group_id = OF_GROUP_ANY;
+        value->next_hop.group_id = OF_GROUP_ANY;
 
         if (seen_new_vlan_vid || seen_new_eth_src || seen_new_eth_dst) {
             AIM_LOG_WARN("Unexpected next-hop action in ingress_acl table");
@@ -265,7 +265,7 @@ pipeline_bvs_table_ingress_acl_entry_create(
     AIM_LOG_VERBOSE("Create ingress_acl entry prio=%u in_port=%u/%#x vlan_vid=%u/%#x ip_proto=%u/%#x vrf=%u/%#x l3_interface_class_id=%u/%#x l3_src_class_id=%u/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} tp_src=%u/%#x tp_dst=%u/%#x"
                     " -> group=%u vlan=%u eth-src=%{mac} eth-dst=%{mac} cpu=%d drop=%d",
                     priority, key.in_port, mask.in_port, key.vlan_vid, mask.vlan_vid, key.ip_proto, mask.ip_proto, key.vrf, mask.vrf, key.l3_interface_class_id, mask.l3_interface_class_id, key.l3_src_class_id, mask.l3_src_class_id, key.ipv4_src, mask.ipv4_src, key.ipv4_dst, mask.ipv4_dst, key.tp_src, mask.tp_src, key.tp_dst, mask.tp_dst,
-                    entry->value.group_id, entry->value.new_vlan_vid, &entry->value.new_eth_src, &entry->value.new_eth_dst, entry->value.cpu, entry->value.drop);
+                    entry->value.next_hop.group_id, entry->value.next_hop.new_vlan_vid, &entry->value.next_hop.new_eth_src, &entry->value.next_hop.new_eth_dst, entry->value.cpu, entry->value.drop);
 
     ind_ovs_fwd_write_lock();
     tcam_insert(ingress_acl_tcam, &entry->tcam_entry, &key, &mask, priority);
@@ -363,7 +363,7 @@ pipeline_bvs_table_ingress_acl_lookup(const struct ingress_acl_key *key)
         AIM_LOG_VERBOSE("Hit ingress_acl entry prio=%u in_port=%u/%#x vlan_vid=%u/%#x ip_proto=%u/%#x vrf=%u/%#x l3_interface_class_id=%u/%#x l3_src_class_id=%u/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} tp_src=%u/%#x tp_dst=%u/%#x"
                         " -> group=%u vlan=%u eth-src=%{mac} eth-dst=%{mac} cpu=%d drop=%d",
                         tcam_entry->priority, entry_key->in_port, entry_mask->in_port, entry_key->vlan_vid, entry_mask->vlan_vid, entry_key->ip_proto, entry_mask->ip_proto, entry_key->vrf, entry_mask->vrf, entry_key->l3_interface_class_id, entry_mask->l3_interface_class_id, entry_key->l3_src_class_id, entry_mask->l3_src_class_id, entry_key->ipv4_src, entry_mask->ipv4_src, entry_key->ipv4_dst, entry_mask->ipv4_dst, entry_key->tp_src, entry_mask->tp_src, entry_key->tp_dst, entry_mask->tp_dst,
-                        entry->value.group_id, entry->value.new_vlan_vid, &entry->value.new_eth_src, &entry->value.new_eth_dst, entry->value.cpu, entry->value.drop);
+                        entry->value.next_hop.group_id, entry->value.next_hop.new_vlan_vid, &entry->value.next_hop.new_eth_src, &entry->value.next_hop.new_eth_dst, entry->value.cpu, entry->value.drop);
         return entry;
     } else {
         AIM_LOG_VERBOSE("Miss ingress_acl entry in_port=%u vlan_vid=%u ip_proto=%u vrf=%u l3_interface_class_id=%u l3_src_class_id=%u ipv4_src=%{ipv4a} ipv4_dst=%{ipv4a} tp_src=%u tp_dst=%u",
