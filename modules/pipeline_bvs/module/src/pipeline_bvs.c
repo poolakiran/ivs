@@ -34,9 +34,9 @@ static void flood_vlan(struct ctx *ctx, uint16_t vlan_vid, uint32_t lag_id);
 static void span(struct ctx *ctx, uint32_t span_id);
 static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
 static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, struct next_hop **next_hop);
-static struct debug_key make_debug_key(struct ind_ovs_cfr *cfr);
-static struct vlan_acl_key make_vlan_acl_key(struct ind_ovs_cfr *cfr);
-static struct ingress_acl_key make_ingress_acl_key(struct ind_ovs_cfr *cfr);
+static struct debug_key make_debug_key(struct ctx *ctx);
+static struct vlan_acl_key make_vlan_acl_key(struct ctx *ctx);
+static struct ingress_acl_key make_ingress_acl_key(struct ctx *ctx);
 static uint32_t group_to_table_id(uint32_t group_id);
 static void mark_pktin_agent(struct ctx *ctx, uint64_t flag);
 static void mark_pktin_controller(struct ctx *ctx, uint64_t flag);
@@ -114,6 +114,7 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     struct ctx ctx;
     memset(&ctx, 0, sizeof(ctx));
     ctx.result = result;
+    ctx.key = key;
 
     struct ind_ovs_cfr cfr;
     ind_ovs_key_to_cfr(key, &cfr);
@@ -128,30 +129,30 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 static void
 process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
 {
-    uint16_t orig_vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan));
+    ctx->original_vlan_vid = VLAN_VID(ntohs(ctx->key->vlan));
 
     /* Ingress mirror */
     struct ingress_mirror_entry *ingress_mirror_entry =
-        pipeline_bvs_table_ingress_mirror_lookup(cfr->in_port);
+        pipeline_bvs_table_ingress_mirror_lookup(ctx->key->in_port);
     if (ingress_mirror_entry) {
         span(ctx, ingress_mirror_entry->value.span_id);
     }
 
     bool packet_of_death = false;
-    if (cfr->dl_type == htons(0x88cc)) {
-        if (!memcmp(cfr->dl_src, packet_of_death_mac.addr, OF_MAC_ADDR_BYTES)) {
+    if (ctx->key->ethertype == htons(0x88cc)) {
+        if (!memcmp(ctx->key->ethernet.eth_src, packet_of_death_mac.addr, OF_MAC_ADDR_BYTES)) {
             packet_of_death = true;
-        } else if (!memcmp(cfr->dl_dst, cdp_mac.addr, OF_MAC_ADDR_BYTES)) {
+        } else if (!memcmp(ctx->key->ethernet.eth_dst, cdp_mac.addr, OF_MAC_ADDR_BYTES)) {
             AIM_LOG_VERBOSE("dropping CDP packet");
             mark_drop(ctx);
         } else {
-            AIM_LOG_VERBOSE("sending ethertype %#x directly to controller", ntohs(cfr->dl_type));
+            AIM_LOG_VERBOSE("sending ethertype %#x directly to controller", ntohs(ctx->key->ethertype));
             mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_PDU);
             mark_drop(ctx);
         }
     }
 
-    if (!memcmp(cfr->dl_dst, slow_protocols_mac.addr, OF_MAC_ADDR_BYTES)) {
+    if (!memcmp(ctx->key->ethernet.eth_dst, slow_protocols_mac.addr, OF_MAC_ADDR_BYTES)) {
         AIM_LOG_VERBOSE("sending slow protocols packet directly to controller");
         mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_PDU);
         mark_drop(ctx);
@@ -163,7 +164,7 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
         return;
     }
 
-    struct port_entry *port_entry = pipeline_bvs_table_port_lookup(cfr->in_port);
+    struct port_entry *port_entry = pipeline_bvs_table_port_lookup(ctx->key->in_port);
     if (!port_entry) {
         return;
     }
@@ -178,17 +179,17 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
         return;
     }
 
-    uint16_t vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan));
+    uint16_t vlan_vid = VLAN_VID(ntohs(ctx->key->vlan));
 
-    struct vlan_acl_key vlan_acl_key = make_vlan_acl_key(cfr);
+    struct vlan_acl_key vlan_acl_key = make_vlan_acl_key(ctx);
     struct vlan_acl_entry *vlan_acl_entry =
         pipeline_bvs_table_vlan_acl_lookup(&vlan_acl_key);
     if (vlan_acl_entry) {
-        cfr->vrf = vlan_acl_entry->value.vrf;
-        cfr->l3_interface_class_id = vlan_acl_entry->value.l3_interface_class_id;
-        cfr->l3_src_class_id = vlan_acl_entry->value.l3_src_class_id;
+        ctx->vrf = vlan_acl_entry->value.vrf;
+        ctx->l3_interface_class_id = vlan_acl_entry->value.l3_interface_class_id;
+        ctx->l3_src_class_id = vlan_acl_entry->value.l3_src_class_id;
     } else {
-        if (cfr->dl_vlan & htons(VLAN_CFI_BIT)) {
+        if (ctx->key->vlan & htons(VLAN_CFI_BIT)) {
             struct vlan_xlate_entry *vlan_xlate_entry =
                 pipeline_bvs_table_vlan_xlate_lookup(port_entry->value.lag_id, vlan_vid);
             if (vlan_xlate_entry) {
@@ -202,7 +203,7 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
         }
     }
 
-    cfr->dl_vlan = htons(VLAN_TCI(vlan_vid, VLAN_PCP(ntohs(cfr->dl_vlan))) | VLAN_CFI_BIT);
+    ctx->internal_vlan_vid = vlan_vid;
 
     struct vlan_entry *vlan_entry = pipeline_bvs_table_vlan_lookup(vlan_vid);
     if (!vlan_entry) {
@@ -211,21 +212,21 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
         return;
     }
 
-    if (!check_vlan_membership(vlan_entry, cfr->in_port, NULL)) {
-        AIM_LOG_VERBOSE("port %u not allowed on vlan %u", cfr->in_port, vlan_vid);
+    if (!check_vlan_membership(vlan_entry, ctx->key->in_port, NULL)) {
+        AIM_LOG_VERBOSE("port %u not allowed on vlan %u", ctx->key->in_port, vlan_vid);
         mark_drop(ctx);
         return;
     }
 
     if (!vlan_acl_entry) {
         AIM_LOG_VERBOSE("VLAN %u: vrf=%u", vlan_vid, vlan_entry->value.vrf);
-        cfr->vrf = vlan_entry->value.vrf;
-        cfr->l3_interface_class_id = vlan_entry->value.l3_interface_class_id;
+        ctx->vrf = vlan_entry->value.vrf;
+        ctx->l3_interface_class_id = vlan_entry->value.l3_interface_class_id;
     }
 
     /* Source lookup */
     struct l2_entry *src_l2_entry =
-        pipeline_bvs_table_l2_lookup(vlan_vid, cfr->dl_src);
+        pipeline_bvs_table_l2_lookup(vlan_vid, ctx->key->ethernet.eth_src);
     if (src_l2_entry) {
         apply_stats(ctx->result, &src_l2_entry->stats);
 
@@ -250,7 +251,7 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
 
     /* ARP offload */
     if (port_entry->value.arp_offload) {
-        if (cfr->dl_type == htons(0x0806)) {
+        if (ctx->key->ethertype == htons(0x0806)) {
             AIM_LOG_VERBOSE("sending ARP packet to agent");
             mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_ARP);
             /* Continue forwarding packet */
@@ -259,8 +260,8 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
 
     /* DHCP offload */
     if (port_entry->value.dhcp_offload) {
-        if (cfr->dl_type == htons(0x0800) && cfr->nw_proto == 17 &&
-                (cfr->tp_dst == htons(67) || cfr->tp_dst == htons(68))) {
+        if (ctx->key->ethertype == htons(0x0800) && ctx->key->ipv4.ipv4_proto == 17 &&
+                (ctx->key->tcp.tcp_dst == htons(67) || ctx->key->tcp.tcp_dst == htons(68))) {
             AIM_LOG_VERBOSE("sending DHCP packet to agent");
             mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_DHCP);
             mark_drop(ctx);
@@ -268,8 +269,8 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
     }
 
     /* Check for broadcast/multicast */
-    if (cfr->dl_dst[0] & 1) {
-        process_debug(ctx, cfr, orig_vlan_vid);
+    if (ctx->key->ethernet.eth_dst[0] & 1) {
+        process_debug(ctx, cfr, ctx->original_vlan_vid);
         process_pktin(ctx);
 
         if (ctx->drop) {
@@ -282,23 +283,23 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
     }
 
     if (ctx->pktin_metadata & OFP_BSN_PKTIN_FLAG_NEW_HOST) {
-        process_debug(ctx, cfr, orig_vlan_vid);
+        process_debug(ctx, cfr, ctx->original_vlan_vid);
         process_pktin(ctx);
         return;
     }
 
-    if (pipeline_bvs_table_my_station_lookup(cfr->dl_dst)) {
-        process_l3(ctx, cfr, port_entry->value.lag_id, orig_vlan_vid, ipv4_ttl);
+    if (pipeline_bvs_table_my_station_lookup(ctx->key->ethernet.eth_dst)) {
+        process_l3(ctx, cfr, port_entry->value.lag_id, ctx->original_vlan_vid, ipv4_ttl);
         return;
     }
 
     /* Destination lookup */
     struct l2_entry *dst_l2_entry =
-        pipeline_bvs_table_l2_lookup(vlan_vid, cfr->dl_dst);
+        pipeline_bvs_table_l2_lookup(vlan_vid, ctx->key->ethernet.eth_dst);
     if (!dst_l2_entry) {
         AIM_LOG_VERBOSE("miss in destination l2table lookup (destination lookup failure)");
 
-        process_debug(ctx, cfr, orig_vlan_vid);
+        process_debug(ctx, cfr, ctx->original_vlan_vid);
         process_pktin(ctx);
 
         if (ctx->drop) {
@@ -317,7 +318,7 @@ process_l2(struct ctx *ctx, struct ind_ovs_cfr *cfr, uint8_t ipv4_ttl)
         mark_drop(ctx);
     }
 
-    process_debug(ctx, cfr, orig_vlan_vid);
+    process_debug(ctx, cfr, ctx->original_vlan_vid);
     process_pktin(ctx);
 
     if (ctx->drop) {
@@ -355,13 +356,13 @@ process_l3(struct ctx *ctx,
         mark_drop(ctx);
     } else {
         struct l3_host_route_entry *l3_host_route_entry =
-            pipeline_bvs_table_l3_host_route_lookup(cfr->vrf, cfr->nw_dst);
+            pipeline_bvs_table_l3_host_route_lookup(ctx->vrf, ctx->key->ipv4.ipv4_dst);
         if (l3_host_route_entry != NULL) {
             next_hop = &l3_host_route_entry->value.next_hop;
             cpu = l3_host_route_entry->value.cpu;
         } else {
             struct l3_cidr_route_entry *l3_cidr_route_entry =
-                pipeline_bvs_table_l3_cidr_route_lookup(cfr->vrf, cfr->nw_dst);
+                pipeline_bvs_table_l3_cidr_route_lookup(ctx->vrf, ctx->key->ipv4.ipv4_dst);
             if (l3_cidr_route_entry != NULL) {
                 next_hop = &l3_cidr_route_entry->value.next_hop;
                 cpu = l3_cidr_route_entry->value.cpu;
@@ -371,7 +372,7 @@ process_l3(struct ctx *ctx,
 
     process_debug(ctx, cfr, orig_vlan_vid);
 
-    struct ingress_acl_key ingress_acl_key = make_ingress_acl_key(cfr);
+    struct ingress_acl_key ingress_acl_key = make_ingress_acl_key(ctx);
     struct ingress_acl_entry *ingress_acl_entry =
         pipeline_bvs_table_ingress_acl_lookup(&ingress_acl_key);
     if (ingress_acl_entry) {
@@ -451,7 +452,7 @@ process_l3(struct ctx *ctx,
                    out_port,
                    next_hop->new_vlan_vid,
                    ingress_lag_id,
-                   cfr->l3_interface_class_id,
+                   ctx->l3_interface_class_id,
                    true); /* l3 */
 }
 
@@ -460,7 +461,7 @@ process_debug(struct ctx *ctx,
               struct ind_ovs_cfr *cfr,
               uint16_t orig_vlan_vid)
 {
-    struct debug_key debug_key = make_debug_key(cfr);
+    struct debug_key debug_key = make_debug_key(ctx);
     struct debug_entry *debug_entry =
         pipeline_bvs_table_debug_lookup(&debug_key);
     if (!debug_entry) {
@@ -476,7 +477,7 @@ process_debug(struct ctx *ctx,
             pop_vlan(ctx->result);
         }
         span(ctx, debug_entry->value.span_id);
-        set_vlan_vid(ctx->result, VLAN_VID(ntohs(cfr->dl_vlan)));
+        set_vlan_vid(ctx->result, ctx->internal_vlan_vid);
     }
 
     if (debug_entry->value.cpu) {
@@ -575,7 +576,7 @@ check_vlan_membership(struct vlan_entry *vlan_entry, uint32_t in_port, bool *tag
         }
     }
 
-    if (in_port == OF_PORT_DEST_LOCAL) {
+    if (in_port == OVSP_LOCAL) {
         if (tagged) {
             *tagged = true;
         }
@@ -716,56 +717,74 @@ select_ecmp_route(
 }
 
 static struct debug_key
-make_debug_key(struct ind_ovs_cfr *cfr)
+make_debug_key(struct ctx *ctx)
 {
     struct debug_key key = {
-        .in_port = cfr->in_port,
-        .eth_type = ntohs(cfr->dl_type),
-        .vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan)),
-        .ipv4_src = ntohl(cfr->nw_src),
-        .ipv4_dst = ntohl(cfr->nw_dst),
-        .ip_proto = cfr->nw_proto,
-        .ip_tos = cfr->nw_tos,
-        .tp_src = ntohs(cfr->tp_src),
-        .tp_dst = ntohs(cfr->tp_dst),
+        .in_port = ctx->key->in_port,
+        .eth_type = ntohs(ctx->key->ethertype),
+        .vlan_vid = ctx->internal_vlan_vid,
+        .ipv4_src = ntohl(ctx->key->ipv4.ipv4_src),
+        .ipv4_dst = ntohl(ctx->key->ipv4.ipv4_dst),
+        .ip_proto = ctx->key->ipv4.ipv4_proto,
+        .ip_tos = ctx->key->ipv4.ipv4_tos,
         .pad = 0,
     };
 
-    memcpy(&key.eth_src, cfr->dl_src, OF_MAC_ADDR_BYTES);
-    memcpy(&key.eth_dst, cfr->dl_dst, OF_MAC_ADDR_BYTES);
+    memcpy(&key.eth_src, ctx->key->ethernet.eth_src, OF_MAC_ADDR_BYTES);
+    memcpy(&key.eth_dst, ctx->key->ethernet.eth_dst, OF_MAC_ADDR_BYTES);
+
+    if (key.ip_proto == IPPROTO_TCP) {
+        key.tp_src = ntohs(ctx->key->tcp.tcp_src);
+        key.tp_dst = ntohs(ctx->key->tcp.tcp_dst);
+    } else if (key.ip_proto == IPPROTO_UDP) {
+        key.tp_src = ntohs(ctx->key->udp.udp_src);
+        key.tp_dst = ntohs(ctx->key->udp.udp_dst);
+    } else {
+        key.tp_src = 0;
+        key.tp_dst = 0;
+    }
 
     return key;
 }
 
 static struct vlan_acl_key
-make_vlan_acl_key(struct ind_ovs_cfr *cfr)
+make_vlan_acl_key(struct ctx *ctx)
 {
     struct vlan_acl_key key = {
-        .vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan)),
+        .vlan_vid = VLAN_VID(ntohs(ctx->key->vlan)),
         .pad = 0,
     };
-    memcpy(&key.eth_src, cfr->dl_src, OF_MAC_ADDR_BYTES);
-    memcpy(&key.eth_dst, cfr->dl_dst, OF_MAC_ADDR_BYTES);
+    memcpy(&key.eth_src, ctx->key->ethernet.eth_src, OF_MAC_ADDR_BYTES);
+    memcpy(&key.eth_dst, ctx->key->ethernet.eth_dst, OF_MAC_ADDR_BYTES);
 
     return key;
 }
 
 static struct ingress_acl_key
-make_ingress_acl_key(struct ind_ovs_cfr *cfr)
+make_ingress_acl_key(struct ctx *ctx)
 {
     struct ingress_acl_key key = {
-        .in_port = cfr->in_port,
-        .vlan_vid = VLAN_VID(ntohs(cfr->dl_vlan)),
-        .ip_proto = cfr->nw_proto,
+        .in_port = ctx->key->in_port,
+        .vlan_vid = ctx->internal_vlan_vid,
+        .ip_proto = ctx->key->ipv4.ipv4_proto,
         .pad = 0,
-        .vrf = cfr->vrf,
-        .l3_interface_class_id = cfr->l3_interface_class_id,
-        .l3_src_class_id = cfr->l3_src_class_id,
-        .ipv4_src = ntohl(cfr->nw_src),
-        .ipv4_dst = ntohl(cfr->nw_dst),
-        .tp_src = ntohs(cfr->tp_src),
-        .tp_dst = ntohs(cfr->tp_dst),
+        .vrf = ctx->vrf,
+        .l3_interface_class_id = ctx->l3_interface_class_id,
+        .l3_src_class_id = ctx->l3_src_class_id,
+        .ipv4_src = ntohl(ctx->key->ipv4.ipv4_src),
+        .ipv4_dst = ntohl(ctx->key->ipv4.ipv4_dst),
     };
+
+    if (key.ip_proto == IPPROTO_TCP) {
+        key.tp_src = ntohs(ctx->key->tcp.tcp_src);
+        key.tp_dst = ntohs(ctx->key->tcp.tcp_dst);
+    } else if (key.ip_proto == IPPROTO_UDP) {
+        key.tp_src = ntohs(ctx->key->udp.udp_src);
+        key.tp_dst = ntohs(ctx->key->udp.udp_dst);
+    } else {
+        key.tp_src = 0;
+        key.tp_dst = 0;
+    }
 
     return key;
 }

@@ -90,11 +90,21 @@ enum group_table_id {
 
 struct ctx {
     struct pipeline_result *result;
+    struct ind_ovs_parsed_key *key;
     uint32_t hash;
+
+    /* Output state */
     bool drop;
     bool pktin_agent;
     bool pktin_controller;
     uint64_t pktin_metadata;
+
+    /* Internal state */
+    uint16_t original_vlan_vid;
+    uint16_t internal_vlan_vid;
+    uint32_t vrf;
+    uint32_t l3_interface_class_id;
+    uint32_t l3_src_class_id;
 };
 
 /* IVS action emitters */

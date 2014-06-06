@@ -262,7 +262,7 @@ pipeline_bvs_table_port_lookup(uint32_t port_no)
                         entry->value.dhcp_offload ? "dhcp_offload " : "",
                         entry->value.packet_of_death ? "packet_of_death " : "",
                         entry->value.prioritize_pdus ? "prioritize_pdus " : "");
-    } else if (key.port == OF_PORT_DEST_LOCAL) {
+    } else if (key.port == OVSP_LOCAL) {
         return &local_entry;
     } else {
         AIM_LOG_VERBOSE("Miss port entry port=%u", key.port);
