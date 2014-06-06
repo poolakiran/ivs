@@ -105,6 +105,7 @@ struct ctx {
     uint32_t vrf;
     uint32_t l3_interface_class_id;
     uint32_t l3_src_class_id;
+    uint32_t ingress_lag_id;
 };
 
 /* IVS action emitters */
