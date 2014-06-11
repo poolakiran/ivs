@@ -247,7 +247,7 @@ static const indigo_core_table_ops_t table_ops = {
 void
 pipeline_bvs_table_l3_host_route_register(void)
 {
-    l3_host_route_hashtable = bighash_table_create(48 * 1024);
+    l3_host_route_hashtable = bighash_table_create(BIGHASH_AUTOGROW);
     indigo_core_table_register(TABLE_ID_L3_HOST_ROUTE, "l3_host_route", &table_ops, NULL);
 }
 

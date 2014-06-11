@@ -198,7 +198,7 @@ static const indigo_core_table_ops_t table_ops = {
 void
 pipeline_bvs_table_vlan_xlate_register(void)
 {
-    vlan_xlate_hashtable = bighash_table_create(16 * 1024);
+    vlan_xlate_hashtable = bighash_table_create(BIGHASH_AUTOGROW);
     indigo_core_table_register(TABLE_ID_VLAN_XLATE, "vlan_xlate", &table_ops, NULL);
 }
 

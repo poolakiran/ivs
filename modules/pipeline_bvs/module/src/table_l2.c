@@ -194,7 +194,7 @@ static const indigo_core_table_ops_t table_ops = {
 void
 pipeline_bvs_table_l2_register(void)
 {
-    l2_hashtable = bighash_table_create(128 * 1024);
+    l2_hashtable = bighash_table_create(BIGHASH_AUTOGROW);
     indigo_core_table_register(TABLE_ID_L2, "l2", &table_ops, NULL);
 }
 

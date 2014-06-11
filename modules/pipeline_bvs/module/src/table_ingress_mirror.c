@@ -189,7 +189,7 @@ static const indigo_core_table_ops_t table_ops = {
 void
 pipeline_bvs_table_ingress_mirror_register(void)
 {
-    ingress_mirror_hashtable = bighash_table_create(64);
+    ingress_mirror_hashtable = bighash_table_create(BIGHASH_AUTOGROW);
     indigo_core_table_register(TABLE_ID_INGRESS_MIRROR, "ingress_mirror", &table_ops, NULL);
 }
 

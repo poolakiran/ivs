@@ -237,7 +237,7 @@ static const indigo_core_table_ops_t table_ops = {
 void
 pipeline_bvs_table_port_register(void)
 {
-    port_hashtable = bighash_table_create(64);
+    port_hashtable = bighash_table_create(BIGHASH_AUTOGROW);
     indigo_core_table_register(TABLE_ID_PORT, "port", &table_ops, NULL);
 }
 

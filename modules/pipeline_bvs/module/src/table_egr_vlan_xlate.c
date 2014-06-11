@@ -198,7 +198,7 @@ static const indigo_core_table_ops_t table_ops = {
 void
 pipeline_bvs_table_egr_vlan_xlate_register(void)
 {
-    egr_vlan_xlate_hashtable = bighash_table_create(16 * 1024);
+    egr_vlan_xlate_hashtable = bighash_table_create(BIGHASH_AUTOGROW);
     indigo_core_table_register(TABLE_ID_EGR_VLAN_XLATE, "egr_vlan_xlate", &table_ops, NULL);
 }
 
