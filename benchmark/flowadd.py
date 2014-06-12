@@ -25,6 +25,7 @@ logging.basicConfig(
 
 cxn = OFConnection(args.host, args.port, ofp)
 cxn.sock.setblocking(1)
+cxn.timeout = 30
 
 flowmods = []
 num_flows = 100000
@@ -59,15 +60,21 @@ delete_all_flows()
 
 logging.debug("Sending flow-mods")
 
-total_elapsed = 0
+total_elapsed_add = 0
+total_elapsed_delete = 0
 initial_time = time.time()
 
 while time.time() - initial_time < duration:
     start_time = time.time()
     cxn.sendraw(flowmod_buf)
-    count += num_flows
     cxn.transact(ofp.message.barrier_request())
-    total_elapsed += time.time() - start_time
-    delete_all_flows()
+    total_elapsed_add += time.time() - start_time
 
-print "%d flowmods in %f.1s (%.0f flowmod/s)" % (count, total_elapsed, count/total_elapsed)
+    start_time = time.time()
+    delete_all_flows()
+    total_elapsed_delete += time.time() - start_time
+
+    count += 1
+
+print "%d flow-add in %f.1s (%.0f flow-add/s)" % (count*num_flows, total_elapsed_add, count*num_flows/total_elapsed_add)
+print "%d flow-delete-all in %f.1s (%.1f flow-delete-all/s)" % (count, total_elapsed_delete, count/total_elapsed_delete)
