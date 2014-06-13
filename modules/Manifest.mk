@@ -24,7 +24,6 @@ l2table_BASEDIR := $(BASEDIR)/l2table
 luajit_BASEDIR := $(BASEDIR)/luajit
 xbuf_BASEDIR := $(BASEDIR)/xbuf
 pipeline_BASEDIR := $(BASEDIR)/pipeline
-pipeline_bigtap_BASEDIR := $(BASEDIR)/pipeline_bigtap
 pipeline_bvs_BASEDIR := $(BASEDIR)/pipeline_bvs
 pipeline_standard_BASEDIR := $(BASEDIR)/pipeline_standard
 ivs_common_BASEDIR := $(BASEDIR)/ivs
