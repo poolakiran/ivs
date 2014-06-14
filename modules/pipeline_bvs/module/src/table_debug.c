@@ -271,6 +271,9 @@ pipeline_bvs_table_debug_entry_stats_get(
     void *table_priv, indigo_cxn_id_t cxn_id, void *entry_priv,
     indigo_fi_flow_stats_t *flow_stats)
 {
+    struct debug_entry *entry = entry_priv;
+    flow_stats->packets = entry->stats.packets;
+    flow_stats->bytes = entry->stats.bytes;
     return INDIGO_ERROR_NONE;
 }
 
