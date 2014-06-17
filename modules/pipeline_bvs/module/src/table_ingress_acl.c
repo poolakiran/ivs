@@ -269,7 +269,7 @@ pipeline_bvs_table_ingress_acl_entry_create(
         return rv;
     }
 
-    AIM_LOG_VERBOSE("Create ingress_acl entry prio=%u in_port=%u/%#x vlan_vid=%u/%#x ip_proto=%u/%#x vrf=%u/%#x l3_interface_class_id=%u/%#x l3_src_class_id=%u/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} tp_src=%u/%#x tp_dst=%u/%#x tcp_flags=%u/%#x",
+    AIM_LOG_VERBOSE("Create ingress_acl entry prio=%u in_port=%u/%#x vlan_vid=%u/%#x ip_proto=%u/%#x vrf=%u/%#x l3_interface_class_id=%u/%#x l3_src_class_id=%u/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} tp_src=%u/%#x tp_dst=%u/%#x tcp_flags=%#x/%#x",
                     priority, key.in_port, mask.in_port, key.vlan_vid, mask.vlan_vid, key.ip_proto, mask.ip_proto, key.vrf, mask.vrf, key.l3_interface_class_id, mask.l3_interface_class_id, key.l3_src_class_id, mask.l3_src_class_id, key.ipv4_src, mask.ipv4_src, key.ipv4_dst, mask.ipv4_dst, key.tp_src, mask.tp_src, key.tp_dst, mask.tp_dst, key.tcp_flags, mask.tcp_flags);
     AIM_LOG_VERBOSE("Entry group=%u vlan=%u eth-src=%{mac} eth-dst=%{mac} cpu=%d drop=%d",
                     entry->value.next_hop.group_id, entry->value.next_hop.new_vlan_vid, &entry->value.next_hop.new_eth_src, &entry->value.next_hop.new_eth_dst, entry->value.cpu, entry->value.drop);
@@ -370,13 +370,13 @@ pipeline_bvs_table_ingress_acl_lookup(const struct ingress_acl_key *key)
         struct ingress_acl_entry *entry = container_of(tcam_entry, tcam_entry, struct ingress_acl_entry);
         const struct ingress_acl_key *entry_key = tcam_entry->key;
         const struct ingress_acl_key *entry_mask = tcam_entry->mask;
-        AIM_LOG_VERBOSE("Hit ingress_acl entry prio=%u in_port=%u/%#x vlan_vid=%u/%#x ip_proto=%u/%#x vrf=%u/%#x l3_interface_class_id=%u/%#x l3_src_class_id=%u/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} tp_src=%u/%#x tp_dst=%u/%#x tcp_flags=%u/%#x",
+        AIM_LOG_VERBOSE("Hit ingress_acl entry prio=%u in_port=%u/%#x vlan_vid=%u/%#x ip_proto=%u/%#x vrf=%u/%#x l3_interface_class_id=%u/%#x l3_src_class_id=%u/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} tp_src=%u/%#x tp_dst=%u/%#x tcp_flags=%#x/%#x",
                         tcam_entry->priority, entry_key->in_port, entry_mask->in_port, entry_key->vlan_vid, entry_mask->vlan_vid, entry_key->ip_proto, entry_mask->ip_proto, entry_key->vrf, entry_mask->vrf, entry_key->l3_interface_class_id, entry_mask->l3_interface_class_id, entry_key->l3_src_class_id, entry_mask->l3_src_class_id, entry_key->ipv4_src, entry_mask->ipv4_src, entry_key->ipv4_dst, entry_mask->ipv4_dst, entry_key->tp_src, entry_mask->tp_src, entry_key->tp_dst, entry_mask->tp_dst, entry_key->tcp_flags, entry_mask->tcp_flags);
         AIM_LOG_VERBOSE("Entry group=%u vlan=%u eth-src=%{mac} eth-dst=%{mac} cpu=%d drop=%d",
                         entry->value.next_hop.group_id, entry->value.next_hop.new_vlan_vid, &entry->value.next_hop.new_eth_src, &entry->value.next_hop.new_eth_dst, entry->value.cpu, entry->value.drop);
         return entry;
     } else {
-        AIM_LOG_VERBOSE("Miss ingress_acl entry in_port=%u vlan_vid=%u ip_proto=%u vrf=%u l3_interface_class_id=%u l3_src_class_id=%u ipv4_src=%{ipv4a} ipv4_dst=%{ipv4a} tp_src=%u tp_dst=%u tcp_flags=%u",
+        AIM_LOG_VERBOSE("Miss ingress_acl entry in_port=%u vlan_vid=%u ip_proto=%u vrf=%u l3_interface_class_id=%u l3_src_class_id=%u ipv4_src=%{ipv4a} ipv4_dst=%{ipv4a} tp_src=%u tp_dst=%u tcp_flags=%#x",
                         key->in_port, key->vlan_vid, key->ip_proto, key->vrf, key->l3_interface_class_id, key->l3_src_class_id, key->ipv4_src, key->ipv4_dst, key->tp_src, key->tp_dst, key->tcp_flags);
         return NULL;
     }
