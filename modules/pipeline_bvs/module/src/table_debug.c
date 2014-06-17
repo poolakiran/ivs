@@ -111,10 +111,8 @@ parse_key(of_flow_add_t *obj, struct debug_key *key,
         mask->tp_src = match.masks.tcp_src;
         key->tp_dst = match.fields.tcp_dst;
         mask->tp_dst = match.masks.tcp_dst;
-        if (match.masks.bsn_tcp_flags) {
-            key->tcp_flags = match.fields.bsn_tcp_flags;
-            mask->tcp_flags = match.masks.bsn_tcp_flags;
-        }
+        key->tcp_flags = match.fields.bsn_tcp_flags;
+        mask->tcp_flags = match.masks.bsn_tcp_flags;
     } else if (key->ip_proto == IPPROTO_UDP) {
         key->tp_src = match.fields.udp_src;
         mask->tp_src = match.masks.udp_src;

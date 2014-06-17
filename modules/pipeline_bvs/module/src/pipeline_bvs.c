@@ -703,12 +703,12 @@ make_debug_key(struct ctx *ctx)
         .ipv4_dst = ntohl(ctx->key->ipv4.ipv4_dst),
         .ip_proto = ctx->key->ipv4.ipv4_proto,
         .ip_tos = ctx->key->ipv4.ipv4_tos,
+        .tcp_flags = 0,
     };
 
     memcpy(&key.eth_src, ctx->key->ethernet.eth_src, OF_MAC_ADDR_BYTES);
     memcpy(&key.eth_dst, ctx->key->ethernet.eth_dst, OF_MAC_ADDR_BYTES);
 
-    key.tcp_flags = 0;
     if (key.ip_proto == IPPROTO_TCP) {
         key.tp_src = ntohs(ctx->key->tcp.tcp_src);
         key.tp_dst = ntohs(ctx->key->tcp.tcp_dst);
@@ -750,10 +750,10 @@ make_ingress_acl_key(struct ctx *ctx)
         .l3_src_class_id = ctx->l3_src_class_id,
         .ipv4_src = ntohl(ctx->key->ipv4.ipv4_src),
         .ipv4_dst = ntohl(ctx->key->ipv4.ipv4_dst),
+        .tcp_flags = 0,
+        .pad2 = 0,
     };
 
-    key.tcp_flags = 0;
-    key.pad2 = 0;
     if (key.ip_proto == IPPROTO_TCP) {
         key.tp_src = ntohs(ctx->key->tcp.tcp_src);
         key.tp_dst = ntohs(ctx->key->tcp.tcp_dst);
