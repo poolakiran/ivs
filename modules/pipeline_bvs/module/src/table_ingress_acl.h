@@ -32,8 +32,10 @@ struct ingress_acl_key {
     uint32_t ipv4_dst;
     uint16_t tp_src;
     uint16_t tp_dst;
+    uint16_t tcp_flags;
+    uint16_t pad2;
 };
-AIM_STATIC_ASSERT(INGRESS_ACL_KEY_SIZE, sizeof(struct ingress_acl_key) == 32);
+AIM_STATIC_ASSERT(INGRESS_ACL_KEY_SIZE, sizeof(struct ingress_acl_key) == 36);
 
 struct ingress_acl_value {
     struct next_hop next_hop;
