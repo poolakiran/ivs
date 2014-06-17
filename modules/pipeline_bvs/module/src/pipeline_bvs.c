@@ -703,15 +703,16 @@ make_debug_key(struct ctx *ctx)
         .ipv4_dst = ntohl(ctx->key->ipv4.ipv4_dst),
         .ip_proto = ctx->key->ipv4.ipv4_proto,
         .ip_tos = ctx->key->ipv4.ipv4_tos,
-        .pad = 0,
     };
 
     memcpy(&key.eth_src, ctx->key->ethernet.eth_src, OF_MAC_ADDR_BYTES);
     memcpy(&key.eth_dst, ctx->key->ethernet.eth_dst, OF_MAC_ADDR_BYTES);
 
+    key.tcp_flags = 0;
     if (key.ip_proto == IPPROTO_TCP) {
         key.tp_src = ntohs(ctx->key->tcp.tcp_src);
         key.tp_dst = ntohs(ctx->key->tcp.tcp_dst);
+        key.tcp_flags = ntohs(ctx->key->tcp_flags);
     } else if (key.ip_proto == IPPROTO_UDP) {
         key.tp_src = ntohs(ctx->key->udp.udp_src);
         key.tp_dst = ntohs(ctx->key->udp.udp_dst);

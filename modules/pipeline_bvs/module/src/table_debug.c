@@ -36,6 +36,7 @@ static const of_match_fields_t maximum_mask = {
     .tcp_dst = 0xffff,
     .udp_src = 0xffff,
     .udp_dst = 0xffff,
+    .bsn_tcp_flags = 0xffff,
 };
 static const of_match_fields_t minimum_mask = {
 };
@@ -104,11 +105,16 @@ parse_key(of_flow_add_t *obj, struct debug_key *key,
     key->ip_tos = ((match.fields.ip_dscp << 2) & IP_DSCP_MASK) | (match.fields.ip_ecn & IP_ECN_MASK);
     mask->ip_tos = ((match.masks.ip_dscp << 2) & IP_DSCP_MASK) | (match.masks.ip_ecn & IP_ECN_MASK);
 
+    key->tcp_flags = mask->tcp_flags = 0;
     if (key->ip_proto == IPPROTO_TCP) {
         key->tp_src = match.fields.tcp_src;
         mask->tp_src = match.masks.tcp_src;
         key->tp_dst = match.fields.tcp_dst;
         mask->tp_dst = match.masks.tcp_dst;
+        if (match.masks.bsn_tcp_flags) {
+            key->tcp_flags = match.fields.bsn_tcp_flags;
+            mask->tcp_flags = match.masks.bsn_tcp_flags;
+        }
     } else if (key->ip_proto == IPPROTO_UDP) {
         key->tp_src = match.fields.udp_src;
         mask->tp_src = match.masks.udp_src;
@@ -118,8 +124,6 @@ parse_key(of_flow_add_t *obj, struct debug_key *key,
         key->tp_src = mask->tp_src = 0;
         key->tp_dst = mask->tp_dst = 0;
     }
-
-    key->pad = mask->pad = 0;
 
     return INDIGO_ERROR_NONE;
 }
@@ -214,9 +218,9 @@ pipeline_bvs_table_debug_entry_create(
         return rv;
     }
 
-    AIM_LOG_VERBOSE("Create debug entry prio=%u in_port=%u/%#x eth_src=%{mac}/%{mac} eth_dst=%{mac}/%{mac} eth_type=%#x/%#x vlan_vid=%u/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} ip_proto=%u/%#x ip_tos=%#x/%#x tp_src=%u/%#x tp_dst=%u/%#x"
+    AIM_LOG_VERBOSE("Create debug entry prio=%u in_port=%u/%#x eth_src=%{mac}/%{mac} eth_dst=%{mac}/%{mac} eth_type=%#x/%#x vlan_vid=%u/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} ip_proto=%u/%#x ip_tos=%#x/%#x tp_src=%u/%#x tp_dst=%u/%#x tcp_flags=%#x/%#x"
                     " -> span_id=%u cpu=%d drop=%d",
-                    priority, key.in_port, mask.in_port, &key.eth_src, &mask.eth_src, &key.eth_dst, &mask.eth_dst, key.eth_type, mask.eth_type, key.vlan_vid, mask.vlan_vid, key.ipv4_src, mask.ipv4_src, key.ipv4_dst, mask.ipv4_dst, key.ip_proto, mask.ip_proto, key.ip_tos, mask.ip_tos, key.tp_src, mask.tp_src, key.tp_dst, mask.tp_dst,
+                    priority, key.in_port, mask.in_port, &key.eth_src, &mask.eth_src, &key.eth_dst, &mask.eth_dst, key.eth_type, mask.eth_type, key.vlan_vid, mask.vlan_vid, key.ipv4_src, mask.ipv4_src, key.ipv4_dst, mask.ipv4_dst, key.ip_proto, mask.ip_proto, key.ip_tos, mask.ip_tos, key.tp_src, mask.tp_src, key.tp_dst, mask.tp_dst, key.tcp_flags, mask.tcp_flags,
                     entry->value.span_id, entry->value.cpu, entry->value.drop);
 
     ind_ovs_fwd_write_lock();
@@ -315,14 +319,14 @@ pipeline_bvs_table_debug_lookup(const struct debug_key *key)
         struct debug_entry *entry = container_of(tcam_entry, tcam_entry, struct debug_entry);
         const struct debug_key *entry_key = tcam_entry->key;
         const struct debug_key *entry_mask = tcam_entry->mask;
-        AIM_LOG_VERBOSE("Hit debug entry prio=%u in_port=%u/%#x eth_src=%{mac}/%{mac} eth_dst=%{mac}/%{mac} eth_type=%#x/%#x vlan_vid=%u/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} ip_proto=%u/%#x ip_tos=%#x/%#x tp_src=%u/%#x tp_dst=%u/%#x"
+        AIM_LOG_VERBOSE("Hit debug entry prio=%u in_port=%u/%#x eth_src=%{mac}/%{mac} eth_dst=%{mac}/%{mac} eth_type=%#x/%#x vlan_vid=%u/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} ip_proto=%u/%#x ip_tos=%#x/%#x tp_src=%u/%#x tp_dst=%u/%#x tcp_flags=%#x/%#x"
                         " -> span_id=%u cpu=%d drop=%d",
-                        tcam_entry->priority, entry_key->in_port, entry_mask->in_port, &entry_key->eth_src, &entry_mask->eth_src, &entry_key->eth_dst, &entry_mask->eth_dst, entry_key->eth_type, entry_mask->eth_type, entry_key->vlan_vid, entry_mask->vlan_vid, entry_key->ipv4_src, entry_mask->ipv4_src, entry_key->ipv4_dst, entry_mask->ipv4_dst, entry_key->ip_proto, entry_mask->ip_proto, entry_key->ip_tos, entry_mask->ip_tos, entry_key->tp_src, entry_mask->tp_src, entry_key->tp_dst, entry_mask->tp_dst,
+                        tcam_entry->priority, entry_key->in_port, entry_mask->in_port, &entry_key->eth_src, &entry_mask->eth_src, &entry_key->eth_dst, &entry_mask->eth_dst, entry_key->eth_type, entry_mask->eth_type, entry_key->vlan_vid, entry_mask->vlan_vid, entry_key->ipv4_src, entry_mask->ipv4_src, entry_key->ipv4_dst, entry_mask->ipv4_dst, entry_key->ip_proto, entry_mask->ip_proto, entry_key->ip_tos, entry_mask->ip_tos, entry_key->tp_src, entry_mask->tp_src, entry_key->tp_dst, entry_mask->tp_dst, entry_key->tcp_flags, entry_mask->tcp_flags,
                         entry->value.span_id, entry->value.cpu, entry->value.drop);
         return entry;
     } else {
-        AIM_LOG_VERBOSE("Miss debug entry in_port=%u eth_src=%{mac} eth_dst=%{mac} eth_type=%#x vlan_vid=%u ipv4_src=%{ipv4a} ipv4_dst=%{ipv4a} ip_proto=%u ip_tos=%#x tp_src=%u tp_dst=%u",
-                        key->in_port, &key->eth_src, &key->eth_dst, key->eth_type, key->vlan_vid, key->ipv4_src, key->ipv4_dst, key->ip_proto, key->ip_tos, key->tp_src, key->tp_dst);
+        AIM_LOG_VERBOSE("Miss debug entry in_port=%u eth_src=%{mac} eth_dst=%{mac} eth_type=%#x vlan_vid=%u ipv4_src=%{ipv4a} ipv4_dst=%{ipv4a} ip_proto=%u ip_tos=%#x tp_src=%u tp_dst=%u tcp_flags=%#x",
+                        key->in_port, &key->eth_src, &key->eth_dst, key->eth_type, key->vlan_vid, key->ipv4_src, key->ipv4_dst, key->ip_proto, key->ip_tos, key->tp_src, key->tp_dst, key->tcp_flags);
         return NULL;
     }
 }

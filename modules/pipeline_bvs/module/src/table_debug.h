@@ -32,7 +32,7 @@ struct debug_key {
     uint8_t ip_tos; /* DSCP and ECN */
     uint16_t tp_src;
     uint16_t tp_dst;
-    uint16_t pad;
+    uint16_t tcp_flags;
 };
 AIM_STATIC_ASSERT(DEBUG_KEY_SIZE, sizeof(struct debug_key) == 36);
 
