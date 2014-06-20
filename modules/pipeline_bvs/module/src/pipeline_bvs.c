@@ -83,6 +83,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_egress_acl_register();
     pipeline_bvs_table_vlan_acl_register();
     pipeline_bvs_table_qos_weight_register();
+    pipeline_bvs_group_lag_register();
 }
 
 static void
@@ -105,6 +106,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_egress_acl_unregister();
     pipeline_bvs_table_vlan_acl_unregister();
     pipeline_bvs_table_qos_weight_unregister();
+    pipeline_bvs_group_lag_unregister();
 }
 
 static indigo_error_t
@@ -630,25 +632,22 @@ span(struct ctx *ctx, uint32_t span_id)
 static indigo_error_t
 select_lag_port(uint32_t group_id, uint32_t hash, uint32_t *port_no)
 {
-    indigo_error_t rv;
-
-    struct xbuf *actions;
-    rv = ind_ovs_group_select(group_id, hash, &actions);
-    if (rv < 0) {
-        AIM_LOG_WARN("error selecting LAG group %u bucket: %s", group_id, indigo_strerror(rv));
-        return rv;
+    /* XXX not threadsafe */
+    struct lag_group *lag = indigo_core_group_lookup(group_id);
+    if (lag == NULL) {
+        AIM_LOG_VERBOSE("nonexistent LAG %d", group_id);
+        return INDIGO_ERROR_NOT_FOUND;
     }
 
-    struct nlattr *attr;
-    XBUF_FOREACH2(actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_OUTPUT) {
-            *port_no = *XBUF_PAYLOAD(attr, uint32_t);
-            return INDIGO_ERROR_NONE;
-        }
+    struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(lag, hash);
+    if (lag_bucket == NULL) {
+        AIM_LOG_VERBOSE("empty LAG %d", group_id);
+        return INDIGO_ERROR_NOT_FOUND;
     }
 
-    AIM_LOG_WARN("no output action found in group %u bucket", group_id);
-    return INDIGO_ERROR_NOT_FOUND;
+    *port_no = lag_bucket->port_no;
+
+    return INDIGO_ERROR_NONE;
 }
 
 static indigo_error_t
