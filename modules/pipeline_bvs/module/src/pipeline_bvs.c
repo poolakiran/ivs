@@ -238,12 +238,11 @@ process_l2(struct ctx *ctx)
     if (src_l2_entry) {
         apply_stats(ctx->result, &src_l2_entry->stats);
 
-        if (src_l2_entry->value.lag_id == OF_GROUP_ANY) {
+        if (src_l2_entry->value.lag == NULL) {
             AIM_LOG_VERBOSE("L2 source discard");
             mark_drop(ctx);
         } else if (!port_entry->value.disable_src_mac_check) {
-            if (src_l2_entry->value.lag_id != OF_GROUP_ANY &&
-                    src_l2_entry->value.lag_id != ctx->ingress_lag_id) {
+            if (src_l2_entry->value.lag->id != ctx->ingress_lag_id) {
                 AIM_LOG_VERBOSE("incorrect lag_id in source l2table lookup (station move)");
                 mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_STATION_MOVE);
                 mark_drop(ctx);
@@ -319,11 +318,11 @@ process_l2(struct ctx *ctx)
         return;
     }
 
-    AIM_LOG_VERBOSE("hit in destination l2table lookup, lag %u", dst_l2_entry->value.lag_id);
-
-    if (dst_l2_entry->value.lag_id == OF_GROUP_ANY) {
-        AIM_LOG_VERBOSE("L2 destination discard");
+    if (dst_l2_entry->value.lag == NULL) {
+        AIM_LOG_VERBOSE("hit in destination l2table lookup, discard");
         mark_drop(ctx);
+    } else {
+        AIM_LOG_VERBOSE("hit in destination l2table lookup, lag %u", dst_l2_entry->value.lag->id);
     }
 
     process_debug(ctx);
@@ -333,13 +332,15 @@ process_l2(struct ctx *ctx)
         return;
     }
 
-    uint32_t dst_port_no;
-    if (select_lag_port(dst_l2_entry->value.lag_id, ctx->hash, &dst_port_no) < 0) {
+    struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(dst_l2_entry->value.lag, ctx->hash);
+    if (lag_bucket == NULL) {
+        AIM_LOG_VERBOSE("empty LAG");
         return;
     }
-    AIM_LOG_VERBOSE("selected LAG port %u", dst_port_no);
 
-    process_egress(ctx, dst_port_no, false);
+    AIM_LOG_VERBOSE("selected LAG port %u", lag_bucket->port_no);
+
+    process_egress(ctx, lag_bucket->port_no, false);
 }
 
 static void
