@@ -83,6 +83,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_egress_acl_register();
     pipeline_bvs_table_vlan_acl_register();
     pipeline_bvs_table_qos_weight_register();
+    pipeline_bvs_group_ecmp_register();
     pipeline_bvs_group_lag_register();
 }
 
@@ -106,6 +107,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_egress_acl_unregister();
     pipeline_bvs_table_vlan_acl_unregister();
     pipeline_bvs_table_qos_weight_unregister();
+    pipeline_bvs_group_ecmp_unregister();
     pipeline_bvs_group_lag_unregister();
 }
 
@@ -655,42 +657,20 @@ select_ecmp_route(
     uint32_t group_id, uint32_t hash,
     struct next_hop **next_hop)
 {
-    indigo_error_t rv;
-
-    /*
-     * HACK
-     *
-     * Eventually we will manage the memory allocated for ECMP groups
-     * and we'll be able to just return a pointer to an already
-     * parsed next_hop. The group infrastructure doesn't exist yet,
-     * so fake it by returning a pointer to thread-local memory.
-     */
-    static __thread struct next_hop static_next_hop;
-
-    struct xbuf *actions;
-    rv = ind_ovs_group_select(group_id, hash, &actions);
-    if (rv < 0) {
-        AIM_LOG_WARN("error selecting ECMP group %u bucket: %s", group_id, indigo_strerror(rv));
-        return rv;
+    /* XXX not threadsafe */
+    struct ecmp_group *ecmp = indigo_core_group_lookup(group_id);
+    if (ecmp == NULL) {
+        AIM_LOG_VERBOSE("nonexistent ecmp group %d", group_id);
+        return INDIGO_ERROR_NOT_FOUND;
     }
 
-    memset(&static_next_hop, 0, sizeof(static_next_hop));
-    static_next_hop.group_id = OF_GROUP_ANY;
-
-    struct nlattr *attr;
-    XBUF_FOREACH2(actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_GROUP) {
-            static_next_hop.group_id = *XBUF_PAYLOAD(attr, uint32_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
-            memcpy(static_next_hop.new_eth_src.addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_DST) {
-            memcpy(static_next_hop.new_eth_dst.addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_VLAN_VID) {
-            static_next_hop.new_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
-        }
+    struct ecmp_bucket *ecmp_bucket = pipeline_bvs_group_ecmp_select(ecmp, hash);
+    if (ecmp_bucket == NULL) {
+        AIM_LOG_VERBOSE("empty ecmp group %d", group_id);
+        return INDIGO_ERROR_NOT_FOUND;
     }
 
-    *next_hop = &static_next_hop;
+    *next_hop = &ecmp_bucket->next_hop;
 
     return INDIGO_ERROR_NONE;
 }
