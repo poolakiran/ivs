@@ -85,6 +85,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_qos_weight_register();
     pipeline_bvs_group_ecmp_register();
     pipeline_bvs_group_lag_register();
+    pipeline_bvs_group_span_register();
 }
 
 static void
@@ -108,6 +109,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_vlan_acl_unregister();
     pipeline_bvs_table_qos_weight_unregister();
     pipeline_bvs_group_ecmp_unregister();
+    pipeline_bvs_group_span_unregister();
     pipeline_bvs_group_lag_unregister();
 }
 
@@ -603,27 +605,15 @@ flood_vlan(struct ctx *ctx)
 static void
 span(struct ctx *ctx, uint32_t span_id)
 {
-    struct xbuf *span_actions;
-    if (ind_ovs_group_indirect(span_id, &span_actions) < 0) {
-        AIM_LOG_ERROR("Failed to lookup span group %#x", span_id);
-        return;
-    }
-
-    uint32_t dst_group_id = OF_GROUP_ANY;
-    struct nlattr *attr;
-    XBUF_FOREACH2(span_actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_GROUP) {
-            dst_group_id = *XBUF_PAYLOAD(attr, uint32_t);
-        }
-    }
-
-    if (dst_group_id == OF_GROUP_ANY) {
-        AIM_LOG_ERROR("No LAG group action");
+    /* XXX not threadsafe */
+    struct span_group *span = indigo_core_group_lookup(span_id);
+    if (span == NULL) {
+        AIM_LOG_VERBOSE("nonexistent SPAN group %d", span_id);
         return;
     }
 
     uint32_t dst_port_no;
-    if (select_lag_port(dst_group_id, ctx->hash, &dst_port_no) < 0) {
+    if (select_lag_port(span->value.lag_id, ctx->hash, &dst_port_no) < 0) {
         return;
     }
     AIM_LOG_VERBOSE("Selected LAG port %u", dst_port_no);
