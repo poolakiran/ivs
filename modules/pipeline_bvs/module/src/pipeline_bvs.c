@@ -613,13 +613,15 @@ span(struct ctx *ctx, uint32_t span_id)
         return;
     }
 
-    uint32_t dst_port_no;
-    if (select_lag_port(span->value.lag_id, ctx->hash, &dst_port_no) < 0) {
+    struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(span->value.lag, ctx->hash);
+    if (lag_bucket == NULL) {
+        AIM_LOG_VERBOSE("empty LAG");
         return;
     }
-    AIM_LOG_VERBOSE("Selected LAG port %u", dst_port_no);
 
-    output(ctx->result, dst_port_no);
+    AIM_LOG_VERBOSE("Selected LAG port %u", lag_bucket->port_no);
+
+    output(ctx->result, lag_bucket->port_no);
 }
 
 static indigo_error_t

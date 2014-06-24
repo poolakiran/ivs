@@ -24,8 +24,8 @@ parse_value(of_list_bucket_t *of_buckets, struct span_value *value)
 {
     bool seen_lag = false;
 
-    of_bucket_t of_bucket;
     int rv;
+    of_bucket_t of_bucket;
     OF_LIST_BUCKET_ITER(of_buckets, &of_bucket, rv) {
         of_list_action_t of_actions;
         of_bucket_actions_bind(&of_bucket, &of_actions);
@@ -36,7 +36,13 @@ parse_value(of_list_bucket_t *of_buckets, struct span_value *value)
             switch (act.header.object_id) {
             case OF_ACTION_GROUP:
                 if (!seen_lag) {
-                    of_action_group_group_id_get(&act.group, &value->lag_id);
+                    uint32_t lag_id;
+                    of_action_group_group_id_get(&act.group, &lag_id);
+                    value->lag = pipeline_bvs_group_lag_acquire(lag_id);
+                    if (value->lag == NULL) {
+                        AIM_LOG_ERROR("nonexistent LAG in SPAN group");
+                        goto error;
+                    }
                     seen_lag = true;
                 } else {
                     AIM_LOG_ERROR("duplicate group action in SPAN group");
@@ -58,12 +64,16 @@ parse_value(of_list_bucket_t *of_buckets, struct span_value *value)
     return INDIGO_ERROR_NONE;
 
 error:
+    if (seen_lag) {
+        pipeline_bvs_group_lag_release(value->lag);
+    }
     return INDIGO_ERROR_COMPAT;
 }
 
 static void
-cleanup_value(struct span_value *vlaue)
+cleanup_value(struct span_value *value)
 {
+    pipeline_bvs_group_lag_release(value->lag);
 }
 
 static indigo_error_t
@@ -89,7 +99,7 @@ pipeline_bvs_group_span_create(
     span->id = group_id;
     span->value = value;
 
-    AIM_LOG_VERBOSE("Creating span group %u lag %u", span->id, span->value.lag_id);
+    AIM_LOG_VERBOSE("Creating span group %u lag %u", span->id, span->value.lag->id);
 
     *entry_priv = span;
     return INDIGO_ERROR_NONE;

@@ -21,7 +21,7 @@
 #define GROUP_SPAN_H
 
 struct span_value {
-    uint32_t lag_id;
+    struct lag_group *lag;
 };
 
 struct span_group {
