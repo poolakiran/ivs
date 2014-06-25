@@ -551,7 +551,7 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
     struct egress_mirror_entry *egress_mirror_entry =
         pipeline_bvs_table_egress_mirror_lookup(out_port);
     if (egress_mirror_entry) {
-        span(ctx, egress_mirror_entry->value.span_id);
+        span2(ctx, egress_mirror_entry->value.span);
     }
 
     output(ctx->result, out_port);

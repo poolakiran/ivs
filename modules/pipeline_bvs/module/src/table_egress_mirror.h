@@ -26,7 +26,7 @@ struct egress_mirror_key {
 AIM_STATIC_ASSERT(EGRESS_MIRROR_KEY_SIZE, sizeof(struct egress_mirror_key) == 4);
 
 struct egress_mirror_value {
-    uint32_t span_id;
+    struct span_group *span;
 };
 
 struct egress_mirror_entry {
@@ -37,6 +37,6 @@ struct egress_mirror_entry {
 
 void pipeline_bvs_table_egress_mirror_register(void);
 void pipeline_bvs_table_egress_mirror_unregister(void);
-struct egress_mirror_entry *pipeline_bvs_table_egress_mirror_lookup(uint32_t in_port);
+struct egress_mirror_entry *pipeline_bvs_table_egress_mirror_lookup(uint32_t port_no);
 
 #endif
