@@ -26,8 +26,8 @@ struct flood_key {
 AIM_STATIC_ASSERT(FLOOD_KEY_SIZE, sizeof(struct flood_key) == 4);
 
 struct flood_value {
-    uint32_t *lag_ids;
-    int num_lag_ids;
+    struct lag_group **lags;
+    int num_lags;
 };
 
 struct flood_entry {

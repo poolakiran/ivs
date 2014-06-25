@@ -589,17 +589,17 @@ flood_vlan(struct ctx *ctx)
     }
 
     int i;
-    for (i = 0; i < entry->value.num_lag_ids; i++) {
-        uint32_t group_id = entry->value.lag_ids[i];
-        uint32_t port_no;
+    for (i = 0; i < entry->value.num_lags; i++) {
+        struct lag_group *lag = entry->value.lags[i];
 
-        if (select_lag_port(group_id, ctx->hash, &port_no) < 0) {
-            AIM_LOG_VERBOSE("LAG %u is empty", group_id);
+        struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(lag, ctx->hash);
+        if (lag_bucket == NULL) {
+            AIM_LOG_VERBOSE("empty LAG %d", lag->id);
             continue;
         }
-        AIM_LOG_VERBOSE("selected LAG %u port %u", group_id, port_no);
+        AIM_LOG_VERBOSE("selected LAG %u port %u", lag->id, lag_bucket->port_no);
 
-        process_egress(ctx, port_no, false);
+        process_egress(ctx, lag_bucket->port_no, false);
     }
 }
 
