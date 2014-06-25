@@ -30,4 +30,7 @@ struct next_hop {
     uint16_t new_vlan_vid;
 };
 
+indigo_error_t pipeline_bvs_parse_next_hop(of_list_action_t *actions, struct next_hop *next_hop);
+void pipeline_bvs_cleanup_next_hop(struct next_hop *next_hop);
+
 #endif

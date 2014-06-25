@@ -29,57 +29,32 @@ parse_value(of_list_bucket_t *of_buckets, struct ecmp_value *value)
     of_bucket_t of_bucket;
     int rv;
     OF_LIST_BUCKET_ITER(of_buckets, &of_bucket, rv) {
-        bool seen_group = false;
-        bool seen_new_vlan_vid = false;
-        bool seen_new_eth_src = false;
-        bool seen_new_eth_dst = false;
-
         struct ecmp_bucket *bucket =
             xbuf_reserve(&buckets_xbuf, sizeof(*bucket));
 
-        of_list_action_t of_actions;
-        of_bucket_actions_bind(&of_bucket, &of_actions);
+        of_list_action_t actions;
+        of_bucket_actions_bind(&of_bucket, &actions);
 
-        int rv;
+        if (pipeline_bvs_parse_next_hop(&actions, &bucket->next_hop) < 0) {
+            AIM_LOG_ERROR("Failed to parse next-hop in ECMP group");
+            goto error;
+        }
+
         of_action_t act;
-        OF_LIST_ACTION_ITER(&of_actions, &act, rv) {
+        int rv;
+        OF_LIST_ACTION_ITER(&actions, &act, rv) {
             switch (act.header.object_id) {
             case OF_ACTION_GROUP:
-                if (!seen_group) {
-                    of_action_group_group_id_get(&act.group, &bucket->next_hop.group_id);
-                    seen_group = true;
-                } else {
-                    goto error;
-                }
+                /* Handled by pipeline_bvs_parse_next_hop */
                 break;
             case OF_ACTION_SET_FIELD: {
                 of_oxm_t oxm;
                 of_action_set_field_field_bind(&act.set_field, &oxm.header);
                 switch (oxm.header.object_id) {
                 case OF_OXM_VLAN_VID:
-                    if (!seen_new_vlan_vid) {
-                        of_oxm_vlan_vid_value_get(&oxm.vlan_vid, &bucket->next_hop.new_vlan_vid);
-                        bucket->next_hop.new_vlan_vid &= ~VLAN_CFI_BIT;
-                        seen_new_vlan_vid = true;
-                    } else {
-                        goto error;
-                    }
-                    break;
                 case OF_OXM_ETH_SRC:
-                    if (!seen_new_eth_src) {
-                        of_oxm_eth_src_value_get(&oxm.eth_src, &bucket->next_hop.new_eth_src);
-                        seen_new_eth_src = true;
-                    } else {
-                        goto error;
-                    }
-                    break;
                 case OF_OXM_ETH_DST:
-                    if (!seen_new_eth_dst) {
-                        of_oxm_eth_dst_value_get(&oxm.eth_dst, &bucket->next_hop.new_eth_dst);
-                        seen_new_eth_dst = true;
-                    } else {
-                        goto error;
-                    }
+                    /* Handled by pipeline_bvs_parse_next_hop */
                     break;
                 default:
                     AIM_LOG_ERROR("Unexpected set-field OXM %s in ECMP group", of_object_id_str[oxm.header.object_id]);
@@ -88,14 +63,9 @@ parse_value(of_list_bucket_t *of_buckets, struct ecmp_value *value)
                 break;
             }
             default:
-                AIM_LOG_ERROR("Unexpected ECMP group action %s", of_object_id_str[act.header.object_id]);
+                AIM_LOG_ERROR("Unexpected action %s in ECMP group", of_object_id_str[act.header.object_id]);
                 goto error;
             }
-        }
-
-        if (!seen_group || !seen_new_vlan_vid || !seen_new_eth_src || !seen_new_eth_dst) {
-            AIM_LOG_ERROR("Missing required next-hop action in ECMP group");
-            goto error;
         }
 
         if (group_to_table_id(bucket->next_hop.group_id) != GROUP_TABLE_ID_LAG) {
