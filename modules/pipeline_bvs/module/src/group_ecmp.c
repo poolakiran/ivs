@@ -40,6 +40,8 @@ parse_value(of_list_bucket_t *of_buckets, struct ecmp_value *value)
             goto error;
         }
 
+        value->num_buckets++;
+
         of_action_t act;
         int rv;
         OF_LIST_ACTION_ITER(&actions, &act, rv) {
@@ -68,17 +70,10 @@ parse_value(of_list_bucket_t *of_buckets, struct ecmp_value *value)
             }
         }
 
-        if (group_to_table_id(bucket->next_hop.group_id) != GROUP_TABLE_ID_LAG) {
-            AIM_LOG_ERROR("Invalid LAG ID in ECMP group");
+        if (bucket->next_hop.type != NEXT_HOP_TYPE_LAG) {
+            AIM_LOG_ERROR("Invalid ECMP group next-hop type");
             goto error;
         }
-
-        if (indigo_core_group_lookup(bucket->next_hop.group_id) == NULL) {
-            AIM_LOG_ERROR("Nonexistent LAG in ECMP group");
-            goto error;
-        }
-
-        value->num_buckets++;
     }
 
     xbuf_compact(&buckets_xbuf);
@@ -87,6 +82,14 @@ parse_value(of_list_bucket_t *of_buckets, struct ecmp_value *value)
     return INDIGO_ERROR_NONE;
 
 error:
+    {
+        int i;
+        struct ecmp_bucket *buckets = xbuf_data(&buckets_xbuf);
+        for (i = 0; i < value->num_buckets; i++) {
+            pipeline_bvs_cleanup_next_hop(&buckets[i].next_hop);
+        }
+    }
+
     xbuf_cleanup(&buckets_xbuf);
     return INDIGO_ERROR_COMPAT;
 }
@@ -94,6 +97,10 @@ error:
 static void
 cleanup_value(struct ecmp_value *value)
 {
+    int i;
+    for (i = 0; i < value->num_buckets; i++) {
+        pipeline_bvs_cleanup_next_hop(&value->buckets[i].next_hop);
+    }
     aim_free(value->buckets);
 }
 
@@ -125,7 +132,7 @@ pipeline_bvs_group_ecmp_create(
         int i;
         for (i = 0; i < ecmp->value.num_buckets; i++) {
             struct ecmp_bucket *bucket = &ecmp->value.buckets[i];
-            AIM_LOG_VERBOSE("  bucket %d: lag %d, vlan %u, eth-src %{mac}, eth-dst %{mac}", i, bucket->next_hop.group_id, bucket->next_hop.new_vlan_vid, &bucket->next_hop.new_eth_src, &bucket->next_hop.new_eth_dst);
+            AIM_LOG_VERBOSE("  bucket %d: lag %d, vlan %u, eth-src %{mac}, eth-dst %{mac}", i, bucket->next_hop.lag->id, bucket->next_hop.new_vlan_vid, &bucket->next_hop.new_eth_src, &bucket->next_hop.new_eth_dst);
         }
     }
 

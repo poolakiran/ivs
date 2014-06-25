@@ -26,6 +26,7 @@ pipeline_bvs_parse_next_hop(of_list_action_t *actions, struct next_hop *next_hop
     bool seen_new_vlan_vid = false;
     bool seen_new_eth_src = false;
     bool seen_new_eth_dst = false;
+    uint32_t group_id;
 
     of_action_t act;
     int rv;
@@ -33,7 +34,7 @@ pipeline_bvs_parse_next_hop(of_list_action_t *actions, struct next_hop *next_hop
         switch (act.header.object_id) {
         case OF_ACTION_GROUP:
             if (!seen_group) {
-                of_action_group_group_id_get(&act.group, &next_hop->group_id);
+                of_action_group_group_id_get(&act.group, &group_id);
                 seen_group = true;
             } else {
                 AIM_LOG_ERROR("duplicate group action in next-hop");
@@ -83,16 +84,28 @@ pipeline_bvs_parse_next_hop(of_list_action_t *actions, struct next_hop *next_hop
     }
 
     if (seen_group) {
-        switch (group_to_table_id(next_hop->group_id)) {
+        switch (group_to_table_id(group_id)) {
         case GROUP_TABLE_ID_LAG:
+            next_hop->type = NEXT_HOP_TYPE_LAG;
             if (!seen_new_vlan_vid || !seen_new_eth_src || !seen_new_eth_dst) {
                 AIM_LOG_WARN("Missing required next-hop action");
                 return INDIGO_ERROR_COMPAT;
             }
+            next_hop->lag = pipeline_bvs_group_lag_acquire(group_id);
+            if (next_hop->lag == NULL) {
+                AIM_LOG_ERROR("Nonexistent LAG in next-hop");
+                goto error;
+            }
             break;
         case GROUP_TABLE_ID_ECMP:
+            next_hop->type = NEXT_HOP_TYPE_ECMP;
             if (seen_new_vlan_vid || seen_new_eth_src || seen_new_eth_dst) {
                 AIM_LOG_WARN("Unexpected action in ECMP next-hop");
+            }
+            next_hop->ecmp = pipeline_bvs_group_ecmp_acquire(group_id);
+            if (next_hop->ecmp == NULL) {
+                AIM_LOG_ERROR("Nonexistent ECMP in next-hop");
+                goto error;
             }
             break;
         default:
@@ -101,7 +114,7 @@ pipeline_bvs_parse_next_hop(of_list_action_t *actions, struct next_hop *next_hop
         }
     } else {
         /* No group action, null route */
-        next_hop->group_id = OF_GROUP_ANY;
+        next_hop->type = NEXT_HOP_TYPE_NULL;
 
         if (seen_new_vlan_vid || seen_new_eth_src || seen_new_eth_dst) {
             AIM_LOG_WARN("Unexpected action in null next-hop");
@@ -117,4 +130,14 @@ error:
 void
 pipeline_bvs_cleanup_next_hop(struct next_hop *next_hop)
 {
+    switch (next_hop->type) {
+    case NEXT_HOP_TYPE_LAG:
+        pipeline_bvs_group_lag_release(next_hop->lag);
+        break;
+    case NEXT_HOP_TYPE_ECMP:
+        pipeline_bvs_group_ecmp_release(next_hop->ecmp);
+        break;
+    default:
+        break;
+    }
 }

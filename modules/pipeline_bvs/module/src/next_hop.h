@@ -20,14 +20,24 @@
 #ifndef NEXT_HOP_H
 #define NEXT_HOP_H
 
-struct next_hop {
-    /* Either LAG or ECMP */
-    uint32_t group_id;
+enum next_hop_type {
+    NEXT_HOP_TYPE_NULL,
+    NEXT_HOP_TYPE_LAG,
+    NEXT_HOP_TYPE_ECMP,
+};
 
-    /* Only used if group_id is a LAG */
+struct next_hop {
+    union {
+        struct lag_group *lag;
+        struct ecmp_group *ecmp;
+    };
+
+    /* Only used if type is NEXT_HOP_TYPE_LAG */
     of_mac_addr_t new_eth_src;
     of_mac_addr_t new_eth_dst;
     uint16_t new_vlan_vid;
+
+    enum next_hop_type type;
 };
 
 indigo_error_t pipeline_bvs_parse_next_hop(of_list_action_t *actions, struct next_hop *next_hop);

@@ -32,8 +32,6 @@ static void process_egress(struct ctx *ctx, uint32_t out_port, bool l3);
 static bool check_vlan_membership(struct vlan_entry *vlan_entry, uint32_t in_port, bool *tagged);
 static void flood_vlan(struct ctx *ctx);
 static void span(struct ctx *ctx, struct span_group *span);
-static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
-static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, struct next_hop **next_hop);
 static struct debug_key make_debug_key(struct ctx *ctx);
 static struct vlan_acl_key make_vlan_acl_key(struct ctx *ctx);
 static struct ingress_acl_key make_ingress_acl_key(struct ctx *ctx);
@@ -379,13 +377,13 @@ process_l3(struct ctx *ctx)
         apply_stats(ctx->result, &ingress_acl_entry->stats);
         drop = drop || ingress_acl_entry->value.drop;
         cpu = cpu || ingress_acl_entry->value.cpu;
-        if (ingress_acl_entry->value.next_hop.group_id != OF_GROUP_ANY) {
+        if (ingress_acl_entry->value.next_hop.type != NEXT_HOP_TYPE_NULL) {
             next_hop = &ingress_acl_entry->value.next_hop;
         }
     }
 
     bool hit = next_hop != NULL;
-    bool valid_next_hop = next_hop != NULL && next_hop->group_id != OF_GROUP_ANY;
+    bool valid_next_hop = next_hop != NULL && next_hop->type != NEXT_HOP_TYPE_NULL;
 
     if (ctx->key->ipv4.ipv4_ttl <= 1) {
         if (cpu) {
@@ -425,24 +423,29 @@ process_l3(struct ctx *ctx)
 
     AIM_ASSERT(valid_next_hop);
 
-    if (group_to_table_id(next_hop->group_id) == GROUP_TABLE_ID_ECMP) {
-        if (select_ecmp_route(next_hop->group_id, ctx->hash, &next_hop) < 0) {
+    if (next_hop->type == NEXT_HOP_TYPE_ECMP) {
+        struct ecmp_bucket *ecmp_bucket = pipeline_bvs_group_ecmp_select(next_hop->ecmp, ctx->hash);
+        if (ecmp_bucket == NULL) {
+            AIM_LOG_VERBOSE("empty ecmp group %d", next_hop->ecmp->id);
             return;
         }
+
+        next_hop = &ecmp_bucket->next_hop;
     }
 
-    AIM_ASSERT(group_to_table_id(next_hop->group_id) == GROUP_TABLE_ID_LAG);
+    AIM_ASSERT(next_hop->type == NEXT_HOP_TYPE_LAG);
 
     AIM_LOG_VERBOSE("next-hop: eth_src=%{mac} eth_dst=%{mac} vlan=%u lag_id=%u",
                     next_hop->new_eth_src.addr, next_hop->new_eth_dst.addr,
-                    next_hop->new_vlan_vid, next_hop->group_id);
+                    next_hop->new_vlan_vid, next_hop->lag->id);
 
-    uint32_t out_port;
-    if (select_lag_port(next_hop->group_id, ctx->hash, &out_port) < 0) {
+    struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(next_hop->lag, ctx->hash);
+    if (lag_bucket == NULL) {
+        AIM_LOG_VERBOSE("empty LAG");
         return;
     }
 
-    AIM_LOG_VERBOSE("selected LAG port %u", out_port);
+    AIM_LOG_VERBOSE("selected LAG port %u", lag_bucket->port_no);
 
     ctx->internal_vlan_vid = next_hop->new_vlan_vid;
     set_vlan_vid(ctx->result, ctx->internal_vlan_vid);
@@ -450,7 +453,7 @@ process_l3(struct ctx *ctx)
     set_eth_dst(ctx->result, next_hop->new_eth_dst);
     dec_nw_ttl(ctx->result);
 
-    process_egress(ctx, out_port, true);
+    process_egress(ctx, lag_bucket->port_no, true);
 }
 
 static void
@@ -615,50 +618,6 @@ span(struct ctx *ctx, struct span_group *span)
     AIM_LOG_VERBOSE("Selected LAG port %u", lag_bucket->port_no);
 
     output(ctx->result, lag_bucket->port_no);
-}
-
-static indigo_error_t
-select_lag_port(uint32_t group_id, uint32_t hash, uint32_t *port_no)
-{
-    /* XXX not threadsafe */
-    struct lag_group *lag = indigo_core_group_lookup(group_id);
-    if (lag == NULL) {
-        AIM_LOG_VERBOSE("nonexistent LAG %d", group_id);
-        return INDIGO_ERROR_NOT_FOUND;
-    }
-
-    struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(lag, hash);
-    if (lag_bucket == NULL) {
-        AIM_LOG_VERBOSE("empty LAG %d", group_id);
-        return INDIGO_ERROR_NOT_FOUND;
-    }
-
-    *port_no = lag_bucket->port_no;
-
-    return INDIGO_ERROR_NONE;
-}
-
-static indigo_error_t
-select_ecmp_route(
-    uint32_t group_id, uint32_t hash,
-    struct next_hop **next_hop)
-{
-    /* XXX not threadsafe */
-    struct ecmp_group *ecmp = indigo_core_group_lookup(group_id);
-    if (ecmp == NULL) {
-        AIM_LOG_VERBOSE("nonexistent ecmp group %d", group_id);
-        return INDIGO_ERROR_NOT_FOUND;
-    }
-
-    struct ecmp_bucket *ecmp_bucket = pipeline_bvs_group_ecmp_select(ecmp, hash);
-    if (ecmp_bucket == NULL) {
-        AIM_LOG_VERBOSE("empty ecmp group %d", group_id);
-        return INDIGO_ERROR_NOT_FOUND;
-    }
-
-    *next_hop = &ecmp_bucket->next_hop;
-
-    return INDIGO_ERROR_NONE;
 }
 
 static struct debug_key

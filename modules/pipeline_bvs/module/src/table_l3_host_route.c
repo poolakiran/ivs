@@ -233,16 +233,16 @@ pipeline_bvs_table_l3_host_route_lookup(uint32_t vrf, uint32_t ipv4)
     struct l3_host_route_key key = { .vrf=vrf, .ipv4 = ntohl(ipv4) };
     struct l3_host_route_entry *entry = l3_host_route_hashtable_first(l3_host_route_hashtable, &key);
     if (entry) {
-        switch (group_to_table_id(entry->value.next_hop.group_id)) {
-        case GROUP_TABLE_ID_LAG:
+        switch (entry->value.next_hop.type) {
+        case NEXT_HOP_TYPE_LAG:
             AIM_LOG_VERBOSE("Hit l3_host_route entry vrf=%u, ip=%{ipv4a} -> lag %u, vlan %u, eth-src %{mac}, eth-dst %{mac}, cpu=%d",
                             entry->key.vrf, entry->key.ipv4,
-                            entry->value.next_hop.group_id, entry->value.next_hop.new_vlan_vid, &entry->value.next_hop.new_eth_src, &entry->value.next_hop.new_eth_dst, entry->value.cpu);
+                            entry->value.next_hop.lag->id, entry->value.next_hop.new_vlan_vid, &entry->value.next_hop.new_eth_src, &entry->value.next_hop.new_eth_dst, entry->value.cpu);
             break;
-        case GROUP_TABLE_ID_ECMP:
+        case NEXT_HOP_TYPE_ECMP:
             AIM_LOG_VERBOSE("Hit l3_host_route entry vrf=%u, ip=%{ipv4a} -> ecmp %u, cpu=%d",
                             entry->key.vrf, entry->key.ipv4,
-                            entry->value.next_hop.group_id, entry->value.cpu);
+                            entry->value.next_hop.ecmp->id, entry->value.cpu);
             break;
         default:
             break;
