@@ -32,6 +32,7 @@ static void process_egress(struct ctx *ctx, uint32_t out_port, bool l3);
 static bool check_vlan_membership(struct vlan_entry *vlan_entry, uint32_t in_port, bool *tagged);
 static void flood_vlan(struct ctx *ctx);
 static void span(struct ctx *ctx, uint32_t span_id);
+static void span2(struct ctx *ctx, struct span_group *span);
 static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
 static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, struct next_hop **next_hop);
 static struct debug_key make_debug_key(struct ctx *ctx);
@@ -139,7 +140,7 @@ process_l2(struct ctx *ctx)
     struct ingress_mirror_entry *ingress_mirror_entry =
         pipeline_bvs_table_ingress_mirror_lookup(ctx->key->in_port);
     if (ingress_mirror_entry) {
-        span(ctx, ingress_mirror_entry->value.span_id);
+        span2(ctx, ingress_mirror_entry->value.span);
     }
 
     bool packet_of_death = false;
@@ -613,6 +614,20 @@ span(struct ctx *ctx, uint32_t span_id)
         return;
     }
 
+    struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(span->value.lag, ctx->hash);
+    if (lag_bucket == NULL) {
+        AIM_LOG_VERBOSE("empty LAG");
+        return;
+    }
+
+    AIM_LOG_VERBOSE("Selected LAG port %u", lag_bucket->port_no);
+
+    output(ctx->result, lag_bucket->port_no);
+}
+
+static void
+span2(struct ctx *ctx, struct span_group *span)
+{
     struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(span->value.lag, ctx->hash);
     if (lag_bucket == NULL) {
         AIM_LOG_VERBOSE("empty LAG");
