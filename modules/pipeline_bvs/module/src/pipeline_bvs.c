@@ -31,8 +31,7 @@ static void process_debug(struct ctx *ctx);
 static void process_egress(struct ctx *ctx, uint32_t out_port, bool l3);
 static bool check_vlan_membership(struct vlan_entry *vlan_entry, uint32_t in_port, bool *tagged);
 static void flood_vlan(struct ctx *ctx);
-static void span(struct ctx *ctx, uint32_t span_id);
-static void span2(struct ctx *ctx, struct span_group *span);
+static void span(struct ctx *ctx, struct span_group *span);
 static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
 static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, struct next_hop **next_hop);
 static struct debug_key make_debug_key(struct ctx *ctx);
@@ -140,7 +139,7 @@ process_l2(struct ctx *ctx)
     struct ingress_mirror_entry *ingress_mirror_entry =
         pipeline_bvs_table_ingress_mirror_lookup(ctx->key->in_port);
     if (ingress_mirror_entry) {
-        span2(ctx, ingress_mirror_entry->value.span);
+        span(ctx, ingress_mirror_entry->value.span);
     }
 
     bool packet_of_death = false;
@@ -466,13 +465,13 @@ process_debug(struct ctx *ctx)
 
     apply_stats(ctx->result, &debug_entry->stats);
 
-    if (debug_entry->value.span_id != OF_GROUP_ANY) {
+    if (debug_entry->value.span != NULL) {
         if (ctx->original_vlan_vid != 0) {
             set_vlan_vid(ctx->result, ctx->original_vlan_vid);
         } else {
             pop_vlan(ctx->result);
         }
-        span(ctx, debug_entry->value.span_id);
+        span(ctx, debug_entry->value.span);
         set_vlan_vid(ctx->result, ctx->internal_vlan_vid);
     }
 
@@ -551,7 +550,7 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
     struct egress_mirror_entry *egress_mirror_entry =
         pipeline_bvs_table_egress_mirror_lookup(out_port);
     if (egress_mirror_entry) {
-        span2(ctx, egress_mirror_entry->value.span);
+        span(ctx, egress_mirror_entry->value.span);
     }
 
     output(ctx->result, out_port);
@@ -605,28 +604,7 @@ flood_vlan(struct ctx *ctx)
 }
 
 static void
-span(struct ctx *ctx, uint32_t span_id)
-{
-    /* XXX not threadsafe */
-    struct span_group *span = indigo_core_group_lookup(span_id);
-    if (span == NULL) {
-        AIM_LOG_VERBOSE("nonexistent SPAN group %d", span_id);
-        return;
-    }
-
-    struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(span->value.lag, ctx->hash);
-    if (lag_bucket == NULL) {
-        AIM_LOG_VERBOSE("empty LAG");
-        return;
-    }
-
-    AIM_LOG_VERBOSE("Selected LAG port %u", lag_bucket->port_no);
-
-    output(ctx->result, lag_bucket->port_no);
-}
-
-static void
-span2(struct ctx *ctx, struct span_group *span)
+span(struct ctx *ctx, struct span_group *span)
 {
     struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(span->value.lag, ctx->hash);
     if (lag_bucket == NULL) {

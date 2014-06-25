@@ -132,8 +132,9 @@ parse_value(of_flow_add_t *obj, struct debug_value *value)
     int rv;
     of_list_instruction_t insts;
     of_instruction_t inst;
+    bool seen_span = false;
 
-    value->span_id = OF_GROUP_ANY;
+    value->span = NULL;
     value->drop = false;
     value->cpu = false;
 
@@ -148,15 +149,17 @@ parse_value(of_flow_add_t *obj, struct debug_value *value)
             OF_LIST_ACTION_ITER(&actions, &act, rv) {
                 switch (act.header.object_id) {
                 case OF_ACTION_GROUP: {
-                    uint32_t group_id;
-                    of_action_group_group_id_get(&act.group, &group_id);
-                    switch (group_to_table_id(group_id)) {
-                    case GROUP_TABLE_ID_SPAN:
-                        value->span_id = group_id;
-                        break;
-                    default:
-                        AIM_LOG_WARN("Unexpected group table ID in debug table");
-                        break;
+                    if (!seen_span) {
+                        uint32_t span_id;
+                        of_action_group_group_id_get(&act.group, &span_id);
+                        value->span = pipeline_bvs_group_span_acquire(span_id);
+                        if (value->span == NULL) {
+                            AIM_LOG_WARN("Nonexistent SPAN in debug table");
+                            break;
+                        }
+                        seen_span = true;
+                    } else {
+                        AIM_LOG_WARN("Duplicate SPAN action in debug table");
                     }
                     break;
                 }
@@ -193,6 +196,14 @@ parse_value(of_flow_add_t *obj, struct debug_value *value)
     return INDIGO_ERROR_NONE;
 }
 
+static void
+cleanup_value(struct debug_value *value)
+{
+    if (value->span != NULL) {
+        pipeline_bvs_group_span_release(value->span);
+    }
+}
+
 static indigo_error_t
 pipeline_bvs_table_debug_entry_create(
     void *table_priv, indigo_cxn_id_t cxn_id, of_flow_add_t *obj,
@@ -219,7 +230,7 @@ pipeline_bvs_table_debug_entry_create(
     AIM_LOG_VERBOSE("Create debug entry prio=%u in_port=%u/%#x eth_src=%{mac}/%{mac} eth_dst=%{mac}/%{mac} eth_type=%#x/%#x vlan_vid=%u/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} ip_proto=%u/%#x ip_tos=%#x/%#x tp_src=%u/%#x tp_dst=%u/%#x tcp_flags=%#x/%#x"
                     " -> span_id=%u cpu=%d drop=%d",
                     priority, key.in_port, mask.in_port, &key.eth_src, &mask.eth_src, &key.eth_dst, &mask.eth_dst, key.eth_type, mask.eth_type, key.vlan_vid, mask.vlan_vid, key.ipv4_src, mask.ipv4_src, key.ipv4_dst, mask.ipv4_dst, key.ip_proto, mask.ip_proto, key.ip_tos, mask.ip_tos, key.tp_src, mask.tp_src, key.tp_dst, mask.tp_dst, key.tcp_flags, mask.tcp_flags,
-                    entry->value.span_id, entry->value.cpu, entry->value.drop);
+                    entry->value.span ? entry->value.span->id : OF_GROUP_ANY, entry->value.cpu, entry->value.drop);
 
     ind_ovs_fwd_write_lock();
     tcam_insert(debug_tcam, &entry->tcam_entry, &key, &mask, priority);
@@ -245,6 +256,7 @@ pipeline_bvs_table_debug_entry_modify(
     }
 
     ind_ovs_fwd_write_lock();
+    cleanup_value(&entry->value);
     entry->value = value;
     ind_ovs_fwd_write_unlock();
 
@@ -264,6 +276,7 @@ pipeline_bvs_table_debug_entry_delete(
     ind_ovs_fwd_write_unlock();
 
     ind_ovs_kflow_invalidate_all();
+    cleanup_value(&entry->value);
     aim_free(entry);
     return INDIGO_ERROR_NONE;
 }
@@ -320,7 +333,7 @@ pipeline_bvs_table_debug_lookup(const struct debug_key *key)
         AIM_LOG_VERBOSE("Hit debug entry prio=%u in_port=%u/%#x eth_src=%{mac}/%{mac} eth_dst=%{mac}/%{mac} eth_type=%#x/%#x vlan_vid=%u/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} ip_proto=%u/%#x ip_tos=%#x/%#x tp_src=%u/%#x tp_dst=%u/%#x tcp_flags=%#x/%#x"
                         " -> span_id=%u cpu=%d drop=%d",
                         tcam_entry->priority, entry_key->in_port, entry_mask->in_port, &entry_key->eth_src, &entry_mask->eth_src, &entry_key->eth_dst, &entry_mask->eth_dst, entry_key->eth_type, entry_mask->eth_type, entry_key->vlan_vid, entry_mask->vlan_vid, entry_key->ipv4_src, entry_mask->ipv4_src, entry_key->ipv4_dst, entry_mask->ipv4_dst, entry_key->ip_proto, entry_mask->ip_proto, entry_key->ip_tos, entry_mask->ip_tos, entry_key->tp_src, entry_mask->tp_src, entry_key->tp_dst, entry_mask->tp_dst, entry_key->tcp_flags, entry_mask->tcp_flags,
-                        entry->value.span_id, entry->value.cpu, entry->value.drop);
+                        entry->value.span ? entry->value.span->id : OF_GROUP_ANY, entry->value.cpu, entry->value.drop);
         return entry;
     } else {
         AIM_LOG_VERBOSE("Miss debug entry in_port=%u eth_src=%{mac} eth_dst=%{mac} eth_type=%#x vlan_vid=%u ipv4_src=%{ipv4a} ipv4_dst=%{ipv4a} ip_proto=%u ip_tos=%#x tp_src=%u tp_dst=%u tcp_flags=%#x",
