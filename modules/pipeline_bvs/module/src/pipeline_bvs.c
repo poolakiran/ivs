@@ -218,6 +218,8 @@ process_l2(struct ctx *ctx)
         return;
     }
 
+    apply_stats(ctx->result, ind_ovs_rx_vlan_stats_select(vlan_vid));
+
     if (!vlan_acl_entry) {
         AIM_LOG_VERBOSE("VLAN %u: vrf=%u", vlan_vid, vlan_entry->value.vrf);
         ctx->vrf = vlan_entry->value.vrf;
@@ -505,6 +507,8 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
         AIM_LOG_VERBOSE("skipping ingress LAG %u", ctx->ingress_lag_id);
         return;
     }
+
+    apply_stats(ctx->result, ind_ovs_tx_vlan_stats_select(ctx->internal_vlan_vid));
 
     /* Egress VLAN translation */
     uint16_t tag = ctx->internal_vlan_vid;
