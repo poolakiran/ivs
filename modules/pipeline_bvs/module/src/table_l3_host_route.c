@@ -144,6 +144,10 @@ pipeline_bvs_table_l3_host_route_entry_create(
     l3_host_route_hashtable_insert(l3_host_route_hashtable, entry);
     ind_ovs_fwd_write_unlock();
 
+    AIM_LOG_VERBOSE("Create l3_host_route entry vrf=%u ip=%{ipv4a} -> next_hop=%{next_hop} cpu=%d",
+                    entry->key.vrf, entry->key.ipv4,
+                    &entry->value.next_hop, entry->value.cpu);
+
     *entry_priv = entry;
     ind_ovs_kflow_invalidate_all();
     return INDIGO_ERROR_NONE;
@@ -233,22 +237,11 @@ pipeline_bvs_table_l3_host_route_lookup(uint32_t vrf, uint32_t ipv4)
     struct l3_host_route_key key = { .vrf=vrf, .ipv4 = ntohl(ipv4) };
     struct l3_host_route_entry *entry = l3_host_route_hashtable_first(l3_host_route_hashtable, &key);
     if (entry) {
-        switch (entry->value.next_hop.type) {
-        case NEXT_HOP_TYPE_LAG:
-            AIM_LOG_VERBOSE("Hit l3_host_route entry vrf=%u, ip=%{ipv4a} -> lag %u, vlan %u, eth-src %{mac}, eth-dst %{mac}, cpu=%d",
-                            entry->key.vrf, entry->key.ipv4,
-                            entry->value.next_hop.lag->id, entry->value.next_hop.new_vlan_vid, &entry->value.next_hop.new_eth_src, &entry->value.next_hop.new_eth_dst, entry->value.cpu);
-            break;
-        case NEXT_HOP_TYPE_ECMP:
-            AIM_LOG_VERBOSE("Hit l3_host_route entry vrf=%u, ip=%{ipv4a} -> ecmp %u, cpu=%d",
-                            entry->key.vrf, entry->key.ipv4,
-                            entry->value.next_hop.ecmp->id, entry->value.cpu);
-            break;
-        default:
-            break;
-        }
+        AIM_LOG_VERBOSE("Hit l3_host_route entry vrf=%u ip=%{ipv4a} -> next_hop=%{next_hop} cpu=%d",
+                        entry->key.vrf, entry->key.ipv4,
+                        &entry->value.next_hop, entry->value.cpu);
     } else {
-        AIM_LOG_VERBOSE("Miss l3_host_route entry vrf=%u, ip=%{ipv4a}",
+        AIM_LOG_VERBOSE("Miss l3_host_route entry vrf=%u ip=%{ipv4a}",
                         key.vrf, key.ipv4);
     }
     return entry;

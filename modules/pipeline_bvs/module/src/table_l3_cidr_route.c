@@ -167,9 +167,9 @@ pipeline_bvs_table_l3_cidr_route_entry_create(
     }
 
     AIM_LOG_VERBOSE("Create l3_cidr_route entry prio=%u vrf=%u ipv4=%{ipv4a}/%{ipv4a}"
-                    " -> group=%u vlan=%u eth-src=%{mac} eth-dst=%{mac} cpu=%d",
+                    " -> next_hop=%{next_hop} cpu=%d",
                     priority, key.vrf, key.ipv4, mask.ipv4,
-                    entry->value.next_hop.lag ? entry->value.next_hop.lag->id : OF_GROUP_ANY, entry->value.next_hop.new_vlan_vid, &entry->value.next_hop.new_eth_src, &entry->value.next_hop.new_eth_dst, entry->value.cpu);
+                    &entry->value.next_hop, entry->value.cpu);
 
     ind_ovs_fwd_write_lock();
     tcam_insert(l3_cidr_route_tcam, &entry->tcam_entry, &key, &mask, priority);
@@ -268,9 +268,9 @@ pipeline_bvs_table_l3_cidr_route_lookup(uint32_t vrf, uint32_t ipv4)
         const struct l3_cidr_route_key *entry_key = tcam_entry->key;
         const struct l3_cidr_route_key *entry_mask = tcam_entry->mask;
         AIM_LOG_VERBOSE("Hit l3_cidr_route entry prio=%u vrf=%u ipv4=%{ipv4a}/%{ipv4a}"
-                        " -> group=%u vlan=%u eth-src=%{mac} eth-dst=%{mac} cpu=%d",
+                        " -> next_hop=%{next_hop} cpu=%d",
                         tcam_entry->priority, entry_key->vrf, entry_key->ipv4, entry_mask->ipv4,
-                        entry->value.next_hop.lag ? entry->value.next_hop.lag->id : OF_GROUP_ANY, entry->value.next_hop.new_vlan_vid, &entry->value.next_hop.new_eth_src, &entry->value.next_hop.new_eth_dst, entry->value.cpu);
+                        &entry->value.next_hop, entry->value.cpu);
         return entry;
     } else {
         AIM_LOG_VERBOSE("Miss l3_cidr_route entry vrf=%u ipv4=%{ipv4a}", key.vrf, key.ipv4);

@@ -128,11 +128,11 @@ pipeline_bvs_group_ecmp_create(
     ecmp->value = value;
 
     if (aim_log_fid_get(AIM_LOG_STRUCT_POINTER, AIM_LOG_FLAG_VERBOSE)) {
-        AIM_LOG_VERBOSE("Creating ECMP group %d", ecmp->id);
+        AIM_LOG_VERBOSE("Create ECMP group %d", ecmp->id);
         int i;
         for (i = 0; i < ecmp->value.num_buckets; i++) {
             struct ecmp_bucket *bucket = &ecmp->value.buckets[i];
-            AIM_LOG_VERBOSE("  bucket %d: lag %d, vlan %u, eth-src %{mac}, eth-dst %{mac}", i, bucket->next_hop.lag->id, bucket->next_hop.new_vlan_vid, &bucket->next_hop.new_eth_src, &bucket->next_hop.new_eth_dst);
+            AIM_LOG_VERBOSE("  bucket %d: next_hop=%{mac}", i, &bucket->next_hop);
         }
     }
 

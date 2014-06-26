@@ -65,6 +65,7 @@ static void
 pipeline_bvs_init(const char *name)
 {
     indigo_cxn_async_channel_selector_register(pipeline_bvs_cxn_async_channel_selector);
+    pipeline_bvs_register_next_hop_datatype();
     pipeline_bvs_table_port_register();
     pipeline_bvs_table_vlan_xlate_register();
     pipeline_bvs_table_egr_vlan_xlate_register();
@@ -90,6 +91,7 @@ static void
 pipeline_bvs_finish(void)
 {
     indigo_cxn_async_channel_selector_unregister(pipeline_bvs_cxn_async_channel_selector);
+    pipeline_bvs_unregister_next_hop_datatype();
     pipeline_bvs_table_port_unregister();
     pipeline_bvs_table_vlan_xlate_unregister();
     pipeline_bvs_table_egr_vlan_xlate_unregister();

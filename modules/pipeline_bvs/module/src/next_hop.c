@@ -18,6 +18,8 @@
  ****************************************************************/
 
 #include "pipeline_bvs_int.h"
+#include <AIM/aim_error.h>
+#include <AIM/aim_datatypes.h>
 
 indigo_error_t
 pipeline_bvs_parse_next_hop(of_list_action_t *actions, struct next_hop *next_hop)
@@ -140,4 +142,49 @@ pipeline_bvs_cleanup_next_hop(struct next_hop *next_hop)
     default:
         break;
     }
+}
+
+static int
+format_next_hop(aim_datatype_context_t* dtc, aim_va_list_t* vargs,
+                const char** rv)
+{
+    struct next_hop *next_hop = va_arg(vargs->val, struct next_hop *);
+    AIM_REFERENCE(dtc);
+
+    aim_pvs_t *pvs = aim_pvs_buffer_create();
+
+    switch (next_hop->type) {
+    case NEXT_HOP_TYPE_NULL:
+        aim_printf(pvs, "null");
+        break;
+    case NEXT_HOP_TYPE_LAG:
+        aim_printf(pvs, "{ lag=%u vlan=%u eth_src=%{mac} eth_dst=%{mac} }",
+                   next_hop->lag->id, next_hop->new_vlan_vid,
+                   &next_hop->new_eth_src, &next_hop->new_eth_dst);
+        break;
+    case NEXT_HOP_TYPE_ECMP:
+        aim_printf(pvs, "{ ecmp=%u }", next_hop->ecmp->id);
+        break;
+    default:
+        aim_printf(pvs, "unknown");
+        break;
+    }
+
+    *rv = aim_pvs_buffer_get(pvs);
+    aim_pvs_destroy(pvs);
+
+    return AIM_DATATYPE_OK;
+}
+
+void
+pipeline_bvs_register_next_hop_datatype(void)
+{
+    aim_datatype_register(0, "next_hop", "Next Hop",
+                          NULL, format_next_hop, NULL);
+}
+
+void
+pipeline_bvs_unregister_next_hop_datatype(void)
+{
+    aim_datatype_unregister(0, "next_hop");
 }
