@@ -195,6 +195,12 @@ process_l2(struct ctx *ctx)
             if (vlan_xlate_entry) {
                 vlan_vid = vlan_xlate_entry->value.new_vlan_vid;
                 set_vlan_vid(ctx->result, vlan_vid);
+            } else if (port_entry->value.require_vlan_xlate) {
+                AIM_LOG_VERBOSE("vlan_xlate required and missed, dropping");
+                mark_drop(ctx);
+                process_debug(ctx);
+                process_pktin(ctx);
+                return;
             }
         } else {
             vlan_vid = port_entry->value.default_vlan_vid;
