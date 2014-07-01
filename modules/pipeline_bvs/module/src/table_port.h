@@ -34,6 +34,7 @@ struct port_value {
     unsigned dhcp_offload : 1;
     unsigned packet_of_death : 1;
     unsigned prioritize_pdus : 1;
+    unsigned require_vlan_xlate : 1;
 };
 
 struct port_entry {
