@@ -174,6 +174,7 @@ pipeline_bvs_group_lag_unregister(void)
     indigo_core_group_table_unregister(GROUP_TABLE_ID_LAG);
 }
 
+/* Caller must handle NULL return value in case of an empty group */
 struct lag_bucket *
 pipeline_bvs_group_lag_select(struct lag_group *lag, uint32_t hash)
 {

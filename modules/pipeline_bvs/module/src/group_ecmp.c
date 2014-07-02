@@ -132,7 +132,7 @@ pipeline_bvs_group_ecmp_create(
         int i;
         for (i = 0; i < ecmp->value.num_buckets; i++) {
             struct ecmp_bucket *bucket = &ecmp->value.buckets[i];
-            AIM_LOG_VERBOSE("  bucket %d: next_hop=%{mac}", i, &bucket->next_hop);
+            AIM_LOG_VERBOSE("  bucket %d: next_hop=%{next_hop}", i, &bucket->next_hop);
         }
     }
 
@@ -199,6 +199,7 @@ pipeline_bvs_group_ecmp_unregister(void)
     indigo_core_group_table_unregister(GROUP_TABLE_ID_ECMP);
 }
 
+/* Caller must handle NULL return value in case of an empty group */
 struct ecmp_bucket *
 pipeline_bvs_group_ecmp_select(struct ecmp_group *ecmp, uint32_t hash)
 {
