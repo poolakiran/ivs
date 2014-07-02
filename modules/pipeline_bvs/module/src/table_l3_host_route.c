@@ -53,10 +53,6 @@ parse_value(of_flow_add_t *obj, struct l3_host_route_value *value)
     int rv;
     of_list_instruction_t insts;
     of_instruction_t inst;
-    bool seen_group = false;
-    bool seen_new_vlan_vid = false;
-    bool seen_new_eth_src = false;
-    bool seen_new_eth_dst = false;
 
     value->cpu = false;
 
@@ -66,30 +62,27 @@ parse_value(of_flow_add_t *obj, struct l3_host_route_value *value)
         case OF_INSTRUCTION_WRITE_ACTIONS: {
             of_list_action_t actions;
             of_instruction_write_actions_actions_bind(&inst.write_actions, &actions);
+
+            if (pipeline_bvs_parse_next_hop(&actions, &value->next_hop) < 0) {
+                AIM_LOG_ERROR("Failed to parse next-hop in L3 host table");
+                return INDIGO_ERROR_COMPAT;
+            }
+
             of_action_t act;
             int rv;
             OF_LIST_ACTION_ITER(&actions, &act, rv) {
                 switch (act.header.object_id) {
                 case OF_ACTION_GROUP:
-                    of_action_group_group_id_get(&act.group, &value->next_hop.group_id);
-                    seen_group = true;
+                    /* Handled by pipeline_bvs_parse_next_hop */
                     break;
                 case OF_ACTION_SET_FIELD: {
                     of_oxm_t oxm;
                     of_action_set_field_field_bind(&act.set_field, &oxm.header);
                     switch (oxm.header.object_id) {
                     case OF_OXM_VLAN_VID:
-                        of_oxm_vlan_vid_value_get(&oxm.vlan_vid, &value->next_hop.new_vlan_vid);
-                        value->next_hop.new_vlan_vid &= ~VLAN_CFI_BIT;
-                        seen_new_vlan_vid = true;
-                        break;
                     case OF_OXM_ETH_SRC:
-                        of_oxm_eth_src_value_get(&oxm.eth_src, &value->next_hop.new_eth_src);
-                        seen_new_eth_src = true;
-                        break;
                     case OF_OXM_ETH_DST:
-                        of_oxm_eth_dst_value_get(&oxm.eth_dst, &value->next_hop.new_eth_dst);
-                        seen_new_eth_dst = true;
+                        /* Handled by pipeline_bvs_parse_next_hop */
                         break;
                     default:
                         AIM_LOG_WARN("Unexpected set-field OXM %s in l3_host_route table", of_object_id_str[oxm.header.object_id]);
@@ -124,32 +117,6 @@ parse_value(of_flow_add_t *obj, struct l3_host_route_value *value)
         }
     }
 
-    if (seen_group) {
-        switch (group_to_table_id(value->next_hop.group_id)) {
-        case GROUP_TABLE_ID_LAG:
-            if (!seen_new_vlan_vid || !seen_new_eth_src || !seen_new_eth_dst) {
-                AIM_LOG_WARN("Missing required next-hop action in l3_host_route table");
-                return INDIGO_ERROR_COMPAT;
-            }
-            break;
-        case GROUP_TABLE_ID_ECMP:
-            if (seen_new_vlan_vid || seen_new_eth_src || seen_new_eth_dst) {
-                AIM_LOG_WARN("Unexpected next-hop action in l3_host_route table");
-            }
-            break;
-        default:
-            AIM_LOG_WARN("Unexpected group table ID in l3_host_route table");
-            return INDIGO_ERROR_COMPAT;
-        }
-    } else {
-        /* No group action, null route */
-        value->next_hop.group_id = OF_GROUP_ANY;
-
-        if (seen_new_vlan_vid || seen_new_eth_src || seen_new_eth_dst) {
-            AIM_LOG_WARN("Unexpected next-hop action in l3_host_route table");
-        }
-    }
-
     return INDIGO_ERROR_NONE;
 }
 
@@ -177,6 +144,10 @@ pipeline_bvs_table_l3_host_route_entry_create(
     l3_host_route_hashtable_insert(l3_host_route_hashtable, entry);
     ind_ovs_fwd_write_unlock();
 
+    AIM_LOG_VERBOSE("Create l3_host_route entry vrf=%u ip=%{ipv4a} -> next_hop=%{next_hop} cpu=%d",
+                    entry->key.vrf, entry->key.ipv4,
+                    &entry->value.next_hop, entry->value.cpu);
+
     *entry_priv = entry;
     ind_ovs_kflow_invalidate_all();
     return INDIGO_ERROR_NONE;
@@ -197,6 +168,7 @@ pipeline_bvs_table_l3_host_route_entry_modify(
     }
 
     ind_ovs_fwd_write_lock();
+    pipeline_bvs_cleanup_next_hop(&entry->value.next_hop);
     entry->value = value;
     ind_ovs_fwd_write_unlock();
 
@@ -216,6 +188,7 @@ pipeline_bvs_table_l3_host_route_entry_delete(
     ind_ovs_fwd_write_unlock();
 
     ind_ovs_kflow_invalidate_all();
+    pipeline_bvs_cleanup_next_hop(&entry->value.next_hop);
     aim_free(entry);
     return INDIGO_ERROR_NONE;
 }
@@ -264,22 +237,11 @@ pipeline_bvs_table_l3_host_route_lookup(uint32_t vrf, uint32_t ipv4)
     struct l3_host_route_key key = { .vrf=vrf, .ipv4 = ntohl(ipv4) };
     struct l3_host_route_entry *entry = l3_host_route_hashtable_first(l3_host_route_hashtable, &key);
     if (entry) {
-        switch (group_to_table_id(entry->value.next_hop.group_id)) {
-        case GROUP_TABLE_ID_LAG:
-            AIM_LOG_VERBOSE("Hit l3_host_route entry vrf=%u, ip=%{ipv4a} -> lag %u, vlan %u, eth-src %{mac}, eth-dst %{mac}, cpu=%d",
-                            entry->key.vrf, entry->key.ipv4,
-                            entry->value.next_hop.group_id, entry->value.next_hop.new_vlan_vid, &entry->value.next_hop.new_eth_src, &entry->value.next_hop.new_eth_dst, entry->value.cpu);
-            break;
-        case GROUP_TABLE_ID_ECMP:
-            AIM_LOG_VERBOSE("Hit l3_host_route entry vrf=%u, ip=%{ipv4a} -> ecmp %u, cpu=%d",
-                            entry->key.vrf, entry->key.ipv4,
-                            entry->value.next_hop.group_id, entry->value.cpu);
-            break;
-        default:
-            break;
-        }
+        AIM_LOG_VERBOSE("Hit l3_host_route entry vrf=%u ip=%{ipv4a} -> next_hop=%{next_hop} cpu=%d",
+                        entry->key.vrf, entry->key.ipv4,
+                        &entry->value.next_hop, entry->value.cpu);
     } else {
-        AIM_LOG_VERBOSE("Miss l3_host_route entry vrf=%u, ip=%{ipv4a}",
+        AIM_LOG_VERBOSE("Miss l3_host_route entry vrf=%u ip=%{ipv4a}",
                         key.vrf, key.ipv4);
     }
     return entry;

@@ -17,27 +17,28 @@
  *
  ****************************************************************/
 
-#ifndef TABLE_FLOOD_H
-#define TABLE_FLOOD_H
+#ifndef GROUP_LAG_H
+#define GROUP_LAG_H
 
-struct flood_key {
-    uint32_t lag_id;
-};
-AIM_STATIC_ASSERT(FLOOD_KEY_SIZE, sizeof(struct flood_key) == 4);
-
-struct flood_value {
-    struct lag_group **lags;
-    int num_lags;
+struct lag_value {
+    int num_buckets;
+    struct lag_bucket *buckets;
 };
 
-struct flood_entry {
-    bighash_entry_t hash_entry;
-    struct flood_key key;
-    struct flood_value value;
+struct lag_group {
+    uint32_t id;
+    struct lag_value value;
 };
 
-void pipeline_bvs_table_flood_register(void);
-void pipeline_bvs_table_flood_unregister(void);
-struct flood_entry *pipeline_bvs_table_flood_lookup(const struct flood_key *key);
+struct lag_bucket {
+    uint32_t port_no;
+};
+
+void pipeline_bvs_group_lag_register(void);
+void pipeline_bvs_group_lag_unregister(void);
+struct lag_bucket *pipeline_bvs_group_lag_select(struct lag_group *lag, uint32_t hash);
+struct lag_group *pipeline_bvs_group_lag_acquire(uint32_t lag_id);
+void pipeline_bvs_group_lag_release(struct lag_group *lag);
+struct lag_group *pipeline_bvs_group_lag_lookup(uint32_t lag_id);
 
 #endif

@@ -53,6 +53,9 @@
 #include "table_egress_acl.h"
 #include "table_vlan_acl.h"
 #include "table_qos_weight.h"
+#include "group_lag.h"
+#include "group_ecmp.h"
+#include "group_span.h"
 
 #define AIM_LOG_MODULE_NAME pipeline_bvs
 #include <AIM/aim_log.h>

@@ -37,7 +37,7 @@ struct debug_key {
 AIM_STATIC_ASSERT(DEBUG_KEY_SIZE, sizeof(struct debug_key) == 36);
 
 struct debug_value {
-    uint32_t span_id; /* OF_GROUP_ANY if unused */
+    struct span_group *span; /* NULL if unused */
     bool cpu;
     bool drop;
 };

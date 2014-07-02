@@ -26,7 +26,7 @@ struct ingress_mirror_key {
 AIM_STATIC_ASSERT(INGRESS_MIRROR_KEY_SIZE, sizeof(struct ingress_mirror_key) == 4);
 
 struct ingress_mirror_value {
-    uint32_t span_id;
+    struct span_group *span;
 };
 
 struct ingress_mirror_entry {

@@ -63,8 +63,18 @@ parse_value(of_flow_add_t *obj, struct ingress_mirror_value *value)
             OF_LIST_ACTION_ITER(&actions, &act, rv) {
                 switch (act.header.object_id) {
                 case OF_ACTION_GROUP:
-                    of_action_group_group_id_get(&act.group, &value->span_id);
-                    seen_span_id = true;
+                    if (!seen_span_id) {
+                        uint32_t span_id;
+                        of_action_group_group_id_get(&act.group, &span_id);
+                        value->span = pipeline_bvs_group_span_acquire(span_id);
+                        if (value->span == NULL) {
+                            AIM_LOG_WARN("Nonexistent SPAN in ingress_mirror table");
+                            break;
+                        }
+                        seen_span_id = true;
+                    } else {
+                        AIM_LOG_WARN("Duplicate SPAN action in ingress_mirror table");
+                    }
                     break;
                 default:
                     AIM_LOG_WARN("Unexpected action %s in ingress_mirror table", of_object_id_str[act.header.object_id]);
@@ -84,12 +94,13 @@ parse_value(of_flow_add_t *obj, struct ingress_mirror_value *value)
         return INDIGO_ERROR_COMPAT;
     }
 
-    if (group_to_table_id(value->span_id) != GROUP_TABLE_ID_SPAN) {
-        AIM_LOG_WARN("Unexpected group table ID in ingress_mirror table");
-        return INDIGO_ERROR_COMPAT;
-    }
-
     return INDIGO_ERROR_NONE;
+}
+
+static void
+cleanup_value(struct ingress_mirror_value *value)
+{
+    pipeline_bvs_group_span_release(value->span);
 }
 
 static indigo_error_t
@@ -113,7 +124,7 @@ pipeline_bvs_table_ingress_mirror_entry_create(
     }
 
     AIM_LOG_VERBOSE("Create ingress_mirror entry in_port=%u -> span_id %u",
-                    entry->key.in_port, entry->value.span_id);
+                    entry->key.in_port, entry->value.span->id);
 
     ind_ovs_fwd_write_lock();
     ingress_mirror_hashtable_insert(ingress_mirror_hashtable, entry);
@@ -139,6 +150,7 @@ pipeline_bvs_table_ingress_mirror_entry_modify(
     }
 
     ind_ovs_fwd_write_lock();
+    cleanup_value(&entry->value);
     entry->value = value;
     ind_ovs_fwd_write_unlock();
 
@@ -158,6 +170,7 @@ pipeline_bvs_table_ingress_mirror_entry_delete(
     ind_ovs_fwd_write_unlock();
 
     ind_ovs_kflow_invalidate_all();
+    cleanup_value(&entry->value);
     aim_free(entry);
     return INDIGO_ERROR_NONE;
 }
@@ -207,7 +220,7 @@ pipeline_bvs_table_ingress_mirror_lookup(uint32_t port_no)
     struct ingress_mirror_entry *entry = ingress_mirror_hashtable_first(ingress_mirror_hashtable, &key);
     if (entry) {
         AIM_LOG_VERBOSE("Hit ingress_mirror entry in_port=%u -> span_id %u",
-                        entry->key.in_port, entry->value.span_id);
+                        entry->key.in_port, entry->value.span->id);
     } else {
         AIM_LOG_VERBOSE("Miss ingress_mirror entry in_port=%u", key.in_port);
     }

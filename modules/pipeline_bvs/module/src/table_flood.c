@@ -70,10 +70,10 @@ parse_value(of_flow_add_t *obj, struct flood_value *value)
     int rv;
     of_list_instruction_t insts;
     of_instruction_t inst;
-    int lag_ids_size = 1;
+    struct xbuf lags_xbuf;
 
-    value->lag_ids = aim_malloc(lag_ids_size * sizeof(value->lag_ids[0]));
-    value->num_lag_ids = 0;
+    xbuf_init(&lags_xbuf);
+    value->num_lags = 0;
 
     of_flow_add_instructions_bind(obj, &insts);
     OF_LIST_INSTRUCTION_ITER(&insts, &inst, rv) {
@@ -85,27 +85,52 @@ parse_value(of_flow_add_t *obj, struct flood_value *value)
             int rv;
             OF_LIST_ACTION_ITER(&actions, &act, rv) {
                 switch (act.header.object_id) {
-                case OF_ACTION_GROUP:
-                    if (value->num_lag_ids >= lag_ids_size) {
-                        lag_ids_size *= 2;
-                        value->lag_ids = aim_realloc(value->lag_ids, lag_ids_size * sizeof(value->lag_ids[0]));
-                    }
-                    of_action_group_group_id_get(&act.group, &value->lag_ids[value->num_lag_ids++]);
+                case OF_ACTION_GROUP: {
+                    uint32_t lag_id;
+                    of_action_group_group_id_get(&act.group, &lag_id);
+                    struct lag_group *lag = pipeline_bvs_group_lag_lookup(lag_id);
+                    xbuf_append_ptr(&lags_xbuf, lag);
+                    value->num_lags++;
                     break;
+                }
                 default:
-                    AIM_LOG_WARN("Unexpected action %s in flood table", of_object_id_str[act.header.object_id]);
-                    break;
+                    AIM_LOG_ERROR("Unexpected action %s in flood table", of_object_id_str[act.header.object_id]);
+                    goto error;
                 }
             }
             break;
         }
         default:
-            AIM_LOG_WARN("Unexpected instruction %s in flood table", of_object_id_str[inst.header.object_id]);
-            break;
+            AIM_LOG_ERROR("Unexpected instruction %s in flood table", of_object_id_str[inst.header.object_id]);
+            goto error;
         }
     }
 
+    xbuf_compact(&lags_xbuf);
+    value->lags = xbuf_steal(&lags_xbuf);
+
+    /* Second pass to actually increment the refcounts */
+    int i;
+    for (i = 0; i < value->num_lags; i++) {
+        struct lag_group *lag = value->lags[i];
+        AIM_TRUE_OR_DIE(pipeline_bvs_group_lag_acquire(lag->id) == lag);
+    }
+
     return INDIGO_ERROR_NONE;
+
+error:
+    xbuf_cleanup(&lags_xbuf);
+    return INDIGO_ERROR_COMPAT;
+}
+
+static void
+cleanup_value(struct flood_value *value)
+{
+    int i;
+    for (i = 0; i < value->num_lags; i++) {
+        pipeline_bvs_group_lag_release(value->lags[i]);
+    }
+    aim_free(value->lags);
 }
 
 static indigo_error_t
@@ -159,7 +184,7 @@ pipeline_bvs_table_flood_entry_modify(
     }
 
     ind_ovs_fwd_write_lock();
-    aim_free(entry->value.lag_ids);
+    cleanup_value(&entry->value);
     entry->value = value;
     ind_ovs_fwd_write_unlock();
 
@@ -183,7 +208,7 @@ pipeline_bvs_table_flood_entry_delete(
     ind_ovs_fwd_write_unlock();
 
     ind_ovs_kflow_invalidate_all();
-    aim_free(entry->value.lag_ids);
+    cleanup_value(&entry->value);
     aim_free(entry);
     return INDIGO_ERROR_NONE;
 }

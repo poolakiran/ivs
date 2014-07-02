@@ -31,9 +31,7 @@ static void process_debug(struct ctx *ctx);
 static void process_egress(struct ctx *ctx, uint32_t out_port, bool l3);
 static bool check_vlan_membership(struct vlan_entry *vlan_entry, uint32_t in_port, bool *tagged);
 static void flood_vlan(struct ctx *ctx);
-static void span(struct ctx *ctx, uint32_t span_id);
-static indigo_error_t select_lag_port( uint32_t group_id, uint32_t hash, uint32_t *port_no);
-static indigo_error_t select_ecmp_route(uint32_t group_id, uint32_t hash, struct next_hop **next_hop);
+static void span(struct ctx *ctx, struct span_group *span);
 static struct debug_key make_debug_key(struct ctx *ctx);
 static struct vlan_acl_key make_vlan_acl_key(struct ctx *ctx);
 static struct ingress_acl_key make_ingress_acl_key(struct ctx *ctx);
@@ -67,6 +65,7 @@ static void
 pipeline_bvs_init(const char *name)
 {
     indigo_cxn_async_channel_selector_register(pipeline_bvs_cxn_async_channel_selector);
+    pipeline_bvs_register_next_hop_datatype();
     pipeline_bvs_table_port_register();
     pipeline_bvs_table_vlan_xlate_register();
     pipeline_bvs_table_egr_vlan_xlate_register();
@@ -83,12 +82,16 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_egress_acl_register();
     pipeline_bvs_table_vlan_acl_register();
     pipeline_bvs_table_qos_weight_register();
+    pipeline_bvs_group_ecmp_register();
+    pipeline_bvs_group_lag_register();
+    pipeline_bvs_group_span_register();
 }
 
 static void
 pipeline_bvs_finish(void)
 {
     indigo_cxn_async_channel_selector_unregister(pipeline_bvs_cxn_async_channel_selector);
+    pipeline_bvs_unregister_next_hop_datatype();
     pipeline_bvs_table_port_unregister();
     pipeline_bvs_table_vlan_xlate_unregister();
     pipeline_bvs_table_egr_vlan_xlate_unregister();
@@ -105,6 +108,9 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_egress_acl_unregister();
     pipeline_bvs_table_vlan_acl_unregister();
     pipeline_bvs_table_qos_weight_unregister();
+    pipeline_bvs_group_ecmp_unregister();
+    pipeline_bvs_group_span_unregister();
+    pipeline_bvs_group_lag_unregister();
 }
 
 static indigo_error_t
@@ -133,7 +139,7 @@ process_l2(struct ctx *ctx)
     struct ingress_mirror_entry *ingress_mirror_entry =
         pipeline_bvs_table_ingress_mirror_lookup(ctx->key->in_port);
     if (ingress_mirror_entry) {
-        span(ctx, ingress_mirror_entry->value.span_id);
+        span(ctx, ingress_mirror_entry->value.span);
     }
 
     bool packet_of_death = false;
@@ -238,12 +244,11 @@ process_l2(struct ctx *ctx)
     if (src_l2_entry) {
         apply_stats(ctx->result, &src_l2_entry->stats);
 
-        if (src_l2_entry->value.lag_id == OF_GROUP_ANY) {
+        if (src_l2_entry->value.lag == NULL) {
             AIM_LOG_VERBOSE("L2 source discard");
             mark_drop(ctx);
         } else if (!port_entry->value.disable_src_mac_check) {
-            if (src_l2_entry->value.lag_id != OF_GROUP_ANY &&
-                    src_l2_entry->value.lag_id != ctx->ingress_lag_id) {
+            if (src_l2_entry->value.lag->id != ctx->ingress_lag_id) {
                 AIM_LOG_VERBOSE("incorrect lag_id in source l2table lookup (station move)");
                 mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_STATION_MOVE);
                 mark_drop(ctx);
@@ -319,11 +324,11 @@ process_l2(struct ctx *ctx)
         return;
     }
 
-    AIM_LOG_VERBOSE("hit in destination l2table lookup, lag %u", dst_l2_entry->value.lag_id);
-
-    if (dst_l2_entry->value.lag_id == OF_GROUP_ANY) {
-        AIM_LOG_VERBOSE("L2 destination discard");
+    if (dst_l2_entry->value.lag == NULL) {
+        AIM_LOG_VERBOSE("hit in destination l2table lookup, discard");
         mark_drop(ctx);
+    } else {
+        AIM_LOG_VERBOSE("hit in destination l2table lookup, lag %u", dst_l2_entry->value.lag->id);
     }
 
     process_debug(ctx);
@@ -333,13 +338,15 @@ process_l2(struct ctx *ctx)
         return;
     }
 
-    uint32_t dst_port_no;
-    if (select_lag_port(dst_l2_entry->value.lag_id, ctx->hash, &dst_port_no) < 0) {
+    struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(dst_l2_entry->value.lag, ctx->hash);
+    if (lag_bucket == NULL) {
+        AIM_LOG_VERBOSE("empty LAG");
         return;
     }
-    AIM_LOG_VERBOSE("selected LAG port %u", dst_port_no);
 
-    process_egress(ctx, dst_port_no, false);
+    AIM_LOG_VERBOSE("selected LAG port %u", lag_bucket->port_no);
+
+    process_egress(ctx, lag_bucket->port_no, false);
 }
 
 static void
@@ -378,13 +385,13 @@ process_l3(struct ctx *ctx)
         apply_stats(ctx->result, &ingress_acl_entry->stats);
         drop = drop || ingress_acl_entry->value.drop;
         cpu = cpu || ingress_acl_entry->value.cpu;
-        if (ingress_acl_entry->value.next_hop.group_id != OF_GROUP_ANY) {
+        if (ingress_acl_entry->value.next_hop.type != NEXT_HOP_TYPE_NULL) {
             next_hop = &ingress_acl_entry->value.next_hop;
         }
     }
 
     bool hit = next_hop != NULL;
-    bool valid_next_hop = next_hop != NULL && next_hop->group_id != OF_GROUP_ANY;
+    bool valid_next_hop = next_hop != NULL && next_hop->type != NEXT_HOP_TYPE_NULL;
 
     if (ctx->key->ipv4.ipv4_ttl <= 1) {
         if (cpu) {
@@ -424,24 +431,29 @@ process_l3(struct ctx *ctx)
 
     AIM_ASSERT(valid_next_hop);
 
-    if (group_to_table_id(next_hop->group_id) == GROUP_TABLE_ID_ECMP) {
-        if (select_ecmp_route(next_hop->group_id, ctx->hash, &next_hop) < 0) {
+    if (next_hop->type == NEXT_HOP_TYPE_ECMP) {
+        struct ecmp_bucket *ecmp_bucket = pipeline_bvs_group_ecmp_select(next_hop->ecmp, ctx->hash);
+        if (ecmp_bucket == NULL) {
+            AIM_LOG_VERBOSE("empty ecmp group %d", next_hop->ecmp->id);
             return;
         }
+
+        next_hop = &ecmp_bucket->next_hop;
     }
 
-    AIM_ASSERT(group_to_table_id(next_hop->group_id) == GROUP_TABLE_ID_LAG);
+    AIM_ASSERT(next_hop->type == NEXT_HOP_TYPE_LAG);
 
     AIM_LOG_VERBOSE("next-hop: eth_src=%{mac} eth_dst=%{mac} vlan=%u lag_id=%u",
                     next_hop->new_eth_src.addr, next_hop->new_eth_dst.addr,
-                    next_hop->new_vlan_vid, next_hop->group_id);
+                    next_hop->new_vlan_vid, next_hop->lag->id);
 
-    uint32_t out_port;
-    if (select_lag_port(next_hop->group_id, ctx->hash, &out_port) < 0) {
+    struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(next_hop->lag, ctx->hash);
+    if (lag_bucket == NULL) {
+        AIM_LOG_VERBOSE("empty LAG");
         return;
     }
 
-    AIM_LOG_VERBOSE("selected LAG port %u", out_port);
+    AIM_LOG_VERBOSE("selected LAG port %u", lag_bucket->port_no);
 
     ctx->internal_vlan_vid = next_hop->new_vlan_vid;
     set_vlan_vid(ctx->result, ctx->internal_vlan_vid);
@@ -449,7 +461,7 @@ process_l3(struct ctx *ctx)
     set_eth_dst(ctx->result, next_hop->new_eth_dst);
     dec_nw_ttl(ctx->result);
 
-    process_egress(ctx, out_port, true);
+    process_egress(ctx, lag_bucket->port_no, true);
 }
 
 static void
@@ -464,13 +476,13 @@ process_debug(struct ctx *ctx)
 
     apply_stats(ctx->result, &debug_entry->stats);
 
-    if (debug_entry->value.span_id != OF_GROUP_ANY) {
+    if (debug_entry->value.span != NULL) {
         if (ctx->original_vlan_vid != 0) {
             set_vlan_vid(ctx->result, ctx->original_vlan_vid);
         } else {
             pop_vlan(ctx->result);
         }
-        span(ctx, debug_entry->value.span_id);
+        span(ctx, debug_entry->value.span);
         set_vlan_vid(ctx->result, ctx->internal_vlan_vid);
     }
 
@@ -549,7 +561,7 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
     struct egress_mirror_entry *egress_mirror_entry =
         pipeline_bvs_table_egress_mirror_lookup(out_port);
     if (egress_mirror_entry) {
-        span(ctx, egress_mirror_entry->value.span_id);
+        span(ctx, egress_mirror_entry->value.span);
     }
 
     output(ctx->result, out_port);
@@ -588,118 +600,32 @@ flood_vlan(struct ctx *ctx)
     }
 
     int i;
-    for (i = 0; i < entry->value.num_lag_ids; i++) {
-        uint32_t group_id = entry->value.lag_ids[i];
-        uint32_t port_no;
+    for (i = 0; i < entry->value.num_lags; i++) {
+        struct lag_group *lag = entry->value.lags[i];
 
-        if (select_lag_port(group_id, ctx->hash, &port_no) < 0) {
-            AIM_LOG_VERBOSE("LAG %u is empty", group_id);
+        struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(lag, ctx->hash);
+        if (lag_bucket == NULL) {
+            AIM_LOG_VERBOSE("empty LAG %d", lag->id);
             continue;
         }
-        AIM_LOG_VERBOSE("selected LAG %u port %u", group_id, port_no);
+        AIM_LOG_VERBOSE("selected LAG %u port %u", lag->id, lag_bucket->port_no);
 
-        process_egress(ctx, port_no, false);
+        process_egress(ctx, lag_bucket->port_no, false);
     }
 }
 
 static void
-span(struct ctx *ctx, uint32_t span_id)
+span(struct ctx *ctx, struct span_group *span)
 {
-    struct xbuf *span_actions;
-    if (ind_ovs_group_indirect(span_id, &span_actions) < 0) {
-        AIM_LOG_ERROR("Failed to lookup span group %#x", span_id);
+    struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(span->value.lag, ctx->hash);
+    if (lag_bucket == NULL) {
+        AIM_LOG_VERBOSE("empty LAG");
         return;
     }
 
-    uint32_t dst_group_id = OF_GROUP_ANY;
-    struct nlattr *attr;
-    XBUF_FOREACH2(span_actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_GROUP) {
-            dst_group_id = *XBUF_PAYLOAD(attr, uint32_t);
-        }
-    }
+    AIM_LOG_VERBOSE("Selected LAG port %u", lag_bucket->port_no);
 
-    if (dst_group_id == OF_GROUP_ANY) {
-        AIM_LOG_ERROR("No LAG group action");
-        return;
-    }
-
-    uint32_t dst_port_no;
-    if (select_lag_port(dst_group_id, ctx->hash, &dst_port_no) < 0) {
-        return;
-    }
-    AIM_LOG_VERBOSE("Selected LAG port %u", dst_port_no);
-
-    output(ctx->result, dst_port_no);
-}
-
-static indigo_error_t
-select_lag_port(uint32_t group_id, uint32_t hash, uint32_t *port_no)
-{
-    indigo_error_t rv;
-
-    struct xbuf *actions;
-    rv = ind_ovs_group_select(group_id, hash, &actions);
-    if (rv < 0) {
-        AIM_LOG_WARN("error selecting LAG group %u bucket: %s", group_id, indigo_strerror(rv));
-        return rv;
-    }
-
-    struct nlattr *attr;
-    XBUF_FOREACH2(actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_OUTPUT) {
-            *port_no = *XBUF_PAYLOAD(attr, uint32_t);
-            return INDIGO_ERROR_NONE;
-        }
-    }
-
-    AIM_LOG_WARN("no output action found in group %u bucket", group_id);
-    return INDIGO_ERROR_NOT_FOUND;
-}
-
-static indigo_error_t
-select_ecmp_route(
-    uint32_t group_id, uint32_t hash,
-    struct next_hop **next_hop)
-{
-    indigo_error_t rv;
-
-    /*
-     * HACK
-     *
-     * Eventually we will manage the memory allocated for ECMP groups
-     * and we'll be able to just return a pointer to an already
-     * parsed next_hop. The group infrastructure doesn't exist yet,
-     * so fake it by returning a pointer to thread-local memory.
-     */
-    static __thread struct next_hop static_next_hop;
-
-    struct xbuf *actions;
-    rv = ind_ovs_group_select(group_id, hash, &actions);
-    if (rv < 0) {
-        AIM_LOG_WARN("error selecting ECMP group %u bucket: %s", group_id, indigo_strerror(rv));
-        return rv;
-    }
-
-    memset(&static_next_hop, 0, sizeof(static_next_hop));
-    static_next_hop.group_id = OF_GROUP_ANY;
-
-    struct nlattr *attr;
-    XBUF_FOREACH2(actions, attr) {
-        if (attr->nla_type == IND_OVS_ACTION_GROUP) {
-            static_next_hop.group_id = *XBUF_PAYLOAD(attr, uint32_t);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_SRC) {
-            memcpy(static_next_hop.new_eth_src.addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_ETH_DST) {
-            memcpy(static_next_hop.new_eth_dst.addr, xbuf_payload(attr), OF_MAC_ADDR_BYTES);
-        } else if (attr->nla_type == IND_OVS_ACTION_SET_VLAN_VID) {
-            static_next_hop.new_vlan_vid = *XBUF_PAYLOAD(attr, uint16_t);
-        }
-    }
-
-    *next_hop = &static_next_hop;
-
-    return INDIGO_ERROR_NONE;
+    output(ctx->result, lag_bucket->port_no);
 }
 
 static struct debug_key

@@ -53,7 +53,7 @@ parse_value(of_flow_add_t *obj, struct l2_value *value)
     of_list_instruction_t insts;
     of_instruction_t inst;
 
-    value->lag_id = OF_GROUP_ANY;
+    value->lag = NULL;
 
     of_flow_add_instructions_bind(obj, &insts);
     OF_LIST_INSTRUCTION_ITER(&insts, &inst, rv) {
@@ -65,9 +65,16 @@ parse_value(of_flow_add_t *obj, struct l2_value *value)
             int rv;
             OF_LIST_ACTION_ITER(&actions, &act, rv) {
                 switch (act.header.object_id) {
-                case OF_ACTION_GROUP:
-                    of_action_group_group_id_get(&act.group, &value->lag_id);
+                case OF_ACTION_GROUP: {
+                    uint32_t lag_id;
+                    of_action_group_group_id_get(&act.group, &lag_id);
+                    value->lag = pipeline_bvs_group_lag_acquire(lag_id);
+                    if (value->lag == NULL) {
+                        AIM_LOG_WARN("Nonexistent LAG in L2 table");
+                        break;
+                    }
                     break;
+                }
                 default:
                     AIM_LOG_WARN("Unexpected action %s in L2 table", of_object_id_str[act.header.object_id]);
                     break;
@@ -106,7 +113,7 @@ pipeline_bvs_table_l2_entry_create(
 
     AIM_LOG_VERBOSE("Create L2 entry vlan=%u, mac=%{mac} -> lag %u",
                     entry->key.vlan_vid, &entry->key.mac,
-                    entry->value.lag_id);
+                    entry->value.lag ? entry->value.lag->id : OF_GROUP_ANY);
 
     ind_ovs_fwd_write_lock();
     l2_hashtable_insert(l2_hashtable, entry);
@@ -132,6 +139,9 @@ pipeline_bvs_table_l2_entry_modify(
     }
 
     ind_ovs_fwd_write_lock();
+    if (entry->value.lag != NULL) {
+        pipeline_bvs_group_lag_release(entry->value.lag);
+    }
     entry->value = value;
     ind_ovs_fwd_write_unlock();
 
@@ -153,6 +163,9 @@ pipeline_bvs_table_l2_entry_delete(
     ind_ovs_kflow_invalidate_all();
     flow_stats->packets = entry->stats.packets;
     flow_stats->bytes = entry->stats.bytes;
+    if (entry->value.lag != NULL) {
+        pipeline_bvs_group_lag_release(entry->value.lag);
+    }
     aim_free(entry);
     return INDIGO_ERROR_NONE;
 }
@@ -216,7 +229,7 @@ pipeline_bvs_table_l2_lookup(uint16_t vlan_vid, const uint8_t *mac)
     if (entry) {
         AIM_LOG_VERBOSE("Hit L2 entry vlan=%u, mac=%{mac} -> lag %u",
                         entry->key.vlan_vid, &entry->key.mac,
-                        entry->value.lag_id);
+                        entry->value.lag ? entry->value.lag->id : OF_GROUP_ANY);
     } else {
         AIM_LOG_VERBOSE("Miss L2 entry vlan=%u, mac=%{mac}",
                         key.vlan_vid, &key.mac);

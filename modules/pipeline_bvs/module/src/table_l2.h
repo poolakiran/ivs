@@ -27,7 +27,7 @@ struct l2_key {
 AIM_STATIC_ASSERT(L2_KEY_SIZE, sizeof(struct l2_key) == 8);
 
 struct l2_value {
-    uint32_t lag_id; /* OF_GROUP_ANY means drop */
+    struct lag_group *lag; /* NULL means discard */
 };
 
 struct l2_entry {
