@@ -20,10 +20,15 @@
 #ifndef TABLE_EGR_VLAN_XLATE_H
 #define TABLE_EGR_VLAN_XLATE_H
 
+enum egr_vlan_xlate_type {
+    EGR_VLAN_XLATE_TYPE_PORT_GROUP_ID,
+    EGR_VLAN_XLATE_TYPE_PORT,
+};
+
 struct egr_vlan_xlate_key {
-    uint32_t in_port;
+    uint32_t vlan_xlate_port_group_id;
     uint16_t vlan_vid;
-    uint16_t pad;
+    uint16_t type;
 };
 AIM_STATIC_ASSERT(EGR_VLAN_XLATE_KEY_SIZE, sizeof(struct egr_vlan_xlate_key) == 8);
 
@@ -39,6 +44,6 @@ struct egr_vlan_xlate_entry {
 
 void pipeline_bvs_table_egr_vlan_xlate_register(void);
 void pipeline_bvs_table_egr_vlan_xlate_unregister(void);
-struct egr_vlan_xlate_entry *pipeline_bvs_table_egr_vlan_xlate_lookup(uint32_t in_port, uint16_t vlan_vid);
+struct egr_vlan_xlate_entry *pipeline_bvs_table_egr_vlan_xlate_lookup(enum egr_vlan_xlate_type type, uint32_t vlan_xlate_port_group_id, uint16_t vlan_vid);
 
 #endif
