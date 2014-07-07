@@ -197,7 +197,11 @@ process_l2(struct ctx *ctx)
     } else {
         if (ctx->key->vlan & htons(VLAN_CFI_BIT)) {
             struct vlan_xlate_entry *vlan_xlate_entry =
-                pipeline_bvs_table_vlan_xlate_lookup(ctx->ingress_lag_id, vlan_vid);
+                pipeline_bvs_table_vlan_xlate_lookup(VLAN_XLATE_TYPE_PORT_GROUP_ID, port_entry->value.vlan_xlate_port_group_id, vlan_vid);
+            if (vlan_xlate_entry == NULL) {
+                /* For backwards compatibility */
+                vlan_xlate_entry = pipeline_bvs_table_vlan_xlate_lookup(VLAN_XLATE_TYPE_LAG_ID, ctx->ingress_lag_id, vlan_vid);
+            }
             if (vlan_xlate_entry) {
                 vlan_vid = vlan_xlate_entry->value.new_vlan_vid;
                 set_vlan_vid(ctx->result, vlan_vid);
@@ -535,7 +539,11 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
         tag = 0;
     } else {
         struct egr_vlan_xlate_entry *egr_vlan_xlate_entry =
-            pipeline_bvs_table_egr_vlan_xlate_lookup(out_port, ctx->internal_vlan_vid);
+            pipeline_bvs_table_egr_vlan_xlate_lookup(EGR_VLAN_XLATE_TYPE_PORT_GROUP_ID, dst_port_entry->value.vlan_xlate_port_group_id, ctx->internal_vlan_vid);
+        if (egr_vlan_xlate_entry == NULL) {
+            /* For backwards compatibility */
+            egr_vlan_xlate_entry = pipeline_bvs_table_egr_vlan_xlate_lookup(EGR_VLAN_XLATE_TYPE_PORT, out_port, ctx->internal_vlan_vid);
+        }
         if (egr_vlan_xlate_entry) {
             tag = egr_vlan_xlate_entry->value.new_vlan_vid;
             set_vlan_vid(ctx->result, tag);

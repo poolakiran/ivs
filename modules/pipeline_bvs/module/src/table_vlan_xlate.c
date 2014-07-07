@@ -26,8 +26,12 @@
 #include <BigHash/bighash_template.h>
 
 static bighash_table_t *vlan_xlate_hashtable;
-static const of_match_fields_t required_mask = {
+static const of_match_fields_t required_mask_lag_id = {
     .bsn_lag_id = 0xffffffff,
+    .vlan_vid = 0xffff,
+};
+static const of_match_fields_t required_mask_vlan_xlate_port_group_id = {
+    .bsn_vlan_xlate_port_group_id = 0xffffffff,
     .vlan_vid = 0xffff,
 };
 
@@ -38,10 +42,16 @@ parse_key(of_flow_add_t *obj, struct vlan_xlate_key *key)
     if (of_flow_add_match_get(obj, &match) < 0) {
         return INDIGO_ERROR_UNKNOWN;
     }
-    if (memcmp(&match.masks, &required_mask, sizeof(of_match_fields_t))) {
+    if (!memcmp(&match.masks, &required_mask_vlan_xlate_port_group_id, sizeof(of_match_fields_t))) {
+        key->vlan_xlate_port_group_id = match.fields.bsn_vlan_xlate_port_group_id;
+        key->type = VLAN_XLATE_TYPE_PORT_GROUP_ID;
+    } else if (!memcmp(&match.masks, &required_mask_lag_id, sizeof(of_match_fields_t))) {
+        /* For backwards compatibility */
+        key->vlan_xlate_port_group_id = match.fields.bsn_lag_id;
+        key->type = VLAN_XLATE_TYPE_LAG_ID;
+    } else {
         return INDIGO_ERROR_COMPAT;
     }
-    key->lag_id = match.fields.bsn_lag_id;
     key->vlan_vid = match.fields.vlan_vid & ~VLAN_CFI_BIT;
     return INDIGO_ERROR_NONE;
 }
@@ -120,8 +130,8 @@ pipeline_bvs_table_vlan_xlate_entry_create(
         return rv;
     }
 
-    AIM_LOG_VERBOSE("Create vlan_xlate entry lag_id=%u, vlan=%u -> vlan %u",
-                    entry->key.lag_id, &entry->key.vlan_vid,
+    AIM_LOG_VERBOSE("Create vlan_xlate entry type=%u vlan_xlate_port_group_id=%u, vlan=%u -> vlan %u",
+                    entry->key.type, entry->key.vlan_xlate_port_group_id, &entry->key.vlan_vid,
                     entry->value.new_vlan_vid);
 
     ind_ovs_fwd_write_lock();
@@ -210,22 +220,22 @@ pipeline_bvs_table_vlan_xlate_unregister(void)
 }
 
 struct vlan_xlate_entry *
-pipeline_bvs_table_vlan_xlate_lookup(uint32_t lag_id, uint16_t vlan_vid)
+pipeline_bvs_table_vlan_xlate_lookup(enum vlan_xlate_type type, uint32_t vlan_xlate_port_group_id, uint16_t vlan_vid)
 {
     struct vlan_xlate_key key = {
-        .lag_id = lag_id,
+        .vlan_xlate_port_group_id = vlan_xlate_port_group_id,
         .vlan_vid = vlan_vid,
-        .pad = 0
+        .type = type,
     };
 
     struct vlan_xlate_entry *entry = vlan_xlate_hashtable_first(vlan_xlate_hashtable, &key);
     if (entry) {
-        AIM_LOG_VERBOSE("Hit vlan_xlate entry lag_id=%u, vlan=%u -> vlan %u",
-                        entry->key.lag_id, entry->key.vlan_vid,
+        AIM_LOG_VERBOSE("Hit vlan_xlate entry type=%u vlan_xlate_port_group_id=%u, vlan=%u -> vlan %u",
+                        entry->key.type, entry->key.vlan_xlate_port_group_id, entry->key.vlan_vid,
                         entry->value.new_vlan_vid);
     } else {
-        AIM_LOG_VERBOSE("Miss vlan_xlate entry lag_id=%u, vlan=%u",
-                        key.lag_id, key.vlan_vid);
+        AIM_LOG_VERBOSE("Miss vlan_xlate entry type=%u vlan_xlate_port_group_id=%u, vlan=%u",
+                        key.type, key.vlan_xlate_port_group_id, key.vlan_vid);
     }
     return entry;
 }
