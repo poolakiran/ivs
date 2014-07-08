@@ -42,6 +42,19 @@ static struct nl_cb *netlink_callbacks;
 static indigo_error_t port_status_notify(uint32_t port_no, unsigned reason);
 static void port_desc_set(of_port_desc_t *of_port_desc, of_port_no_t of_port_num);
 
+aim_ratelimiter_t nl_cache_refill_limiter;
+
+static struct ind_ovs_port_counters dummy_stats;
+
+static void
+ind_ovs_update_link_stats()
+{
+    if (aim_ratelimiter_limit(&nl_cache_refill_limiter, monotonic_us()) == 0) {
+        /* Refresh statistics */
+        nl_cache_refill(route_cache_sock, link_cache);
+    }
+}
+
 struct ind_ovs_port *
 ind_ovs_port_lookup(of_port_no_t port_no)
 {
@@ -67,6 +80,17 @@ ind_ovs_port_lookup_by_name(const char *ifname)
         }
     }
     return NULL;
+}
+
+uint32_t
+ind_ovs_port_lookup_netlink(of_port_no_t port_no)
+{
+    struct ind_ovs_port *port = ind_ovs_port_lookup(port_no);
+    if (port == NULL) {
+        return 0;
+    }
+
+    return nl_socket_get_local_port(port->notify_socket);
 }
 
 /* TODO populate more fields of the port desc */
@@ -418,6 +442,52 @@ port_stats_iterator(struct nl_msg *msg, void *arg)
     return NL_OK;
 }
 
+void
+indigo_port_extended_stats_get(
+    of_port_no_t port_no,
+    indigo_fi_port_stats_t *port_stats)
+{
+    AIM_ASSERT(port_stats != NULL);
+
+    if (port_no == OF_PORT_DEST_LOCAL) {
+        return;
+    }
+
+    struct ind_ovs_port *port = ind_ovs_port_lookup(port_no);
+    if (port == NULL) {
+        return;
+    }
+
+    ind_ovs_update_link_stats();
+
+    struct rtnl_link *link;
+    if ((link = rtnl_link_get_by_name(link_cache, port->ifname))) {
+        port_stats->rx_bytes = rtnl_link_get_stat(link, RTNL_LINK_RX_BYTES);
+        port_stats->rx_dropped = rtnl_link_get_stat(link, RTNL_LINK_RX_DROPPED);
+        port_stats->rx_errors = rtnl_link_get_stat(link, RTNL_LINK_RX_ERRORS);
+        port_stats->tx_bytes = rtnl_link_get_stat(link, RTNL_LINK_TX_BYTES);
+        port_stats->tx_dropped = rtnl_link_get_stat(link, RTNL_LINK_TX_DROPPED);
+        port_stats->tx_errors = rtnl_link_get_stat(link, RTNL_LINK_TX_ERRORS);
+        port_stats->rx_alignment_errors = rtnl_link_get_stat(link, RTNL_LINK_RX_FRAME_ERR);
+        port_stats->rx_crc_errors = rtnl_link_get_stat(link, RTNL_LINK_RX_CRC_ERR);
+        port_stats->tx_collisions = rtnl_link_get_stat(link, RTNL_LINK_COLLISIONS);
+        port_stats->rx_packets = rtnl_link_get_stat(link, RTNL_LINK_RX_PACKETS);
+        port_stats->tx_packets = rtnl_link_get_stat(link, RTNL_LINK_TX_PACKETS);
+        port_stats->rx_length_errors = rtnl_link_get_stat(link, RTNL_LINK_RX_LEN_ERR);
+        port_stats->rx_overflow_errors = rtnl_link_get_stat(link, RTNL_LINK_RX_OVER_ERR);
+        port_stats->tx_carrier_errors = rtnl_link_get_stat(link, RTNL_LINK_TX_CARRIER_ERR);
+
+        rtnl_link_put(link);
+
+        port_stats->rx_packets_unicast = port->pcounters.rx_unicast_stats.packets;
+        port_stats->rx_packets_broadcast = port->pcounters.rx_broadcast_stats.packets;
+        port_stats->rx_packets_multicast = port->pcounters.rx_multicast_stats.packets;
+        port_stats->tx_packets_unicast = port->pcounters.tx_unicast_stats.packets;
+        port_stats->tx_packets_broadcast = port->pcounters.tx_broadcast_stats.packets;
+        port_stats->tx_packets_multicast = port->pcounters.tx_multicast_stats.packets;
+    }
+}
+
 indigo_error_t
 indigo_port_stats_get(
     of_port_stats_request_t *port_stats_request,
@@ -439,8 +509,7 @@ indigo_port_stats_get(
     of_port_stats_request_port_no_get(port_stats_request, &req_of_port_num);
     int dump_all = req_of_port_num == OF_PORT_DEST_NONE_BY_VERSION(port_stats_request->version);
 
-    /* Refresh statistics */
-    nl_cache_refill(route_cache_sock, link_cache);
+    ind_ovs_update_link_stats();
 
     struct nl_msg *msg = ind_ovs_create_nlmsg(ovs_vport_family, OVS_VPORT_CMD_GET);
     if (dump_all) {
@@ -737,6 +806,8 @@ ind_ovs_port_init(void)
         LOG_ERROR("failed to allocate netlink callbacks");
         abort();
     }
+
+    aim_ratelimiter_init(&nl_cache_refill_limiter, 1000*1000, 0, NULL);
 }
 
 void
@@ -745,4 +816,15 @@ ind_ovs_port_finish(void)
         ind_soc_socket_unregister(nl_cache_mngr_get_fd(route_cache_mngr));
         nl_cache_mngr_free(route_cache_mngr);
         nl_socket_free(route_cache_sock);
+}
+
+struct ind_ovs_port_counters *
+ind_ovs_port_stats_select(of_port_no_t port_no)
+{
+    struct ind_ovs_port *port = ind_ovs_port_lookup(port_no);
+    if (port == NULL) {
+        return &dummy_stats;
+    }
+
+    return &port->pcounters;
 }

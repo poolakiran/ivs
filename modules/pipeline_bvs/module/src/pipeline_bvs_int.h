@@ -26,7 +26,6 @@
 #include <indigo/error.h>
 #include <xbuf/xbuf.h>
 #include <ivs/ivs.h>
-#include <ivs/actions.h>
 #include <loci/loci.h>
 #include <pipeline/pipeline.h>
 #include <murmur/murmur.h>
@@ -35,6 +34,7 @@
 #include <BigHash/bighash.h>
 #include <AIM/aim_list.h>
 #include <tcam/tcam.h>
+#include <action/action.h>
 
 #include "next_hop.h"
 #include "table_port.h"
@@ -92,8 +92,9 @@ enum group_table_id {
 };
 
 struct ctx {
-    struct pipeline_result *result;
     struct ind_ovs_parsed_key *key;
+    struct xbuf *stats;
+    struct action_context *actx;
     uint32_t hash;
 
     /* Output state */
@@ -111,72 +112,6 @@ struct ctx {
     uint32_t ingress_lag_id;
 };
 
-/* IVS action emitters */
-
-static inline void
-pktin(struct pipeline_result *result, uint8_t reason, uint64_t metadata)
-{
-    uint64_t userdata = IVS_PKTIN_USERDATA(reason, metadata);
-    xbuf_append_attr(&result->actions, IND_OVS_ACTION_CONTROLLER,
-                     &userdata, sizeof(userdata));
-}
-
-static inline void
-output(struct pipeline_result *result, uint32_t port_no)
-{
-    xbuf_append_attr(&result->actions, IND_OVS_ACTION_OUTPUT,
-                     &port_no, sizeof(port_no));
-}
-
-static inline void
-push_vlan(struct pipeline_result *result, uint16_t ethertype)
-{
-    xbuf_append_attr(&result->actions, IND_OVS_ACTION_PUSH_VLAN,
-                     &ethertype, sizeof(ethertype));
-}
-
-static inline void
-pop_vlan(struct pipeline_result *result)
-{
-    xbuf_append_attr(&result->actions, IND_OVS_ACTION_POP_VLAN, NULL, 0);
-}
-
-static inline void
-set_vlan_vid(struct pipeline_result *result, uint16_t vlan_vid)
-{
-    xbuf_append_attr(&result->actions, IND_OVS_ACTION_SET_VLAN_VID,
-                     &vlan_vid, sizeof(vlan_vid));
-}
-
-static inline void
-set_vlan_pcp(struct pipeline_result *result, uint8_t vlan_pcp)
-{
-    xbuf_append_attr(&result->actions, IND_OVS_ACTION_SET_VLAN_PCP,
-                     &vlan_pcp, sizeof(vlan_pcp));
-}
-
-static inline void
-set_eth_src(struct pipeline_result *result, of_mac_addr_t mac)
-{
-    xbuf_append_attr(&result->actions, IND_OVS_ACTION_SET_ETH_SRC,
-                     mac.addr, OF_MAC_ADDR_BYTES);
-}
-
-static inline void
-set_eth_dst(struct pipeline_result *result, of_mac_addr_t mac)
-{
-    xbuf_append_attr(&result->actions, IND_OVS_ACTION_SET_ETH_DST,
-                     mac.addr, OF_MAC_ADDR_BYTES);
-}
-
-static inline void
-dec_nw_ttl(struct pipeline_result *result)
-{
-    xbuf_append_attr(&result->actions, IND_OVS_ACTION_DEC_NW_TTL,
-                     NULL, 0);
-}
-
-
 /* Utility functions */
 
 static inline uint32_t
@@ -188,9 +123,9 @@ group_to_table_id(uint32_t group_id)
 bool pipeline_bvs_check_tcam_mask(const of_match_fields_t *_mask, const of_match_fields_t *_minimum, const of_match_fields_t *_maximum);
 
 static inline void
-apply_stats(struct pipeline_result *result, struct ind_ovs_flow_stats *stats)
+apply_stats(struct ctx *ctx, struct ind_ovs_flow_stats *stats)
 {
-    xbuf_append_ptr(&result->stats, stats);
+    xbuf_append_ptr(ctx->stats, stats);
 }
 
 #endif
