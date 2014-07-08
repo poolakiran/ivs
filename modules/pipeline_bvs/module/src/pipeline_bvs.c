@@ -24,6 +24,7 @@ AIM_LOG_STRUCT_DEFINE(AIM_LOG_OPTIONS_DEFAULT, AIM_LOG_BITS_DEFAULT, NULL, 0);
 static const of_mac_addr_t slow_protocols_mac = { { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x02 } };
 static const of_mac_addr_t packet_of_death_mac = { { 0x5C, 0x16, 0xC7, 0xFF, 0xFF, 0x04 } };
 static const of_mac_addr_t cdp_mac = { { 0x01, 0x00, 0x0c, 0xcc, 0xcc, 0xcc } };
+static const of_mac_addr_t broadcast_mac = { { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff } };
 
 static void process_l2(struct ctx *ctx);
 static void process_l3(struct ctx *ctx);
@@ -142,6 +143,22 @@ process_l2(struct ctx *ctx)
         pipeline_bvs_table_ingress_mirror_lookup(ctx->key->in_port);
     if (ingress_mirror_entry) {
         span(ctx, ingress_mirror_entry->value.span);
+    }
+
+    struct ind_ovs_port_counters *port_counters = ind_ovs_port_stats_select(ctx->key->in_port);
+    AIM_ASSERT(port_counters != NULL);
+
+    if (ctx->key->ethernet.eth_dst[0] & 1) {
+        if (!memcmp(ctx->key->ethernet.eth_dst, broadcast_mac.addr, OF_MAC_ADDR_BYTES)) {
+            /* Increment broadcast port counters */
+            apply_stats(ctx, &port_counters->rx_broadcast_stats);
+        } else {
+            /* Increment multicast port counters */
+            apply_stats(ctx, &port_counters->rx_multicast_stats);
+        }
+    } else {
+        /* Increment unicast port counters */
+        apply_stats(ctx, &port_counters->rx_unicast_stats);
     }
 
     bool packet_of_death = false;
@@ -533,6 +550,22 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
     }
 
     apply_stats(ctx, ind_ovs_tx_vlan_stats_select(ctx->internal_vlan_vid));
+
+    struct ind_ovs_port_counters *port_counters = ind_ovs_port_stats_select(out_port);
+    AIM_ASSERT(port_counters != NULL);
+
+    if (ctx->key->ethernet.eth_dst[0] & 1) {
+        if (!memcmp(ctx->key->ethernet.eth_dst, broadcast_mac.addr, OF_MAC_ADDR_BYTES)) {
+            /* Increment broadcast port counters */
+            apply_stats(ctx, &port_counters->tx_broadcast_stats);
+        } else {
+            /* Increment multicast port counters */
+            apply_stats(ctx, &port_counters->tx_multicast_stats);
+        }
+    } else {
+        /* Increment unicast port counters */
+        apply_stats(ctx, &port_counters->tx_unicast_stats);
+    }
 
     /* Egress VLAN translation */
     uint16_t tag = ctx->internal_vlan_vid;
