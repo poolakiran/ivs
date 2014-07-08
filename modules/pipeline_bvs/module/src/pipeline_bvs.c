@@ -115,12 +115,14 @@ pipeline_bvs_finish(void)
 
 static indigo_error_t
 pipeline_bvs_process(struct ind_ovs_parsed_key *key,
-                     struct pipeline_result *result)
+                     struct xbuf *stats,
+                     struct action_context *actx)
 {
     struct ctx ctx;
     memset(&ctx, 0, sizeof(ctx));
-    ctx.result = result;
     ctx.key = key;
+    ctx.stats = stats;
+    ctx.actx = actx;
 
     /* TODO revise when TCP flags are added to the parsed key */
     ctx.hash = murmur_hash(key, sizeof(*key), 0);
@@ -178,7 +180,7 @@ process_l2(struct ctx *ctx)
     if (packet_of_death) {
         if (port_entry->value.packet_of_death) {
             AIM_LOG_VERBOSE("sending packet of death to cpu");
-            pktin(ctx->result, OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH, 0);
+            action_controller(ctx->actx, IVS_PKTIN_USERDATA(OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH, 0));
         } else {
             AIM_LOG_VERBOSE("ignoring packet of death on not-allowed port");
         }
@@ -204,7 +206,7 @@ process_l2(struct ctx *ctx)
             }
             if (vlan_xlate_entry) {
                 vlan_vid = vlan_xlate_entry->value.new_vlan_vid;
-                set_vlan_vid(ctx->result, vlan_vid);
+                action_set_vlan_vid(ctx->actx, vlan_vid);
             } else if (port_entry->value.require_vlan_xlate) {
                 AIM_LOG_VERBOSE("vlan_xlate required and missed, dropping");
                 mark_drop(ctx);
@@ -214,8 +216,8 @@ process_l2(struct ctx *ctx)
             }
         } else {
             vlan_vid = port_entry->value.default_vlan_vid;
-            push_vlan(ctx->result, 0x8100);
-            set_vlan_vid(ctx->result, vlan_vid);
+            action_push_vlan(ctx->actx);
+            action_set_vlan_vid(ctx->actx, vlan_vid);
         }
     }
 
@@ -234,7 +236,7 @@ process_l2(struct ctx *ctx)
         return;
     }
 
-    apply_stats(ctx->result, ind_ovs_rx_vlan_stats_select(vlan_vid));
+    apply_stats(ctx, ind_ovs_rx_vlan_stats_select(vlan_vid));
 
     if (!vlan_acl_entry) {
         AIM_LOG_VERBOSE("VLAN %u: vrf=%u", vlan_vid, vlan_entry->value.vrf);
@@ -246,7 +248,7 @@ process_l2(struct ctx *ctx)
     struct l2_entry *src_l2_entry =
         pipeline_bvs_table_l2_lookup(vlan_vid, ctx->key->ethernet.eth_src);
     if (src_l2_entry) {
-        apply_stats(ctx->result, &src_l2_entry->stats);
+        apply_stats(ctx, &src_l2_entry->stats);
 
         if (src_l2_entry->value.lag == NULL) {
             AIM_LOG_VERBOSE("L2 source discard");
@@ -386,7 +388,7 @@ process_l3(struct ctx *ctx)
     struct ingress_acl_entry *ingress_acl_entry =
         pipeline_bvs_table_ingress_acl_lookup(&ingress_acl_key);
     if (ingress_acl_entry) {
-        apply_stats(ctx->result, &ingress_acl_entry->stats);
+        apply_stats(ctx, &ingress_acl_entry->stats);
         drop = drop || ingress_acl_entry->value.drop;
         cpu = cpu || ingress_acl_entry->value.cpu;
         if (ingress_acl_entry->value.next_hop.type != NEXT_HOP_TYPE_NULL) {
@@ -460,10 +462,10 @@ process_l3(struct ctx *ctx)
     AIM_LOG_VERBOSE("selected LAG port %u", lag_bucket->port_no);
 
     ctx->internal_vlan_vid = next_hop->new_vlan_vid;
-    set_vlan_vid(ctx->result, ctx->internal_vlan_vid);
-    set_eth_src(ctx->result, next_hop->new_eth_src);
-    set_eth_dst(ctx->result, next_hop->new_eth_dst);
-    dec_nw_ttl(ctx->result);
+    action_set_vlan_vid(ctx->actx, ctx->internal_vlan_vid);
+    action_set_eth_src(ctx->actx, next_hop->new_eth_src);
+    action_set_eth_dst(ctx->actx, next_hop->new_eth_dst);
+    action_set_ipv4_ttl(ctx->actx, ctx->key->ipv4.ipv4_ttl - 1);
 
     process_egress(ctx, lag_bucket->port_no, true);
 }
@@ -478,16 +480,16 @@ process_debug(struct ctx *ctx)
         return;
     }
 
-    apply_stats(ctx->result, &debug_entry->stats);
+    apply_stats(ctx, &debug_entry->stats);
 
     if (debug_entry->value.span != NULL) {
         if (ctx->original_vlan_vid != 0) {
-            set_vlan_vid(ctx->result, ctx->original_vlan_vid);
+            action_set_vlan_vid(ctx->actx, ctx->original_vlan_vid);
         } else {
-            pop_vlan(ctx->result);
+            action_pop_vlan(ctx->actx);
         }
         span(ctx, debug_entry->value.span);
-        set_vlan_vid(ctx->result, ctx->internal_vlan_vid);
+        action_set_vlan_vid(ctx->actx, ctx->internal_vlan_vid);
     }
 
     if (debug_entry->value.cpu) {
@@ -530,12 +532,12 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
         return;
     }
 
-    apply_stats(ctx->result, ind_ovs_tx_vlan_stats_select(ctx->internal_vlan_vid));
+    apply_stats(ctx, ind_ovs_tx_vlan_stats_select(ctx->internal_vlan_vid));
 
     /* Egress VLAN translation */
     uint16_t tag = ctx->internal_vlan_vid;
     if (!out_port_tagged) {
-        pop_vlan(ctx->result);
+        action_pop_vlan(ctx->actx);
         tag = 0;
     } else {
         struct egr_vlan_xlate_entry *egr_vlan_xlate_entry =
@@ -546,7 +548,7 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
         }
         if (egr_vlan_xlate_entry) {
             tag = egr_vlan_xlate_entry->value.new_vlan_vid;
-            set_vlan_vid(ctx->result, tag);
+            action_set_vlan_vid(ctx->actx, tag);
         }
     }
 
@@ -572,7 +574,7 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
         span(ctx, egress_mirror_entry->value.span);
     }
 
-    output(ctx->result, out_port);
+    action_output(ctx->actx, out_port);
 }
 
 static bool
@@ -633,7 +635,7 @@ span(struct ctx *ctx, struct span_group *span)
 
     AIM_LOG_VERBOSE("Selected LAG port %u", lag_bucket->port_no);
 
-    output(ctx->result, lag_bucket->port_no);
+    action_output(ctx->actx, lag_bucket->port_no);
 }
 
 static struct debug_key
@@ -738,7 +740,7 @@ process_pktin(struct ctx *ctx)
 {
     if (ctx->pktin_agent || ctx->pktin_controller) {
         uint8_t reason = ctx->pktin_controller ? OF_PACKET_IN_REASON_ACTION : OF_PACKET_IN_REASON_NO_MATCH;
-        pktin(ctx->result, reason, ctx->pktin_metadata);
+        action_controller(ctx->actx, IVS_PKTIN_USERDATA(reason, ctx->pktin_metadata));
     }
 }
 
