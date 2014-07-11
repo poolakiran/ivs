@@ -73,7 +73,7 @@ ivs_loci_logger(loci_log_level_t level,
                 const char *fname, const char *file, int line,
                 const char *format, ...);
 
-static const char *program_version = "ivs 0.4";
+static const char *program_version = "ivs 0.5";
 
 static ind_soc_config_t soc_cfg;
 static ind_cxn_config_t cxn_cfg;
@@ -544,7 +544,8 @@ aim_main(int argc, char* argv[])
     of_desc_str_t mfr_desc = "Big Switch Networks";
     ind_core_mfr_desc_set(mfr_desc);
 
-    of_desc_str_t sw_desc = "Indigo 2";
+    of_desc_str_t sw_desc = "";
+    snprintf(sw_desc, sizeof(sw_desc), "%s", program_version);
     ind_core_sw_desc_set(sw_desc);
 
     of_desc_str_t hw_desc = "";
