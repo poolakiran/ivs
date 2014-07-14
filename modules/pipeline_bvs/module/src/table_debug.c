@@ -232,6 +232,8 @@ pipeline_bvs_table_debug_entry_create(
                     priority, key.in_port, mask.in_port, &key.eth_src, &mask.eth_src, &key.eth_dst, &mask.eth_dst, key.eth_type, mask.eth_type, key.vlan_vid, mask.vlan_vid, key.ipv4_src, mask.ipv4_src, key.ipv4_dst, mask.ipv4_dst, key.ip_proto, mask.ip_proto, key.ip_tos, mask.ip_tos, key.tp_src, mask.tp_src, key.tp_dst, mask.tp_dst, key.tcp_flags, mask.tcp_flags,
                     entry->value.span ? entry->value.span->id : OF_GROUP_ANY, entry->value.cpu, entry->value.drop);
 
+    stats_alloc(&entry->stats_handle);
+
     ind_ovs_fwd_write_lock();
     tcam_insert(debug_tcam, &entry->tcam_entry, &key, &mask, priority);
     ind_ovs_fwd_write_unlock();
@@ -277,6 +279,7 @@ pipeline_bvs_table_debug_entry_delete(
 
     ind_ovs_kflow_invalidate_all();
     cleanup_value(&entry->value);
+    stats_free(&entry->stats_handle);
     aim_free(entry);
     return INDIGO_ERROR_NONE;
 }
@@ -287,8 +290,10 @@ pipeline_bvs_table_debug_entry_stats_get(
     indigo_fi_flow_stats_t *flow_stats)
 {
     struct debug_entry *entry = entry_priv;
-    flow_stats->packets = entry->stats.packets;
-    flow_stats->bytes = entry->stats.bytes;
+    struct stats stats;
+    stats_get(&entry->stats_handle, &stats);
+    flow_stats->packets = stats.packets;
+    flow_stats->bytes = stats.bytes;
     return INDIGO_ERROR_NONE;
 }
 

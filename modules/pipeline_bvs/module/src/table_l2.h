@@ -34,7 +34,7 @@ struct l2_entry {
     bighash_entry_t hash_entry;
     struct l2_key key;
     struct l2_value value;
-    struct ind_ovs_flow_stats stats;
+    struct stats_handle stats_handle;
     uint64_t last_hit_check_packets;
 };
 

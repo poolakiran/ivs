@@ -119,6 +119,8 @@ pipeline_bvs_table_l2_entry_create(
     l2_hashtable_insert(l2_hashtable, entry);
     ind_ovs_fwd_write_unlock();
 
+    stats_alloc(&entry->stats_handle);
+
     *entry_priv = entry;
     ind_ovs_kflow_invalidate_all();
     return INDIGO_ERROR_NONE;
@@ -161,11 +163,16 @@ pipeline_bvs_table_l2_entry_delete(
     ind_ovs_fwd_write_unlock();
 
     ind_ovs_kflow_invalidate_all();
-    flow_stats->packets = entry->stats.packets;
-    flow_stats->bytes = entry->stats.bytes;
+
+    struct stats stats;
+    stats_get(&entry->stats_handle, &stats);
+    flow_stats->packets = stats.packets;
+    flow_stats->bytes = stats.bytes;
+
     if (entry->value.lag != NULL) {
         pipeline_bvs_group_lag_release(entry->value.lag);
     }
+    stats_free(&entry->stats_handle);
     aim_free(entry);
     return INDIGO_ERROR_NONE;
 }
@@ -176,8 +183,10 @@ pipeline_bvs_table_l2_entry_stats_get(
     indigo_fi_flow_stats_t *flow_stats)
 {
     struct l2_entry *entry = entry_priv;
-    flow_stats->packets = entry->stats.packets;
-    flow_stats->bytes = entry->stats.bytes;
+    struct stats stats;
+    stats_get(&entry->stats_handle, &stats);
+    flow_stats->packets = stats.packets;
+    flow_stats->bytes = stats.bytes;
     return INDIGO_ERROR_NONE;
 }
 
@@ -187,8 +196,10 @@ pipeline_bvs_table_l2_entry_hit_status_get(
     bool *hit_status)
 {
     struct l2_entry *entry = entry_priv;
-    if (entry->stats.packets != entry->last_hit_check_packets) {
-        entry->last_hit_check_packets = entry->stats.packets;
+    struct stats stats;
+    stats_get(&entry->stats_handle, &stats);
+    if (stats.packets != entry->last_hit_check_packets) {
+        entry->last_hit_check_packets = stats.packets;
         *hit_status = true;
     } else {
         *hit_status = false;

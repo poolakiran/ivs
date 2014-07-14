@@ -239,6 +239,8 @@ pipeline_bvs_table_ingress_acl_entry_create(
     AIM_LOG_VERBOSE("  next_hop=%{next_hop} cpu=%d drop=%d",
                     &entry->value.next_hop, entry->value.cpu, entry->value.drop);
 
+    stats_alloc(&entry->stats_handle);
+
     ind_ovs_fwd_write_lock();
     tcam_insert(ingress_acl_tcam, &entry->tcam_entry, &key, &mask, priority);
     ind_ovs_fwd_write_unlock();
@@ -284,6 +286,7 @@ pipeline_bvs_table_ingress_acl_entry_delete(
 
     ind_ovs_kflow_invalidate_all();
     pipeline_bvs_cleanup_next_hop(&entry->value.next_hop);
+    stats_free(&entry->stats_handle);
     aim_free(entry);
     return INDIGO_ERROR_NONE;
 }
@@ -294,8 +297,10 @@ pipeline_bvs_table_ingress_acl_entry_stats_get(
     indigo_fi_flow_stats_t *flow_stats)
 {
     struct ingress_acl_entry *entry = entry_priv;
-    flow_stats->packets = entry->stats.packets;
-    flow_stats->bytes = entry->stats.bytes;
+    struct stats stats;
+    stats_get(&entry->stats_handle, &stats);
+    flow_stats->packets = stats.packets;
+    flow_stats->bytes = stats.bytes;
     return INDIGO_ERROR_NONE;
 }
 
