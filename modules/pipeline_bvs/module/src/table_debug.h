@@ -45,7 +45,7 @@ struct debug_value {
 struct debug_entry {
     struct tcam_entry tcam_entry;
     struct debug_value value;
-    struct ind_ovs_flow_stats stats;
+    struct stats_handle stats_handle;
 };
 
 void pipeline_bvs_table_debug_register(void);

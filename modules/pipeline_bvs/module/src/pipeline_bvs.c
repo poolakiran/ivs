@@ -151,14 +151,14 @@ process_l2(struct ctx *ctx)
     if (ctx->key->ethernet.eth_dst[0] & 1) {
         if (!memcmp(ctx->key->ethernet.eth_dst, broadcast_mac.addr, OF_MAC_ADDR_BYTES)) {
             /* Increment broadcast port counters */
-            apply_stats(ctx, &port_counters->rx_broadcast_stats);
+            pipeline_add_stats(ctx->stats, &port_counters->rx_broadcast_stats_handle);
         } else {
             /* Increment multicast port counters */
-            apply_stats(ctx, &port_counters->rx_multicast_stats);
+            pipeline_add_stats(ctx->stats, &port_counters->rx_multicast_stats_handle);
         }
     } else {
         /* Increment unicast port counters */
-        apply_stats(ctx, &port_counters->rx_unicast_stats);
+        pipeline_add_stats(ctx->stats, &port_counters->rx_unicast_stats_handle);
     }
 
     bool packet_of_death = false;
@@ -253,7 +253,7 @@ process_l2(struct ctx *ctx)
         return;
     }
 
-    apply_stats(ctx, ind_ovs_rx_vlan_stats_select(vlan_vid));
+    pipeline_add_stats(ctx->stats, ind_ovs_rx_vlan_stats_select(vlan_vid));
 
     if (!vlan_acl_entry) {
         AIM_LOG_VERBOSE("VLAN %u: vrf=%u", vlan_vid, vlan_entry->value.vrf);
@@ -265,7 +265,7 @@ process_l2(struct ctx *ctx)
     struct l2_entry *src_l2_entry =
         pipeline_bvs_table_l2_lookup(vlan_vid, ctx->key->ethernet.eth_src);
     if (src_l2_entry) {
-        apply_stats(ctx, &src_l2_entry->stats);
+        pipeline_add_stats(ctx->stats, &src_l2_entry->stats_handle);
 
         if (src_l2_entry->value.lag == NULL) {
             AIM_LOG_VERBOSE("L2 source discard");
@@ -405,7 +405,7 @@ process_l3(struct ctx *ctx)
     struct ingress_acl_entry *ingress_acl_entry =
         pipeline_bvs_table_ingress_acl_lookup(&ingress_acl_key);
     if (ingress_acl_entry) {
-        apply_stats(ctx, &ingress_acl_entry->stats);
+        pipeline_add_stats(ctx->stats, &ingress_acl_entry->stats_handle);
         drop = drop || ingress_acl_entry->value.drop;
         cpu = cpu || ingress_acl_entry->value.cpu;
         if (ingress_acl_entry->value.next_hop.type != NEXT_HOP_TYPE_NULL) {
@@ -497,7 +497,7 @@ process_debug(struct ctx *ctx)
         return;
     }
 
-    apply_stats(ctx, &debug_entry->stats);
+    pipeline_add_stats(ctx->stats, &debug_entry->stats_handle);
 
     if (debug_entry->value.span != NULL) {
         if (ctx->original_vlan_vid != 0) {
@@ -549,7 +549,7 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
         return;
     }
 
-    apply_stats(ctx, ind_ovs_tx_vlan_stats_select(ctx->internal_vlan_vid));
+    pipeline_add_stats(ctx->stats, ind_ovs_tx_vlan_stats_select(ctx->internal_vlan_vid));
 
     struct ind_ovs_port_counters *port_counters = ind_ovs_port_stats_select(out_port);
     AIM_ASSERT(port_counters != NULL);
@@ -557,14 +557,14 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
     if (ctx->key->ethernet.eth_dst[0] & 1) {
         if (!memcmp(ctx->key->ethernet.eth_dst, broadcast_mac.addr, OF_MAC_ADDR_BYTES)) {
             /* Increment broadcast port counters */
-            apply_stats(ctx, &port_counters->tx_broadcast_stats);
+            pipeline_add_stats(ctx->stats, &port_counters->tx_broadcast_stats_handle);
         } else {
             /* Increment multicast port counters */
-            apply_stats(ctx, &port_counters->tx_multicast_stats);
+            pipeline_add_stats(ctx->stats, &port_counters->tx_multicast_stats_handle);
         }
     } else {
         /* Increment unicast port counters */
-        apply_stats(ctx, &port_counters->tx_unicast_stats);
+        pipeline_add_stats(ctx->stats, &port_counters->tx_unicast_stats_handle);
     }
 
     /* Egress VLAN translation */
