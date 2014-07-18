@@ -376,25 +376,30 @@ static void
 process_l3(struct ctx *ctx)
 {
     struct next_hop *next_hop = NULL;
-    bool cpu = false;
+    bool l3_cpu = false;
+    bool acl_cpu = false;
     bool drop = false;
+    bool bad_ttl = ctx->key->ipv4.ipv4_ttl <= 1;
 
-    if (ctx->key->ipv4.ipv4_ttl <= 1) {
+    if (bad_ttl) {
         AIM_LOG_VERBOSE("sending TTL expired packet to agent");
         mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_TTL_EXPIRED);
         mark_drop(ctx);
+        process_debug(ctx);
+        process_pktin(ctx);
+        return;
     } else {
         struct l3_host_route_entry *l3_host_route_entry =
             pipeline_bvs_table_l3_host_route_lookup(ctx->vrf, ctx->key->ipv4.ipv4_dst);
         if (l3_host_route_entry != NULL) {
             next_hop = &l3_host_route_entry->value.next_hop;
-            cpu = l3_host_route_entry->value.cpu;
+            l3_cpu = l3_host_route_entry->value.cpu;
         } else {
             struct l3_cidr_route_entry *l3_cidr_route_entry =
                 pipeline_bvs_table_l3_cidr_route_lookup(ctx->vrf, ctx->key->ipv4.ipv4_dst);
             if (l3_cidr_route_entry != NULL) {
                 next_hop = &l3_cidr_route_entry->value.next_hop;
-                cpu = l3_cidr_route_entry->value.cpu;
+                l3_cpu = l3_cidr_route_entry->value.cpu;
             }
         }
     }
@@ -407,7 +412,7 @@ process_l3(struct ctx *ctx)
     if (ingress_acl_entry) {
         pipeline_add_stats(ctx->stats, &ingress_acl_entry->stats_handle);
         drop = drop || ingress_acl_entry->value.drop;
-        cpu = cpu || ingress_acl_entry->value.cpu;
+        acl_cpu = ingress_acl_entry->value.cpu;
         if (ingress_acl_entry->value.next_hop.type != NEXT_HOP_TYPE_NULL) {
             next_hop = &ingress_acl_entry->value.next_hop;
         }
@@ -416,15 +421,17 @@ process_l3(struct ctx *ctx)
     bool hit = next_hop != NULL;
     bool valid_next_hop = next_hop != NULL && next_hop->type != NEXT_HOP_TYPE_NULL;
 
-    if (ctx->key->ipv4.ipv4_ttl <= 1) {
-        if (cpu) {
-            AIM_LOG_VERBOSE("L3 copy to CPU");
-            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_L3_CPU);
-        }
-    } else if (cpu) {
+    if (l3_cpu) {
         AIM_LOG_VERBOSE("L3 copy to CPU");
         mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_L3_CPU);
+    }
 
+    if (acl_cpu) {
+        AIM_LOG_VERBOSE("Ingress ACL copy to CPU");
+        mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_INGRESS_ACL);
+    }
+
+    if (l3_cpu || acl_cpu) {
         if (drop) {
             AIM_LOG_VERBOSE("L3 drop");
             mark_drop(ctx);
