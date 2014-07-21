@@ -85,12 +85,15 @@ parse_value(of_flow_add_t *obj, struct egress_acl_value *value)
             value->drop = true;
             break;
         default:
-            AIM_LOG_WARN("Unexpected instruction %s in egress_acl table", of_object_id_str[inst.header.object_id]);
-            break;
+            AIM_LOG_ERROR("Unexpected instruction %s in egress_acl table", of_object_id_str[inst.header.object_id]);
+            goto error;
         }
     }
 
     return INDIGO_ERROR_NONE;
+
+error:
+    return INDIGO_ERROR_BAD_ACTION;
 }
 
 static indigo_error_t

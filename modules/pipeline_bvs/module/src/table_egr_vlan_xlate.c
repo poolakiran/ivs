@@ -84,30 +84,33 @@ parse_value(of_flow_add_t *obj, struct egr_vlan_xlate_value *value)
                         seen_new_vlan_vid = true;
                         break;
                     default:
-                        AIM_LOG_WARN("Unexpected set-field OXM %s in egr_vlan_xlate table", of_object_id_str[oxm.header.object_id]);
-                        break;
+                        AIM_LOG_ERROR("Unexpected set-field OXM %s in egr_vlan_xlate table", of_object_id_str[oxm.header.object_id]);
+                        goto error;
                     }
                     break;
                 }
                 default:
-                    AIM_LOG_WARN("Unexpected action %s in egr_vlan_xlate table", of_object_id_str[act.header.object_id]);
-                    break;
+                    AIM_LOG_ERROR("Unexpected action %s in egr_vlan_xlate table", of_object_id_str[act.header.object_id]);
+                    goto error;
                 }
             }
             break;
         }
         default:
-            AIM_LOG_WARN("Unexpected instruction %s in egr_vlan_xlate table", of_object_id_str[inst.header.object_id]);
-            break;
+            AIM_LOG_ERROR("Unexpected instruction %s in egr_vlan_xlate table", of_object_id_str[inst.header.object_id]);
+            goto error;
         }
     }
 
     if (!seen_new_vlan_vid) {
-        AIM_LOG_WARN("Missing required instruction in egr_vlan_xlate table");
-        return INDIGO_ERROR_COMPAT;
+        AIM_LOG_ERROR("Missing required instruction in egr_vlan_xlate table");
+        goto error;
     }
 
     return INDIGO_ERROR_NONE;
+
+error:
+    return INDIGO_ERROR_BAD_ACTION;
 }
 
 static indigo_error_t

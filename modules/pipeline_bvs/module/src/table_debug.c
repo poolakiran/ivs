@@ -20,6 +20,8 @@
 #include "pipeline_bvs_int.h"
 #include <linux/if_ether.h>
 
+static void cleanup_value(struct debug_value *value);
+
 static struct tcam *debug_tcam;
 static const of_match_fields_t maximum_mask = {
     .in_port = 0xffffffff,
@@ -154,12 +156,13 @@ parse_value(of_flow_add_t *obj, struct debug_value *value)
                         of_action_group_group_id_get(&act.group, &span_id);
                         value->span = pipeline_bvs_group_span_acquire(span_id);
                         if (value->span == NULL) {
-                            AIM_LOG_WARN("Nonexistent SPAN in debug table");
-                            break;
+                            AIM_LOG_ERROR("Nonexistent SPAN in debug table");
+                            goto error;
                         }
                         seen_span = true;
                     } else {
-                        AIM_LOG_WARN("Duplicate SPAN action in debug table");
+                        AIM_LOG_ERROR("Duplicate SPAN action in debug table");
+                        goto error;
                     }
                     break;
                 }
@@ -171,15 +174,15 @@ parse_value(of_flow_add_t *obj, struct debug_value *value)
                             value->cpu = true;
                             break;
                         default:
-                            AIM_LOG_WARN("Unexpected output port %u in debug_table", port_no);
-                            break;
+                            AIM_LOG_ERROR("Unexpected output port %u in debug_table", port_no);
+                            goto error;
                         }
                     }
                     break;
                 }
                 default:
-                    AIM_LOG_WARN("Unexpected action %s in debug table", of_object_id_str[act.header.object_id]);
-                    break;
+                    AIM_LOG_ERROR("Unexpected action %s in debug table", of_object_id_str[act.header.object_id]);
+                    goto error;
                 }
             }
             break;
@@ -188,12 +191,16 @@ parse_value(of_flow_add_t *obj, struct debug_value *value)
             value->drop = true;
             break;
         default:
-            AIM_LOG_WARN("Unexpected instruction %s in debug table", of_object_id_str[inst.header.object_id]);
-            break;
+            AIM_LOG_ERROR("Unexpected instruction %s in debug table", of_object_id_str[inst.header.object_id]);
+            goto error;
         }
     }
 
     return INDIGO_ERROR_NONE;
+
+error:
+    cleanup_value(value);
+    return INDIGO_ERROR_BAD_ACTION;
 }
 
 static void

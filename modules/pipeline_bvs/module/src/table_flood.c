@@ -120,7 +120,7 @@ parse_value(of_flow_add_t *obj, struct flood_value *value)
 
 error:
     xbuf_cleanup(&lags_xbuf);
-    return INDIGO_ERROR_COMPAT;
+    return INDIGO_ERROR_BAD_ACTION;
 }
 
 static void

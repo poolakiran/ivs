@@ -67,7 +67,7 @@ error:
     if (seen_lag) {
         pipeline_bvs_group_lag_release(value->lag);
     }
-    return INDIGO_ERROR_COMPAT;
+    return INDIGO_ERROR_BAD_ACTION;
 }
 
 static void
