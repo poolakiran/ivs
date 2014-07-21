@@ -40,7 +40,7 @@ parse_key(of_flow_add_t *obj, struct egr_vlan_xlate_key *key)
 {
     of_match_t match;
     if (of_flow_add_match_get(obj, &match) < 0) {
-        return INDIGO_ERROR_UNKNOWN;
+        return INDIGO_ERROR_BAD_MATCH;
     }
     if (!memcmp(&match.masks, &required_mask_vlan_xlate_port_group_id, sizeof(of_match_fields_t))) {
         key->vlan_xlate_port_group_id = match.fields.bsn_vlan_xlate_port_group_id;
@@ -50,7 +50,7 @@ parse_key(of_flow_add_t *obj, struct egr_vlan_xlate_key *key)
         key->vlan_xlate_port_group_id = match.fields.in_port;
         key->type = EGR_VLAN_XLATE_TYPE_PORT;
     } else {
-        return INDIGO_ERROR_COMPAT;
+        return INDIGO_ERROR_BAD_MATCH;
     }
     key->vlan_vid = match.fields.vlan_vid & ~VLAN_CFI_BIT;
     return INDIGO_ERROR_NONE;

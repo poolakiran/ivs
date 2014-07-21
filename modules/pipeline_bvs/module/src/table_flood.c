@@ -40,21 +40,21 @@ parse_key(of_flow_add_t *obj, struct flood_key *key)
     of_match_t match;
     uint16_t priority;
     if (of_flow_add_match_get(obj, &match) < 0) {
-        return INDIGO_ERROR_UNKNOWN;
+        return INDIGO_ERROR_BAD_MATCH;
     }
     of_flow_add_priority_get(obj, &priority);
 
     if (priority == 1) {
         if (memcmp(&match.masks, &required_mask, sizeof(of_match_fields_t))) {
-            return INDIGO_ERROR_COMPAT;
+            return INDIGO_ERROR_BAD_MATCH;
         }
         key->lag_id = match.fields.bsn_lag_id;
         if (key->lag_id == OF_GROUP_ANY) {
-            return INDIGO_ERROR_COMPAT;
+            return INDIGO_ERROR_BAD_MATCH;
         }
     } else if (priority == 0) {
         if (memcmp(&match.masks, &required_miss_mask, sizeof(of_match_fields_t))) {
-            return INDIGO_ERROR_COMPAT;
+            return INDIGO_ERROR_BAD_MATCH;
         }
         key->lag_id = OF_GROUP_ANY;
     } else {

@@ -39,10 +39,10 @@ parse_key(of_flow_add_t *obj, struct l3_host_route_key *key)
 {
     of_match_t match;
     if (of_flow_add_match_get(obj, &match) < 0) {
-        return INDIGO_ERROR_UNKNOWN;
+        return INDIGO_ERROR_BAD_MATCH;
     }
     if (memcmp(&match.masks, &required_mask, sizeof(of_match_fields_t))) {
-        return INDIGO_ERROR_COMPAT;
+        return INDIGO_ERROR_BAD_MATCH;
     }
     key->vrf = match.fields.bsn_vrf;
     key->ipv4 = match.fields.ipv4_dst;
