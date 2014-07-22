@@ -25,6 +25,8 @@
 #define TEMPLATE_ENTRY_FIELD hash_entry
 #include <BigHash/bighash_template.h>
 
+static void cleanup_value(struct l2_value *value);
+
 static bighash_table_t *l2_hashtable;
 static const of_match_fields_t required_mask = {
     .vlan_vid = 0xffff,
@@ -36,10 +38,10 @@ parse_key(of_flow_add_t *obj, struct l2_key *key)
 {
     of_match_t match;
     if (of_flow_add_match_get(obj, &match) < 0) {
-        return INDIGO_ERROR_UNKNOWN;
+        return INDIGO_ERROR_BAD_MATCH;
     }
     if (memcmp(&match.masks, &required_mask, sizeof(of_match_fields_t))) {
-        return INDIGO_ERROR_COMPAT;
+        return INDIGO_ERROR_BAD_MATCH;
     }
     key->vlan_vid = match.fields.vlan_vid & ~VLAN_CFI_BIT;
     key->mac = match.fields.eth_dst;
@@ -70,25 +72,37 @@ parse_value(of_flow_add_t *obj, struct l2_value *value)
                     of_action_group_group_id_get(&act.group, &lag_id);
                     value->lag = pipeline_bvs_group_lag_acquire(lag_id);
                     if (value->lag == NULL) {
-                        AIM_LOG_WARN("Nonexistent LAG in L2 table");
-                        break;
+                        AIM_LOG_ERROR("Nonexistent LAG in L2 table");
+                        goto error;
                     }
                     break;
                 }
                 default:
-                    AIM_LOG_WARN("Unexpected action %s in L2 table", of_object_id_str[act.header.object_id]);
-                    break;
+                    AIM_LOG_ERROR("Unexpected action %s in L2 table", of_object_id_str[act.header.object_id]);
+                    goto error;
                 }
             }
             break;
         }
         default:
-            AIM_LOG_WARN("Unexpected instruction %s in L2 table", of_object_id_str[inst.header.object_id]);
-            break;
+            AIM_LOG_ERROR("Unexpected instruction %s in L2 table", of_object_id_str[inst.header.object_id]);
+            goto error;
         }
     }
 
     return INDIGO_ERROR_NONE;
+
+error:
+    cleanup_value(value);
+    return INDIGO_ERROR_BAD_ACTION;
+}
+
+static void
+cleanup_value(struct l2_value *value)
+{
+    if (value->lag != NULL) {
+        pipeline_bvs_group_lag_release(value->lag);
+    }
 }
 
 static indigo_error_t
@@ -141,9 +155,7 @@ pipeline_bvs_table_l2_entry_modify(
     }
 
     ind_ovs_fwd_write_lock();
-    if (entry->value.lag != NULL) {
-        pipeline_bvs_group_lag_release(entry->value.lag);
-    }
+    cleanup_value(&entry->value);
     entry->value = value;
     ind_ovs_fwd_write_unlock();
 
@@ -169,9 +181,7 @@ pipeline_bvs_table_l2_entry_delete(
     flow_stats->packets = stats.packets;
     flow_stats->bytes = stats.bytes;
 
-    if (entry->value.lag != NULL) {
-        pipeline_bvs_group_lag_release(entry->value.lag);
-    }
+    cleanup_value(&entry->value);
     stats_free(&entry->stats_handle);
     aim_free(entry);
     return INDIGO_ERROR_NONE;

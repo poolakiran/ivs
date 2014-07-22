@@ -91,7 +91,7 @@ error:
     }
 
     xbuf_cleanup(&buckets_xbuf);
-    return INDIGO_ERROR_COMPAT;
+    return INDIGO_ERROR_BAD_ACTION;
 }
 
 static void

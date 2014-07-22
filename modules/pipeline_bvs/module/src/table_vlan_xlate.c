@@ -40,7 +40,7 @@ parse_key(of_flow_add_t *obj, struct vlan_xlate_key *key)
 {
     of_match_t match;
     if (of_flow_add_match_get(obj, &match) < 0) {
-        return INDIGO_ERROR_UNKNOWN;
+        return INDIGO_ERROR_BAD_MATCH;
     }
     if (!memcmp(&match.masks, &required_mask_vlan_xlate_port_group_id, sizeof(of_match_fields_t))) {
         key->vlan_xlate_port_group_id = match.fields.bsn_vlan_xlate_port_group_id;
@@ -50,7 +50,7 @@ parse_key(of_flow_add_t *obj, struct vlan_xlate_key *key)
         key->vlan_xlate_port_group_id = match.fields.bsn_lag_id;
         key->type = VLAN_XLATE_TYPE_LAG_ID;
     } else {
-        return INDIGO_ERROR_COMPAT;
+        return INDIGO_ERROR_BAD_MATCH;
     }
     key->vlan_vid = match.fields.vlan_vid & ~VLAN_CFI_BIT;
     return INDIGO_ERROR_NONE;
@@ -84,30 +84,33 @@ parse_value(of_flow_add_t *obj, struct vlan_xlate_value *value)
                         seen_new_vlan_vid = true;
                         break;
                     default:
-                        AIM_LOG_WARN("Unexpected set-field OXM %s in vlan_xlate table", of_object_id_str[oxm.header.object_id]);
-                        break;
+                        AIM_LOG_ERROR("Unexpected set-field OXM %s in vlan_xlate table", of_object_id_str[oxm.header.object_id]);
+                        goto error;
                     }
                     break;
                 }
                 default:
-                    AIM_LOG_WARN("Unexpected action %s in vlan_xlate table", of_object_id_str[act.header.object_id]);
-                    break;
+                    AIM_LOG_ERROR("Unexpected action %s in vlan_xlate table", of_object_id_str[act.header.object_id]);
+                    goto error;
                 }
             }
             break;
         }
         default:
-            AIM_LOG_WARN("Unexpected instruction %s in vlan_xlate table", of_object_id_str[inst.header.object_id]);
-            break;
+            AIM_LOG_ERROR("Unexpected instruction %s in vlan_xlate table", of_object_id_str[inst.header.object_id]);
+            goto error;
         }
     }
 
     if (!seen_new_vlan_vid) {
         AIM_LOG_WARN("Missing required instruction in vlan_xlate table");
-        return INDIGO_ERROR_COMPAT;
+        goto error;
     }
 
     return INDIGO_ERROR_NONE;
+
+error:
+    return INDIGO_ERROR_BAD_ACTION;
 }
 
 static indigo_error_t

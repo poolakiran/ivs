@@ -47,7 +47,7 @@ parse_key(of_flow_add_t *obj, struct ingress_acl_key *key,
 {
     of_match_t match;
     if (of_flow_add_match_get(obj, &match) < 0) {
-        return INDIGO_ERROR_UNKNOWN;
+        return INDIGO_ERROR_BAD_MATCH;
     }
 
     if (!pipeline_bvs_check_tcam_mask(&match.masks, &minimum_mask, &maximum_mask)) {
@@ -153,7 +153,7 @@ parse_value(of_flow_add_t *obj, struct ingress_acl_value *value)
 
             if (pipeline_bvs_parse_next_hop(&actions, &value->next_hop) < 0) {
                 AIM_LOG_ERROR("Failed to parse next-hop in ingress_acl table");
-                return INDIGO_ERROR_COMPAT;
+                goto error;
             }
 
             of_action_t act;
@@ -173,8 +173,8 @@ parse_value(of_flow_add_t *obj, struct ingress_acl_value *value)
                         /* Handled by pipeline_bvs_parse_next_hop */
                         break;
                     default:
-                        AIM_LOG_WARN("Unexpected set-field OXM %s in l3_host_route table", of_object_id_str[oxm.header.object_id]);
-                        break;
+                        AIM_LOG_ERROR("Unexpected set-field OXM %s in l3_host_route table", of_object_id_str[oxm.header.object_id]);
+                        goto error;
                     }
                     break;
                 }
@@ -186,15 +186,15 @@ parse_value(of_flow_add_t *obj, struct ingress_acl_value *value)
                             value->cpu = true;
                             break;
                         default:
-                            AIM_LOG_WARN("Unexpected output port %u in ingress_acl_table", port_no);
-                            break;
+                            AIM_LOG_ERROR("Unexpected output port %u in ingress_acl_table", port_no);
+                            goto error;
                         }
                     }
                     break;
                 }
                 default:
-                    AIM_LOG_WARN("Unexpected action %s in ingress_acl table", of_object_id_str[act.header.object_id]);
-                    break;
+                    AIM_LOG_ERROR("Unexpected action %s in ingress_acl table", of_object_id_str[act.header.object_id]);
+                    goto error;
                 }
             }
             break;
@@ -203,12 +203,16 @@ parse_value(of_flow_add_t *obj, struct ingress_acl_value *value)
             value->drop = true;
             break;
         default:
-            AIM_LOG_WARN("Unexpected instruction %s in ingress_acl table", of_object_id_str[inst.header.object_id]);
-            break;
+            AIM_LOG_ERROR("Unexpected instruction %s in ingress_acl table", of_object_id_str[inst.header.object_id]);
+            goto error;
         }
     }
 
     return INDIGO_ERROR_NONE;
+
+error:
+    pipeline_bvs_cleanup_next_hop(&value->next_hop);
+    return INDIGO_ERROR_BAD_ACTION;
 }
 
 static indigo_error_t

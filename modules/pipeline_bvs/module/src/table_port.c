@@ -51,10 +51,10 @@ parse_key(of_flow_add_t *obj, struct port_key *key)
 {
     of_match_t match;
     if (of_flow_add_match_get(obj, &match) < 0) {
-        return INDIGO_ERROR_UNKNOWN;
+        return INDIGO_ERROR_BAD_MATCH;
     }
     if (memcmp(&match.masks, &required_mask, sizeof(of_match_fields_t))) {
-        return INDIGO_ERROR_COMPAT;
+        return INDIGO_ERROR_BAD_MATCH;
     }
     key->port = match.fields.in_port;
     return INDIGO_ERROR_NONE;
@@ -106,14 +106,14 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
                         of_oxm_bsn_vlan_xlate_port_group_id_value_get(&oxm.vlan_vid, &value->vlan_xlate_port_group_id);
                         break;
                     default:
-                        AIM_LOG_WARN("Unexpected set-field OXM %s in port table", of_object_id_str[oxm.header.object_id]);
-                        break;
+                        AIM_LOG_ERROR("Unexpected set-field OXM %s in port table", of_object_id_str[oxm.header.object_id]);
+                        goto error;
                     }
                     break;
                 }
                 default:
-                    AIM_LOG_WARN("Unexpected action %s in port table", of_object_id_str[act.header.object_id]);
-                    break;
+                    AIM_LOG_ERROR("Unexpected action %s in port table", of_object_id_str[act.header.object_id]);
+                    goto error;
                 }
             }
             break;
@@ -137,12 +137,15 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
             value->require_vlan_xlate = true;
             break;
         default:
-            AIM_LOG_WARN("Unexpected instruction %s in port table", of_object_id_str[inst.header.object_id]);
-            break;
+            AIM_LOG_ERROR("Unexpected instruction %s in port table", of_object_id_str[inst.header.object_id]);
+            goto error;
         }
     }
 
     return INDIGO_ERROR_NONE;
+
+error:
+    return INDIGO_ERROR_BAD_ACTION;
 }
 
 static indigo_error_t

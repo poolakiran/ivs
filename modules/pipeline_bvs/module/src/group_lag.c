@@ -70,7 +70,7 @@ parse_value(of_list_bucket_t *of_buckets, struct lag_value *value)
 
 error:
     xbuf_cleanup(&buckets_xbuf);
-    return INDIGO_ERROR_PARAM;
+    return INDIGO_ERROR_BAD_ACTION;
 }
 
 static void
