@@ -20,16 +20,10 @@
 #ifndef TABLE_VLAN_XLATE_H
 #define TABLE_VLAN_XLATE_H
 
-/* For backwards compatibility */
-enum vlan_xlate_type {
-    VLAN_XLATE_TYPE_PORT_GROUP_ID,
-    VLAN_XLATE_TYPE_LAG_ID,
-};
-
 struct vlan_xlate_key {
     uint32_t vlan_xlate_port_group_id;
     uint16_t vlan_vid;
-    uint16_t type;
+    uint16_t pad;
 };
 AIM_STATIC_ASSERT(VLAN_XLATE_KEY_SIZE, sizeof(struct vlan_xlate_key) == 8);
 
@@ -45,6 +39,6 @@ struct vlan_xlate_entry {
 
 void pipeline_bvs_table_vlan_xlate_register(void);
 void pipeline_bvs_table_vlan_xlate_unregister(void);
-struct vlan_xlate_entry *pipeline_bvs_table_vlan_xlate_lookup(enum vlan_xlate_type type, uint32_t vlan_xlate_port_group_id, uint16_t vlan_vid);
+struct vlan_xlate_entry *pipeline_bvs_table_vlan_xlate_lookup(uint32_t vlan_xlate_port_group_id, uint16_t vlan_vid);
 
 #endif
