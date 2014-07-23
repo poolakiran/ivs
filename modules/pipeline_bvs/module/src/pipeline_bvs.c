@@ -253,7 +253,9 @@ process_l2(struct ctx *ctx)
         return;
     }
 
-    pipeline_add_stats(ctx->stats, ind_ovs_rx_vlan_stats_select(vlan_vid));
+    if (!port_entry->value.disable_vlan_counters) {
+        pipeline_add_stats(ctx->stats, ind_ovs_rx_vlan_stats_select(vlan_vid));
+    }
 
     if (!vlan_acl_entry) {
         AIM_LOG_VERBOSE("VLAN %u: vrf=%u", vlan_vid, vlan_entry->value.vrf);
@@ -556,7 +558,9 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
         return;
     }
 
-    pipeline_add_stats(ctx->stats, ind_ovs_tx_vlan_stats_select(ctx->internal_vlan_vid));
+    if (!dst_port_entry->value.disable_vlan_counters) {
+        pipeline_add_stats(ctx->stats, ind_ovs_tx_vlan_stats_select(ctx->internal_vlan_vid));
+    }
 
     struct ind_ovs_port_counters *port_counters = ind_ovs_port_stats_select(out_port);
     AIM_ASSERT(port_counters != NULL);
