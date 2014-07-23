@@ -43,6 +43,7 @@ static struct port_entry local_entry = {
         .packet_of_death = false,
         .prioritize_pdus = false,
         .require_vlan_xlate = false,
+        .disable_vlan_counters = false,
     },
 };
 
@@ -77,6 +78,7 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
     value->packet_of_death = false;
     value->prioritize_pdus = false;
     value->require_vlan_xlate = false;
+    value->disable_vlan_counters = false;
 
     of_flow_add_instructions_bind(obj, &insts);
     OF_LIST_INSTRUCTION_ITER(&insts, &inst, rv) {
@@ -135,6 +137,9 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
             break;
         case OF_INSTRUCTION_BSN_REQUIRE_VLAN_XLATE:
             value->require_vlan_xlate = true;
+            break;
+        case OF_INSTRUCTION_BSN_DISABLE_VLAN_COUNTERS:
+            value->disable_vlan_counters = true;
             break;
         default:
             AIM_LOG_ERROR("Unexpected instruction %s in port table", of_object_id_str[inst.header.object_id]);
