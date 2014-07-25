@@ -49,6 +49,9 @@ parse_value(of_list_bucket_t *of_buckets, struct lag_value *value)
                     goto error;
                 }
                 break;
+            case OF_ACTION_BSN_CHECKSUM:
+                /* ignore */
+                break;
             default:
                 AIM_LOG_ERROR("unsupported LAG group action %s", of_object_id_str[act.header.object_id]);
                 goto error;
