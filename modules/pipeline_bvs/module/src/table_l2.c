@@ -136,7 +136,7 @@ pipeline_bvs_table_l2_entry_create(
     stats_alloc(&entry->stats_handle);
 
     *entry_priv = entry;
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -159,7 +159,7 @@ pipeline_bvs_table_l2_entry_modify(
     entry->value = value;
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -174,7 +174,7 @@ pipeline_bvs_table_l2_entry_delete(
     bighash_remove(l2_hashtable, &entry->hash_entry);
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
 
     struct stats stats;
     stats_get(&entry->stats_handle, &stats);
