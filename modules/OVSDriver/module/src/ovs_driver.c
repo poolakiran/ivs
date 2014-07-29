@@ -195,6 +195,7 @@ ind_ovs_init(const char *datapath_name)
     ind_ovs_port_init();
     ind_ovs_group_module_init();
     ind_ovs_vlan_stats_init();
+    ind_ovs_barrier_init();
 
     ind_ovs_packet_of_death_init();
 

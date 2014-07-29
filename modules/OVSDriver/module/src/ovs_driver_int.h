@@ -226,6 +226,9 @@ void ind_ovs_pktin_unregister(struct ind_ovs_port *port);
 /* Interface of the VLAN stats submodule */
 void ind_ovs_vlan_stats_init(void);
 
+/* Interface of the barrier submodule */
+void ind_ovs_barrier_init(void);
+
 /* Interface of the packet of death submodule */
 void ind_ovs_packet_of_death_init(void);
 
