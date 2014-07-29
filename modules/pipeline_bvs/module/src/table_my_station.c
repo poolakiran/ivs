@@ -75,7 +75,7 @@ pipeline_bvs_table_my_station_entry_create(
     ind_ovs_fwd_write_unlock();
 
     *entry_priv = entry;
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -98,7 +98,7 @@ pipeline_bvs_table_my_station_entry_delete(
     tcam_remove(my_station_tcam, &entry->tcam_entry);
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     aim_free(entry);
     return INDIGO_ERROR_NONE;
 }

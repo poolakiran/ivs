@@ -250,7 +250,7 @@ pipeline_bvs_table_ingress_acl_entry_create(
     ind_ovs_fwd_write_unlock();
 
     *entry_priv = entry;
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -273,7 +273,7 @@ pipeline_bvs_table_ingress_acl_entry_modify(
     entry->value = value;
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -288,7 +288,7 @@ pipeline_bvs_table_ingress_acl_entry_delete(
     tcam_remove(ingress_acl_tcam, &entry->tcam_entry);
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     pipeline_bvs_cleanup_next_hop(&entry->value.next_hop);
     stats_free(&entry->stats_handle);
     aim_free(entry);
