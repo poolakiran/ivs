@@ -36,7 +36,7 @@ parse_key(of_flow_add_t *obj, struct vlan_acl_key *key, struct vlan_acl_key *mas
 {
     of_match_t match;
     if (of_flow_add_match_get(obj, &match) < 0) {
-        return INDIGO_ERROR_UNKNOWN;
+        return INDIGO_ERROR_BAD_MATCH;
     }
 
     if (!pipeline_bvs_check_tcam_mask(&match.masks, &minimum_mask, &maximum_mask)) {
@@ -98,25 +98,28 @@ parse_value(of_flow_add_t *obj, struct vlan_acl_value *value)
                         of_oxm_bsn_vrf_value_get(&oxm.bsn_vrf, &value->vrf);
                         break;
                     default:
-                        AIM_LOG_WARN("Unexpected set-field OXM %s in vlan_acl table", of_object_id_str[oxm.header.object_id]);
-                        break;
+                        AIM_LOG_ERROR("Unexpected set-field OXM %s in vlan_acl table", of_object_id_str[oxm.header.object_id]);
+                        goto error;
                     }
                     break;
                 }
                 default:
-                    AIM_LOG_WARN("Unexpected action %s in vlan_acl table", of_object_id_str[act.header.object_id]);
-                    break;
+                    AIM_LOG_ERROR("Unexpected action %s in vlan_acl table", of_object_id_str[act.header.object_id]);
+                    goto error;
                 }
             }
             break;
         }
         default:
-            AIM_LOG_WARN("Unexpected instruction %s in vlan_acl table", of_object_id_str[inst.header.object_id]);
-            break;
+            AIM_LOG_ERROR("Unexpected instruction %s in vlan_acl table", of_object_id_str[inst.header.object_id]);
+            goto error;
         }
     }
 
     return INDIGO_ERROR_NONE;
+
+error:
+    return INDIGO_ERROR_BAD_ACTION;
 }
 
 static indigo_error_t
@@ -150,7 +153,7 @@ pipeline_bvs_table_vlan_acl_entry_create(
     ind_ovs_fwd_write_unlock();
 
     *entry_priv = entry;
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -172,7 +175,7 @@ pipeline_bvs_table_vlan_acl_entry_modify(
     entry->value = value;
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -187,7 +190,7 @@ pipeline_bvs_table_vlan_acl_entry_delete(
     tcam_remove(vlan_acl_tcam, &entry->tcam_entry);
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     aim_free(entry);
     return INDIGO_ERROR_NONE;
 }

@@ -20,6 +20,8 @@
 #include "pipeline_bvs_int.h"
 #include <linux/if_ether.h>
 
+static void cleanup_value(struct debug_value *value);
+
 static struct tcam *debug_tcam;
 static const of_match_fields_t maximum_mask = {
     .in_port = 0xffffffff,
@@ -47,7 +49,7 @@ parse_key(of_flow_add_t *obj, struct debug_key *key,
 {
     of_match_t match;
     if (of_flow_add_match_get(obj, &match) < 0) {
-        return INDIGO_ERROR_UNKNOWN;
+        return INDIGO_ERROR_BAD_MATCH;
     }
 
     if (!pipeline_bvs_check_tcam_mask(&match.masks, &minimum_mask, &maximum_mask)) {
@@ -154,12 +156,13 @@ parse_value(of_flow_add_t *obj, struct debug_value *value)
                         of_action_group_group_id_get(&act.group, &span_id);
                         value->span = pipeline_bvs_group_span_acquire(span_id);
                         if (value->span == NULL) {
-                            AIM_LOG_WARN("Nonexistent SPAN in debug table");
-                            break;
+                            AIM_LOG_ERROR("Nonexistent SPAN in debug table");
+                            goto error;
                         }
                         seen_span = true;
                     } else {
-                        AIM_LOG_WARN("Duplicate SPAN action in debug table");
+                        AIM_LOG_ERROR("Duplicate SPAN action in debug table");
+                        goto error;
                     }
                     break;
                 }
@@ -171,15 +174,15 @@ parse_value(of_flow_add_t *obj, struct debug_value *value)
                             value->cpu = true;
                             break;
                         default:
-                            AIM_LOG_WARN("Unexpected output port %u in debug_table", port_no);
-                            break;
+                            AIM_LOG_ERROR("Unexpected output port %u in debug_table", port_no);
+                            goto error;
                         }
                     }
                     break;
                 }
                 default:
-                    AIM_LOG_WARN("Unexpected action %s in debug table", of_object_id_str[act.header.object_id]);
-                    break;
+                    AIM_LOG_ERROR("Unexpected action %s in debug table", of_object_id_str[act.header.object_id]);
+                    goto error;
                 }
             }
             break;
@@ -188,12 +191,16 @@ parse_value(of_flow_add_t *obj, struct debug_value *value)
             value->drop = true;
             break;
         default:
-            AIM_LOG_WARN("Unexpected instruction %s in debug table", of_object_id_str[inst.header.object_id]);
-            break;
+            AIM_LOG_ERROR("Unexpected instruction %s in debug table", of_object_id_str[inst.header.object_id]);
+            goto error;
         }
     }
 
     return INDIGO_ERROR_NONE;
+
+error:
+    cleanup_value(value);
+    return INDIGO_ERROR_BAD_ACTION;
 }
 
 static void
@@ -232,12 +239,14 @@ pipeline_bvs_table_debug_entry_create(
                     priority, key.in_port, mask.in_port, &key.eth_src, &mask.eth_src, &key.eth_dst, &mask.eth_dst, key.eth_type, mask.eth_type, key.vlan_vid, mask.vlan_vid, key.ipv4_src, mask.ipv4_src, key.ipv4_dst, mask.ipv4_dst, key.ip_proto, mask.ip_proto, key.ip_tos, mask.ip_tos, key.tp_src, mask.tp_src, key.tp_dst, mask.tp_dst, key.tcp_flags, mask.tcp_flags,
                     entry->value.span ? entry->value.span->id : OF_GROUP_ANY, entry->value.cpu, entry->value.drop);
 
+    stats_alloc(&entry->stats_handle);
+
     ind_ovs_fwd_write_lock();
     tcam_insert(debug_tcam, &entry->tcam_entry, &key, &mask, priority);
     ind_ovs_fwd_write_unlock();
 
     *entry_priv = entry;
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -260,7 +269,7 @@ pipeline_bvs_table_debug_entry_modify(
     entry->value = value;
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -275,8 +284,9 @@ pipeline_bvs_table_debug_entry_delete(
     tcam_remove(debug_tcam, &entry->tcam_entry);
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     cleanup_value(&entry->value);
+    stats_free(&entry->stats_handle);
     aim_free(entry);
     return INDIGO_ERROR_NONE;
 }
@@ -287,8 +297,10 @@ pipeline_bvs_table_debug_entry_stats_get(
     indigo_fi_flow_stats_t *flow_stats)
 {
     struct debug_entry *entry = entry_priv;
-    flow_stats->packets = entry->stats.packets;
-    flow_stats->bytes = entry->stats.bytes;
+    struct stats stats;
+    stats_get(&entry->stats_handle, &stats);
+    flow_stats->packets = stats.packets;
+    flow_stats->bytes = stats.bytes;
     return INDIGO_ERROR_NONE;
 }
 

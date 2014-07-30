@@ -25,6 +25,8 @@
 #define TEMPLATE_ENTRY_FIELD hash_entry
 #include <BigHash/bighash_template.h>
 
+static void cleanup_value(struct l2_value *value);
+
 static bighash_table_t *l2_hashtable;
 static const of_match_fields_t required_mask = {
     .vlan_vid = 0xffff,
@@ -36,10 +38,10 @@ parse_key(of_flow_add_t *obj, struct l2_key *key)
 {
     of_match_t match;
     if (of_flow_add_match_get(obj, &match) < 0) {
-        return INDIGO_ERROR_UNKNOWN;
+        return INDIGO_ERROR_BAD_MATCH;
     }
     if (memcmp(&match.masks, &required_mask, sizeof(of_match_fields_t))) {
-        return INDIGO_ERROR_COMPAT;
+        return INDIGO_ERROR_BAD_MATCH;
     }
     key->vlan_vid = match.fields.vlan_vid & ~VLAN_CFI_BIT;
     key->mac = match.fields.eth_dst;
@@ -70,25 +72,37 @@ parse_value(of_flow_add_t *obj, struct l2_value *value)
                     of_action_group_group_id_get(&act.group, &lag_id);
                     value->lag = pipeline_bvs_group_lag_acquire(lag_id);
                     if (value->lag == NULL) {
-                        AIM_LOG_WARN("Nonexistent LAG in L2 table");
-                        break;
+                        AIM_LOG_ERROR("Nonexistent LAG in L2 table");
+                        goto error;
                     }
                     break;
                 }
                 default:
-                    AIM_LOG_WARN("Unexpected action %s in L2 table", of_object_id_str[act.header.object_id]);
-                    break;
+                    AIM_LOG_ERROR("Unexpected action %s in L2 table", of_object_id_str[act.header.object_id]);
+                    goto error;
                 }
             }
             break;
         }
         default:
-            AIM_LOG_WARN("Unexpected instruction %s in L2 table", of_object_id_str[inst.header.object_id]);
-            break;
+            AIM_LOG_ERROR("Unexpected instruction %s in L2 table", of_object_id_str[inst.header.object_id]);
+            goto error;
         }
     }
 
     return INDIGO_ERROR_NONE;
+
+error:
+    cleanup_value(value);
+    return INDIGO_ERROR_BAD_ACTION;
+}
+
+static void
+cleanup_value(struct l2_value *value)
+{
+    if (value->lag != NULL) {
+        pipeline_bvs_group_lag_release(value->lag);
+    }
 }
 
 static indigo_error_t
@@ -119,8 +133,10 @@ pipeline_bvs_table_l2_entry_create(
     l2_hashtable_insert(l2_hashtable, entry);
     ind_ovs_fwd_write_unlock();
 
+    stats_alloc(&entry->stats_handle);
+
     *entry_priv = entry;
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -139,13 +155,11 @@ pipeline_bvs_table_l2_entry_modify(
     }
 
     ind_ovs_fwd_write_lock();
-    if (entry->value.lag != NULL) {
-        pipeline_bvs_group_lag_release(entry->value.lag);
-    }
+    cleanup_value(&entry->value);
     entry->value = value;
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -160,12 +174,15 @@ pipeline_bvs_table_l2_entry_delete(
     bighash_remove(l2_hashtable, &entry->hash_entry);
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
-    flow_stats->packets = entry->stats.packets;
-    flow_stats->bytes = entry->stats.bytes;
-    if (entry->value.lag != NULL) {
-        pipeline_bvs_group_lag_release(entry->value.lag);
-    }
+    ind_ovs_barrier_defer_revalidation(cxn_id);
+
+    struct stats stats;
+    stats_get(&entry->stats_handle, &stats);
+    flow_stats->packets = stats.packets;
+    flow_stats->bytes = stats.bytes;
+
+    cleanup_value(&entry->value);
+    stats_free(&entry->stats_handle);
     aim_free(entry);
     return INDIGO_ERROR_NONE;
 }
@@ -176,8 +193,10 @@ pipeline_bvs_table_l2_entry_stats_get(
     indigo_fi_flow_stats_t *flow_stats)
 {
     struct l2_entry *entry = entry_priv;
-    flow_stats->packets = entry->stats.packets;
-    flow_stats->bytes = entry->stats.bytes;
+    struct stats stats;
+    stats_get(&entry->stats_handle, &stats);
+    flow_stats->packets = stats.packets;
+    flow_stats->bytes = stats.bytes;
     return INDIGO_ERROR_NONE;
 }
 
@@ -187,8 +206,10 @@ pipeline_bvs_table_l2_entry_hit_status_get(
     bool *hit_status)
 {
     struct l2_entry *entry = entry_priv;
-    if (entry->stats.packets != entry->last_hit_check_packets) {
-        entry->last_hit_check_packets = entry->stats.packets;
+    struct stats stats;
+    stats_get(&entry->stats_handle, &stats);
+    if (stats.packets != entry->last_hit_check_packets) {
+        entry->last_hit_check_packets = stats.packets;
         *hit_status = true;
     } else {
         *hit_status = false;

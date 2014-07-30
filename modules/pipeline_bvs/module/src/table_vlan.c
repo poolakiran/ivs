@@ -25,6 +25,8 @@
 #define TEMPLATE_ENTRY_FIELD hash_entry
 #include <BigHash/bighash_template.h>
 
+static void cleanup_value(struct vlan_value *value);
+
 static bighash_table_t *vlan_hashtable;
 static const of_match_fields_t required_mask = {
     .vlan_vid = 0xffff,
@@ -35,10 +37,10 @@ parse_key(of_flow_add_t *obj, struct vlan_key *key)
 {
     of_match_t match;
     if (of_flow_add_match_get(obj, &match) < 0) {
-        return INDIGO_ERROR_UNKNOWN;
+        return INDIGO_ERROR_BAD_MATCH;
     }
     if (memcmp(&match.masks, &required_mask, sizeof(of_match_fields_t))) {
-        return INDIGO_ERROR_COMPAT;
+        return INDIGO_ERROR_BAD_MATCH;
     }
     key->vlan_vid = match.fields.vlan_vid & ~VLAN_CFI_BIT;
     return INDIGO_ERROR_NONE;
@@ -93,25 +95,35 @@ parse_value(of_flow_add_t *obj, struct vlan_value *value)
                         of_oxm_bsn_vrf_value_get(&oxm.bsn_vrf, &value->vrf);
                         break;
                     default:
-                        AIM_LOG_WARN("Unexpected set-field OXM %s in vlan table", of_object_id_str[oxm.header.object_id]);
-                        break;
+                        AIM_LOG_ERROR("Unexpected set-field OXM %s in vlan table", of_object_id_str[oxm.header.object_id]);
+                        goto error;
                     }
                     break;
                 }
                 default:
-                    AIM_LOG_WARN("Unexpected action %s in vlan table", of_object_id_str[act.header.object_id]);
-                    break;
+                    AIM_LOG_ERROR("Unexpected action %s in vlan table", of_object_id_str[act.header.object_id]);
+                    goto error;
                 }
             }
             break;
         }
         default:
-            AIM_LOG_WARN("Unexpected instruction %s in vlan table", of_object_id_str[inst.header.object_id]);
-            break;
+            AIM_LOG_ERROR("Unexpected instruction %s in vlan table", of_object_id_str[inst.header.object_id]);
+            goto error;
         }
     }
 
     return INDIGO_ERROR_NONE;
+
+error:
+    cleanup_value(value);
+    return INDIGO_ERROR_BAD_ACTION;
+}
+
+static void
+cleanup_value(struct vlan_value *value)
+{
+    aim_free(value->ports);
 }
 
 static indigo_error_t
@@ -142,7 +154,7 @@ pipeline_bvs_table_vlan_entry_create(
     ind_ovs_fwd_write_unlock();
 
     *entry_priv = entry;
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -161,11 +173,11 @@ pipeline_bvs_table_vlan_entry_modify(
     }
 
     ind_ovs_fwd_write_lock();
-    aim_free(entry->value.ports);
+    cleanup_value(&entry->value);
     entry->value = value;
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -180,8 +192,8 @@ pipeline_bvs_table_vlan_entry_delete(
     bighash_remove(vlan_hashtable, &entry->hash_entry);
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
-    aim_free(entry->value.ports);
+    ind_ovs_barrier_defer_revalidation(cxn_id);
+    cleanup_value(&entry->value);
     aim_free(entry);
     return INDIGO_ERROR_NONE;
 }

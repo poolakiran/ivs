@@ -49,6 +49,9 @@ parse_value(of_list_bucket_t *of_buckets, struct lag_value *value)
                     goto error;
                 }
                 break;
+            case OF_ACTION_BSN_CHECKSUM:
+                /* ignore */
+                break;
             default:
                 AIM_LOG_ERROR("unsupported LAG group action %s", of_object_id_str[act.header.object_id]);
                 goto error;
@@ -70,7 +73,7 @@ parse_value(of_list_bucket_t *of_buckets, struct lag_value *value)
 
 error:
     xbuf_cleanup(&buckets_xbuf);
-    return INDIGO_ERROR_PARAM;
+    return INDIGO_ERROR_BAD_ACTION;
 }
 
 static void
@@ -133,7 +136,7 @@ pipeline_bvs_group_lag_modify(
     lag->value = value;
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 

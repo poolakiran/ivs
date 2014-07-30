@@ -39,8 +39,8 @@ AIM_LOG_STRUCT_DEFINE(AIM_LOG_OPTIONS_DEFAULT, AIM_LOG_BITS_DEFAULT, NULL, 0);
 
 struct flowtable {
     struct tcam *tcam;
-    struct ind_ovs_flow_stats matched_stats;
-    struct ind_ovs_flow_stats missed_stats;
+    struct stats_handle matched_stats_handle;
+    struct stats_handle missed_stats_handle;
     uint8_t table_id;
 };
 
@@ -58,8 +58,7 @@ struct flowtable_entry {
     struct tcam_entry tcam_entry;
     struct flowtable_value value;
 
-    /* Updated periodically from the kernel flows */
-    struct ind_ovs_flow_stats stats;
+    struct stats_handle stats_handle;
 
     /* Packet stats from the last hit bit check */
     /* See indigo_fwd_table_stats_get */
@@ -94,6 +93,8 @@ pipeline_standard_init(const char *name)
         of_table_name_t name;
         snprintf(name, sizeof(name), "table %d", i);
         indigo_core_table_register(i, name, &table_ops, flowtable);
+        stats_alloc(&flowtable->matched_stats_handle);
+        stats_alloc(&flowtable->missed_stats_handle);
         flowtables[i] = flowtable;
     }
 }
@@ -105,6 +106,8 @@ pipeline_standard_finish(void)
     for (i = 0; i < NUM_TABLES; i++) {
         indigo_core_table_unregister(i);
         tcam_destroy(flowtables[i]->tcam);
+        stats_free(&flowtables[i]->matched_stats_handle);
+        stats_free(&flowtables[i]->missed_stats_handle);
         aim_free(flowtables[i]);
     }
 }
@@ -133,19 +136,19 @@ pipeline_standard_process(struct ind_ovs_parsed_key *key,
                 uint64_t userdata = IVS_PKTIN_USERDATA(OF_PACKET_IN_REASON_NO_MATCH, 0);
                 action_controller(actx, userdata);
             }
-            xbuf_append_ptr(stats, &flowtable->missed_stats);
+            pipeline_add_stats(stats, &flowtable->missed_stats_handle);
             break;
         }
 
         struct flowtable_entry *entry = container_of(tcam_entry, tcam_entry, struct flowtable_entry);
 
         if (entry->table_miss) {
-            xbuf_append_ptr(stats, &flowtable->missed_stats);
+            pipeline_add_stats(stats, &flowtable->missed_stats_handle);
         } else {
-            xbuf_append_ptr(stats, &flowtable->matched_stats);
+            pipeline_add_stats(stats, &flowtable->matched_stats_handle);
         }
 
-        xbuf_append_ptr(stats, &entry->stats);
+        pipeline_add_stats(stats, &entry->stats_handle);
 
         pipeline_standard_translate_actions(actx, &entry->value.apply_actions);
 
@@ -254,7 +257,7 @@ parse_value(of_flow_add_t *flow_mod, struct flowtable_value *value,
         if ((err = ind_ovs_translate_openflow_actions(&openflow_actions,
                                                       &value->apply_actions,
                                                       table_miss)) < 0) {
-            return err;
+            goto error;
         }
     } else {
         int rv;
@@ -273,7 +276,7 @@ parse_value(of_flow_add_t *flow_mod, struct flowtable_value *value,
                 if ((err = ind_ovs_translate_openflow_actions(&openflow_actions,
                                                               &value->apply_actions,
                                                               table_miss)) < 0) {
-                    return err;
+                    goto error;
                 }
                 break;
             case OF_INSTRUCTION_WRITE_ACTIONS:
@@ -282,7 +285,7 @@ parse_value(of_flow_add_t *flow_mod, struct flowtable_value *value,
                 if ((err = ind_ovs_translate_openflow_actions(&openflow_actions,
                                                               &value->write_actions,
                                                               table_miss)) < 0) {
-                    return err;
+                    goto error;
                 }
                 break;
             case OF_INSTRUCTION_CLEAR_ACTIONS:
@@ -293,14 +296,16 @@ parse_value(of_flow_add_t *flow_mod, struct flowtable_value *value,
                 if (value->next_table_id <= table_id ||
                         value->next_table_id >= NUM_TABLES) {
                     AIM_LOG_WARN("invalid goto next_table_id %u", value->next_table_id);
-                    return INDIGO_ERROR_RANGE;
+                    err = INDIGO_ERROR_RANGE;
+                    goto error;
                 }
                 break;
             case OF_INSTRUCTION_METER:
                 of_instruction_meter_meter_id_get(&inst.meter, &value->meter_id);
                 break;
             default:
-                return INDIGO_ERROR_COMPAT;
+                err = INDIGO_ERROR_COMPAT;
+                goto error;
             }
         }
     }
@@ -309,6 +314,11 @@ parse_value(of_flow_add_t *flow_mod, struct flowtable_value *value,
     xbuf_compact(&value->write_actions);
 
     return INDIGO_ERROR_NONE;
+
+error:
+    xbuf_cleanup(&value->apply_actions);
+    xbuf_cleanup(&value->write_actions);
+    return err;
 }
 
 static bool
@@ -360,8 +370,10 @@ flowtable_entry_create(
     tcam_insert(flowtable->tcam, &entry->tcam_entry, &key, &mask, priority);
     ind_ovs_fwd_write_unlock();
 
+    stats_alloc(&entry->stats_handle);
+
     *entry_priv = entry;
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -386,7 +398,7 @@ flowtable_entry_modify(
     entry->value = value;
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -402,13 +414,16 @@ flowtable_entry_delete(
     tcam_remove(flowtable->tcam, &entry->tcam_entry);
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
 
-    flow_stats->packets = entry->stats.packets;
-    flow_stats->bytes = entry->stats.bytes;
+    struct stats stats;
+    stats_get(&entry->stats_handle, &stats);
+    flow_stats->packets = stats.packets;
+    flow_stats->bytes = stats.bytes;
 
     xbuf_cleanup(&entry->value.apply_actions);
     xbuf_cleanup(&entry->value.write_actions);
+    stats_free(&entry->stats_handle);
     aim_free(entry);
     return INDIGO_ERROR_NONE;
 }
@@ -419,8 +434,10 @@ flowtable_entry_stats_get(
     indigo_fi_flow_stats_t *flow_stats)
 {
     struct flowtable_entry *entry = entry_priv;
-    flow_stats->packets = entry->stats.packets;
-    flow_stats->bytes = entry->stats.bytes;
+    struct stats stats;
+    stats_get(&entry->stats_handle, &stats);
+    flow_stats->packets = stats.packets;
+    flow_stats->bytes = stats.bytes;
     return INDIGO_ERROR_NONE;
 }
 
@@ -431,8 +448,11 @@ flowtable_entry_hit_status_get(
 {
     struct flowtable_entry *entry = entry_priv;
 
-    if (entry->stats.packets != entry->last_hit_check_packets) {
-        entry->last_hit_check_packets = entry->stats.packets;
+    struct stats stats;
+    stats_get(&entry->stats_handle, &stats);
+
+    if (stats.packets != entry->last_hit_check_packets) {
+        entry->last_hit_check_packets = stats.packets;
         *hit = true;
     } else {
         *hit = false;
@@ -447,9 +467,11 @@ flowtable_stats_get(
     indigo_fi_table_stats_t *table_stats)
 {
     struct flowtable *flowtable = table_priv;
-    table_stats->lookup_count = flowtable->matched_stats.packets +
-                                flowtable->missed_stats.packets;
-    table_stats->matched_count = flowtable->matched_stats.packets;
+    struct stats matched_stats, missed_stats;
+    stats_get(&flowtable->matched_stats_handle, &matched_stats);
+    stats_get(&flowtable->missed_stats_handle, &missed_stats);
+    table_stats->lookup_count = matched_stats.packets + missed_stats.packets;
+    table_stats->matched_count = matched_stats.packets;
     return INDIGO_ERROR_NONE;
 }
 

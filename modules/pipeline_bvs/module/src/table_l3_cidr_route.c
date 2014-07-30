@@ -20,6 +20,8 @@
 #include "pipeline_bvs_int.h"
 #include <linux/if_ether.h>
 
+static void cleanup_value(struct l3_cidr_route_value *value);
+
 static struct tcam *l3_cidr_route_tcam;
 static const of_match_fields_t maximum_mask = {
     .bsn_vrf = 0xffffffff,
@@ -37,7 +39,7 @@ parse_key(of_flow_add_t *obj, struct l3_cidr_route_key *key,
 {
     of_match_t match;
     if (of_flow_add_match_get(obj, &match) < 0) {
-        return INDIGO_ERROR_UNKNOWN;
+        return INDIGO_ERROR_BAD_MATCH;
     }
 
     if (!pipeline_bvs_check_tcam_mask(&match.masks, &minimum_mask, &maximum_mask)) {
@@ -88,7 +90,7 @@ parse_value(of_flow_add_t *obj, struct l3_cidr_route_value *value)
 
             if (pipeline_bvs_parse_next_hop(&actions, &value->next_hop) < 0) {
                 AIM_LOG_ERROR("Failed to parse next-hop in L3 CIDR table");
-                return INDIGO_ERROR_COMPAT;
+                goto error;
             }
 
             of_action_t act;
@@ -108,8 +110,8 @@ parse_value(of_flow_add_t *obj, struct l3_cidr_route_value *value)
                         /* Handled by pipeline_bvs_parse_next_hop */
                         break;
                     default:
-                        AIM_LOG_WARN("Unexpected set-field OXM %s in l3_cidr_route table", of_object_id_str[oxm.header.object_id]);
-                        break;
+                        AIM_LOG_ERROR("Unexpected set-field OXM %s in l3_cidr_route table", of_object_id_str[oxm.header.object_id]);
+                        goto error;
                     }
                     break;
                 }
@@ -121,26 +123,36 @@ parse_value(of_flow_add_t *obj, struct l3_cidr_route_value *value)
                             value->cpu = true;
                             break;
                         default:
-                            AIM_LOG_WARN("Unexpected output port %u in l3_cidr_route_table", port_no);
-                            break;
+                            AIM_LOG_ERROR("Unexpected output port %u in l3_cidr_route_table", port_no);
+                            goto error;
                         }
                     }
                     break;
                 }
                 default:
-                    AIM_LOG_WARN("Unexpected action %s in l3_cidr_route table", of_object_id_str[act.header.object_id]);
-                    break;
+                    AIM_LOG_ERROR("Unexpected action %s in l3_cidr_route table", of_object_id_str[act.header.object_id]);
+                    goto error;
                 }
             }
             break;
         }
         default:
-            AIM_LOG_WARN("Unexpected instruction %s in l3_cidr_route table", of_object_id_str[inst.header.object_id]);
-            break;
+            AIM_LOG_ERROR("Unexpected instruction %s in l3_cidr_route table", of_object_id_str[inst.header.object_id]);
+            goto error;
         }
     }
 
     return INDIGO_ERROR_NONE;
+
+error:
+    cleanup_value(value);
+    return INDIGO_ERROR_BAD_ACTION;
+}
+
+static void
+cleanup_value(struct l3_cidr_route_value *value)
+{
+    pipeline_bvs_cleanup_next_hop(&value->next_hop);
 }
 
 static indigo_error_t
@@ -176,7 +188,7 @@ pipeline_bvs_table_l3_cidr_route_entry_create(
     ind_ovs_fwd_write_unlock();
 
     *entry_priv = entry;
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -195,11 +207,11 @@ pipeline_bvs_table_l3_cidr_route_entry_modify(
     }
 
     ind_ovs_fwd_write_lock();
-    pipeline_bvs_cleanup_next_hop(&entry->value.next_hop);
+    cleanup_value(&entry->value);
     entry->value = value;
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -214,8 +226,8 @@ pipeline_bvs_table_l3_cidr_route_entry_delete(
     tcam_remove(l3_cidr_route_tcam, &entry->tcam_entry);
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
-    pipeline_bvs_cleanup_next_hop(&entry->value.next_hop);
+    ind_ovs_barrier_defer_revalidation(cxn_id);
+    cleanup_value(&entry->value);
     aim_free(entry);
     return INDIGO_ERROR_NONE;
 }

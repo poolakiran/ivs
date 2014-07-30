@@ -25,6 +25,8 @@
 #define TEMPLATE_ENTRY_FIELD hash_entry
 #include <BigHash/bighash_template.h>
 
+static void cleanup_value(struct ingress_mirror_value *value);
+
 static bighash_table_t *ingress_mirror_hashtable;
 static const of_match_fields_t required_mask = {
     .in_port = 0xffffffff,
@@ -35,10 +37,10 @@ parse_key(of_flow_add_t *obj, struct ingress_mirror_key *key)
 {
     of_match_t match;
     if (of_flow_add_match_get(obj, &match) < 0) {
-        return INDIGO_ERROR_UNKNOWN;
+        return INDIGO_ERROR_BAD_MATCH;
     }
     if (memcmp(&match.masks, &required_mask, sizeof(of_match_fields_t))) {
-        return INDIGO_ERROR_COMPAT;
+        return INDIGO_ERROR_BAD_MATCH;
     }
     key->in_port = match.fields.in_port;
     return INDIGO_ERROR_NONE;
@@ -51,6 +53,8 @@ parse_value(of_flow_add_t *obj, struct ingress_mirror_value *value)
     of_list_instruction_t insts;
     of_instruction_t inst;
     bool seen_span_id = false;
+
+    value->span = NULL;
 
     of_flow_add_instructions_bind(obj, &insts);
     OF_LIST_INSTRUCTION_ITER(&insts, &inst, rv) {
@@ -68,39 +72,46 @@ parse_value(of_flow_add_t *obj, struct ingress_mirror_value *value)
                         of_action_group_group_id_get(&act.group, &span_id);
                         value->span = pipeline_bvs_group_span_acquire(span_id);
                         if (value->span == NULL) {
-                            AIM_LOG_WARN("Nonexistent SPAN in ingress_mirror table");
-                            break;
+                            AIM_LOG_ERROR("Nonexistent SPAN in ingress_mirror table");
+                            goto error;
                         }
                         seen_span_id = true;
                     } else {
-                        AIM_LOG_WARN("Duplicate SPAN action in ingress_mirror table");
+                        AIM_LOG_ERROR("Duplicate SPAN action in ingress_mirror table");
+                        goto error;
                     }
                     break;
                 default:
-                    AIM_LOG_WARN("Unexpected action %s in ingress_mirror table", of_object_id_str[act.header.object_id]);
-                    break;
+                    AIM_LOG_ERROR("Unexpected action %s in ingress_mirror table", of_object_id_str[act.header.object_id]);
+                    goto error;
                 }
             }
             break;
         }
         default:
-            AIM_LOG_WARN("Unexpected instruction %s in ingress_mirror table", of_object_id_str[inst.header.object_id]);
-            break;
+            AIM_LOG_ERROR("Unexpected instruction %s in ingress_mirror table", of_object_id_str[inst.header.object_id]);
+            goto error;
         }
     }
 
     if (!seen_span_id) {
-        AIM_LOG_WARN("Missing required instruction in ingress_mirror table");
-        return INDIGO_ERROR_COMPAT;
+        AIM_LOG_ERROR("Missing required instruction in ingress_mirror table");
+        goto error;
     }
 
     return INDIGO_ERROR_NONE;
+
+error:
+    cleanup_value(value);
+    return INDIGO_ERROR_BAD_ACTION;
 }
 
 static void
 cleanup_value(struct ingress_mirror_value *value)
 {
-    pipeline_bvs_group_span_release(value->span);
+    if (value->span) {
+        pipeline_bvs_group_span_release(value->span);
+    }
 }
 
 static indigo_error_t
@@ -131,7 +142,7 @@ pipeline_bvs_table_ingress_mirror_entry_create(
     ind_ovs_fwd_write_unlock();
 
     *entry_priv = entry;
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -154,7 +165,7 @@ pipeline_bvs_table_ingress_mirror_entry_modify(
     entry->value = value;
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -169,7 +180,7 @@ pipeline_bvs_table_ingress_mirror_entry_delete(
     bighash_remove(ingress_mirror_hashtable, &entry->hash_entry);
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     cleanup_value(&entry->value);
     aim_free(entry);
     return INDIGO_ERROR_NONE;

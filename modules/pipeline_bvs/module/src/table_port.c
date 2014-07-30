@@ -43,6 +43,7 @@ static struct port_entry local_entry = {
         .packet_of_death = false,
         .prioritize_pdus = false,
         .require_vlan_xlate = false,
+        .disable_vlan_counters = false,
     },
 };
 
@@ -51,10 +52,10 @@ parse_key(of_flow_add_t *obj, struct port_key *key)
 {
     of_match_t match;
     if (of_flow_add_match_get(obj, &match) < 0) {
-        return INDIGO_ERROR_UNKNOWN;
+        return INDIGO_ERROR_BAD_MATCH;
     }
     if (memcmp(&match.masks, &required_mask, sizeof(of_match_fields_t))) {
-        return INDIGO_ERROR_COMPAT;
+        return INDIGO_ERROR_BAD_MATCH;
     }
     key->port = match.fields.in_port;
     return INDIGO_ERROR_NONE;
@@ -77,6 +78,7 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
     value->packet_of_death = false;
     value->prioritize_pdus = false;
     value->require_vlan_xlate = false;
+    value->disable_vlan_counters = false;
 
     of_flow_add_instructions_bind(obj, &insts);
     OF_LIST_INSTRUCTION_ITER(&insts, &inst, rv) {
@@ -106,14 +108,14 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
                         of_oxm_bsn_vlan_xlate_port_group_id_value_get(&oxm.vlan_vid, &value->vlan_xlate_port_group_id);
                         break;
                     default:
-                        AIM_LOG_WARN("Unexpected set-field OXM %s in port table", of_object_id_str[oxm.header.object_id]);
-                        break;
+                        AIM_LOG_ERROR("Unexpected set-field OXM %s in port table", of_object_id_str[oxm.header.object_id]);
+                        goto error;
                     }
                     break;
                 }
                 default:
-                    AIM_LOG_WARN("Unexpected action %s in port table", of_object_id_str[act.header.object_id]);
-                    break;
+                    AIM_LOG_ERROR("Unexpected action %s in port table", of_object_id_str[act.header.object_id]);
+                    goto error;
                 }
             }
             break;
@@ -136,13 +138,19 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
         case OF_INSTRUCTION_BSN_REQUIRE_VLAN_XLATE:
             value->require_vlan_xlate = true;
             break;
-        default:
-            AIM_LOG_WARN("Unexpected instruction %s in port table", of_object_id_str[inst.header.object_id]);
+        case OF_INSTRUCTION_BSN_DISABLE_VLAN_COUNTERS:
+            value->disable_vlan_counters = true;
             break;
+        default:
+            AIM_LOG_ERROR("Unexpected instruction %s in port table", of_object_id_str[inst.header.object_id]);
+            goto error;
         }
     }
 
     return INDIGO_ERROR_NONE;
+
+error:
+    return INDIGO_ERROR_BAD_ACTION;
 }
 
 static indigo_error_t
@@ -178,7 +186,7 @@ pipeline_bvs_table_port_entry_create(
     ind_ovs_fwd_write_unlock();
 
     *entry_priv = entry;
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -200,7 +208,7 @@ pipeline_bvs_table_port_entry_modify(
     entry->value = value;
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -215,7 +223,7 @@ pipeline_bvs_table_port_entry_delete(
     bighash_remove(port_hashtable, &entry->hash_entry);
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     aim_free(entry);
     return INDIGO_ERROR_NONE;
 }

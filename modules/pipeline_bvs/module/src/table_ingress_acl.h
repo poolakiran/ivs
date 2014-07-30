@@ -46,7 +46,7 @@ struct ingress_acl_value {
 struct ingress_acl_entry {
     struct tcam_entry tcam_entry;
     struct ingress_acl_value value;
-    struct ind_ovs_flow_stats stats;
+    struct stats_handle stats_handle;
 };
 
 void pipeline_bvs_table_ingress_acl_register(void);

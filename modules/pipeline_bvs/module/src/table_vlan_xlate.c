@@ -26,11 +26,7 @@
 #include <BigHash/bighash_template.h>
 
 static bighash_table_t *vlan_xlate_hashtable;
-static const of_match_fields_t required_mask_lag_id = {
-    .bsn_lag_id = 0xffffffff,
-    .vlan_vid = 0xffff,
-};
-static const of_match_fields_t required_mask_vlan_xlate_port_group_id = {
+static const of_match_fields_t required_mask = {
     .bsn_vlan_xlate_port_group_id = 0xffffffff,
     .vlan_vid = 0xffff,
 };
@@ -40,19 +36,14 @@ parse_key(of_flow_add_t *obj, struct vlan_xlate_key *key)
 {
     of_match_t match;
     if (of_flow_add_match_get(obj, &match) < 0) {
-        return INDIGO_ERROR_UNKNOWN;
+        return INDIGO_ERROR_BAD_MATCH;
     }
-    if (!memcmp(&match.masks, &required_mask_vlan_xlate_port_group_id, sizeof(of_match_fields_t))) {
-        key->vlan_xlate_port_group_id = match.fields.bsn_vlan_xlate_port_group_id;
-        key->type = VLAN_XLATE_TYPE_PORT_GROUP_ID;
-    } else if (!memcmp(&match.masks, &required_mask_lag_id, sizeof(of_match_fields_t))) {
-        /* For backwards compatibility */
-        key->vlan_xlate_port_group_id = match.fields.bsn_lag_id;
-        key->type = VLAN_XLATE_TYPE_LAG_ID;
-    } else {
-        return INDIGO_ERROR_COMPAT;
+    if (memcmp(&match.masks, &required_mask, sizeof(of_match_fields_t))) {
+        return INDIGO_ERROR_BAD_MATCH;
     }
+    key->vlan_xlate_port_group_id = match.fields.bsn_vlan_xlate_port_group_id;
     key->vlan_vid = match.fields.vlan_vid & ~VLAN_CFI_BIT;
+    key->pad = 0;
     return INDIGO_ERROR_NONE;
 }
 
@@ -84,30 +75,33 @@ parse_value(of_flow_add_t *obj, struct vlan_xlate_value *value)
                         seen_new_vlan_vid = true;
                         break;
                     default:
-                        AIM_LOG_WARN("Unexpected set-field OXM %s in vlan_xlate table", of_object_id_str[oxm.header.object_id]);
-                        break;
+                        AIM_LOG_ERROR("Unexpected set-field OXM %s in vlan_xlate table", of_object_id_str[oxm.header.object_id]);
+                        goto error;
                     }
                     break;
                 }
                 default:
-                    AIM_LOG_WARN("Unexpected action %s in vlan_xlate table", of_object_id_str[act.header.object_id]);
-                    break;
+                    AIM_LOG_ERROR("Unexpected action %s in vlan_xlate table", of_object_id_str[act.header.object_id]);
+                    goto error;
                 }
             }
             break;
         }
         default:
-            AIM_LOG_WARN("Unexpected instruction %s in vlan_xlate table", of_object_id_str[inst.header.object_id]);
-            break;
+            AIM_LOG_ERROR("Unexpected instruction %s in vlan_xlate table", of_object_id_str[inst.header.object_id]);
+            goto error;
         }
     }
 
     if (!seen_new_vlan_vid) {
         AIM_LOG_WARN("Missing required instruction in vlan_xlate table");
-        return INDIGO_ERROR_COMPAT;
+        goto error;
     }
 
     return INDIGO_ERROR_NONE;
+
+error:
+    return INDIGO_ERROR_BAD_ACTION;
 }
 
 static indigo_error_t
@@ -130,8 +124,8 @@ pipeline_bvs_table_vlan_xlate_entry_create(
         return rv;
     }
 
-    AIM_LOG_VERBOSE("Create vlan_xlate entry type=%u vlan_xlate_port_group_id=%u, vlan=%u -> vlan %u",
-                    entry->key.type, entry->key.vlan_xlate_port_group_id, &entry->key.vlan_vid,
+    AIM_LOG_VERBOSE("Create vlan_xlate entry vlan_xlate_port_group_id=%u, vlan=%u -> vlan %u",
+                    entry->key.vlan_xlate_port_group_id, &entry->key.vlan_vid,
                     entry->value.new_vlan_vid);
 
     ind_ovs_fwd_write_lock();
@@ -139,7 +133,7 @@ pipeline_bvs_table_vlan_xlate_entry_create(
     ind_ovs_fwd_write_unlock();
 
     *entry_priv = entry;
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -161,7 +155,7 @@ pipeline_bvs_table_vlan_xlate_entry_modify(
     entry->value = value;
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -176,7 +170,7 @@ pipeline_bvs_table_vlan_xlate_entry_delete(
     bighash_remove(vlan_xlate_hashtable, &entry->hash_entry);
     ind_ovs_fwd_write_unlock();
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     aim_free(entry);
     return INDIGO_ERROR_NONE;
 }
@@ -220,22 +214,22 @@ pipeline_bvs_table_vlan_xlate_unregister(void)
 }
 
 struct vlan_xlate_entry *
-pipeline_bvs_table_vlan_xlate_lookup(enum vlan_xlate_type type, uint32_t vlan_xlate_port_group_id, uint16_t vlan_vid)
+pipeline_bvs_table_vlan_xlate_lookup(uint32_t vlan_xlate_port_group_id, uint16_t vlan_vid)
 {
     struct vlan_xlate_key key = {
         .vlan_xlate_port_group_id = vlan_xlate_port_group_id,
         .vlan_vid = vlan_vid,
-        .type = type,
+        .pad = 0,
     };
 
     struct vlan_xlate_entry *entry = vlan_xlate_hashtable_first(vlan_xlate_hashtable, &key);
     if (entry) {
-        AIM_LOG_VERBOSE("Hit vlan_xlate entry type=%u vlan_xlate_port_group_id=%u, vlan=%u -> vlan %u",
-                        entry->key.type, entry->key.vlan_xlate_port_group_id, entry->key.vlan_vid,
+        AIM_LOG_VERBOSE("Hit vlan_xlate entry vlan_xlate_port_group_id=%u, vlan=%u -> vlan %u",
+                        entry->key.vlan_xlate_port_group_id, entry->key.vlan_vid,
                         entry->value.new_vlan_vid);
     } else {
-        AIM_LOG_VERBOSE("Miss vlan_xlate entry type=%u vlan_xlate_port_group_id=%u, vlan=%u",
-                        key.type, key.vlan_xlate_port_group_id, key.vlan_vid);
+        AIM_LOG_VERBOSE("Miss vlan_xlate entry vlan_xlate_port_group_id=%u, vlan=%u",
+                        key.vlan_xlate_port_group_id, key.vlan_vid);
     }
     return entry;
 }

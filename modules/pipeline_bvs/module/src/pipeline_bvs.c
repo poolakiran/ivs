@@ -151,14 +151,14 @@ process_l2(struct ctx *ctx)
     if (ctx->key->ethernet.eth_dst[0] & 1) {
         if (!memcmp(ctx->key->ethernet.eth_dst, broadcast_mac.addr, OF_MAC_ADDR_BYTES)) {
             /* Increment broadcast port counters */
-            apply_stats(ctx, &port_counters->rx_broadcast_stats);
+            pipeline_add_stats(ctx->stats, &port_counters->rx_broadcast_stats_handle);
         } else {
             /* Increment multicast port counters */
-            apply_stats(ctx, &port_counters->rx_multicast_stats);
+            pipeline_add_stats(ctx->stats, &port_counters->rx_multicast_stats_handle);
         }
     } else {
         /* Increment unicast port counters */
-        apply_stats(ctx, &port_counters->rx_unicast_stats);
+        pipeline_add_stats(ctx->stats, &port_counters->rx_unicast_stats_handle);
     }
 
     bool packet_of_death = false;
@@ -216,11 +216,7 @@ process_l2(struct ctx *ctx)
     } else {
         if (ctx->key->vlan & htons(VLAN_CFI_BIT)) {
             struct vlan_xlate_entry *vlan_xlate_entry =
-                pipeline_bvs_table_vlan_xlate_lookup(VLAN_XLATE_TYPE_PORT_GROUP_ID, port_entry->value.vlan_xlate_port_group_id, vlan_vid);
-            if (vlan_xlate_entry == NULL) {
-                /* For backwards compatibility */
-                vlan_xlate_entry = pipeline_bvs_table_vlan_xlate_lookup(VLAN_XLATE_TYPE_LAG_ID, ctx->ingress_lag_id, vlan_vid);
-            }
+                pipeline_bvs_table_vlan_xlate_lookup(port_entry->value.vlan_xlate_port_group_id, vlan_vid);
             if (vlan_xlate_entry) {
                 vlan_vid = vlan_xlate_entry->value.new_vlan_vid;
                 action_set_vlan_vid(ctx->actx, vlan_vid);
@@ -253,7 +249,9 @@ process_l2(struct ctx *ctx)
         return;
     }
 
-    apply_stats(ctx, ind_ovs_rx_vlan_stats_select(vlan_vid));
+    if (!port_entry->value.disable_vlan_counters) {
+        pipeline_add_stats(ctx->stats, ind_ovs_rx_vlan_stats_select(vlan_vid));
+    }
 
     if (!vlan_acl_entry) {
         AIM_LOG_VERBOSE("VLAN %u: vrf=%u", vlan_vid, vlan_entry->value.vrf);
@@ -265,7 +263,7 @@ process_l2(struct ctx *ctx)
     struct l2_entry *src_l2_entry =
         pipeline_bvs_table_l2_lookup(vlan_vid, ctx->key->ethernet.eth_src);
     if (src_l2_entry) {
-        apply_stats(ctx, &src_l2_entry->stats);
+        pipeline_add_stats(ctx->stats, &src_l2_entry->stats_handle);
 
         if (src_l2_entry->value.lag == NULL) {
             AIM_LOG_VERBOSE("L2 source discard");
@@ -376,25 +374,30 @@ static void
 process_l3(struct ctx *ctx)
 {
     struct next_hop *next_hop = NULL;
-    bool cpu = false;
+    bool l3_cpu = false;
+    bool acl_cpu = false;
     bool drop = false;
+    bool bad_ttl = ctx->key->ipv4.ipv4_ttl <= 1;
 
-    if (ctx->key->ipv4.ipv4_ttl <= 1) {
+    if (bad_ttl) {
         AIM_LOG_VERBOSE("sending TTL expired packet to agent");
         mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_TTL_EXPIRED);
         mark_drop(ctx);
+        process_debug(ctx);
+        process_pktin(ctx);
+        return;
     } else {
         struct l3_host_route_entry *l3_host_route_entry =
             pipeline_bvs_table_l3_host_route_lookup(ctx->vrf, ctx->key->ipv4.ipv4_dst);
         if (l3_host_route_entry != NULL) {
             next_hop = &l3_host_route_entry->value.next_hop;
-            cpu = l3_host_route_entry->value.cpu;
+            l3_cpu = l3_host_route_entry->value.cpu;
         } else {
             struct l3_cidr_route_entry *l3_cidr_route_entry =
                 pipeline_bvs_table_l3_cidr_route_lookup(ctx->vrf, ctx->key->ipv4.ipv4_dst);
             if (l3_cidr_route_entry != NULL) {
                 next_hop = &l3_cidr_route_entry->value.next_hop;
-                cpu = l3_cidr_route_entry->value.cpu;
+                l3_cpu = l3_cidr_route_entry->value.cpu;
             }
         }
     }
@@ -405,9 +408,9 @@ process_l3(struct ctx *ctx)
     struct ingress_acl_entry *ingress_acl_entry =
         pipeline_bvs_table_ingress_acl_lookup(&ingress_acl_key);
     if (ingress_acl_entry) {
-        apply_stats(ctx, &ingress_acl_entry->stats);
+        pipeline_add_stats(ctx->stats, &ingress_acl_entry->stats_handle);
         drop = drop || ingress_acl_entry->value.drop;
-        cpu = cpu || ingress_acl_entry->value.cpu;
+        acl_cpu = ingress_acl_entry->value.cpu;
         if (ingress_acl_entry->value.next_hop.type != NEXT_HOP_TYPE_NULL) {
             next_hop = &ingress_acl_entry->value.next_hop;
         }
@@ -416,15 +419,17 @@ process_l3(struct ctx *ctx)
     bool hit = next_hop != NULL;
     bool valid_next_hop = next_hop != NULL && next_hop->type != NEXT_HOP_TYPE_NULL;
 
-    if (ctx->key->ipv4.ipv4_ttl <= 1) {
-        if (cpu) {
-            AIM_LOG_VERBOSE("L3 copy to CPU");
-            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_L3_CPU);
-        }
-    } else if (cpu) {
+    if (l3_cpu) {
         AIM_LOG_VERBOSE("L3 copy to CPU");
         mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_L3_CPU);
+    }
 
+    if (acl_cpu) {
+        AIM_LOG_VERBOSE("Ingress ACL copy to CPU");
+        mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_INGRESS_ACL);
+    }
+
+    if (l3_cpu || acl_cpu) {
         if (drop) {
             AIM_LOG_VERBOSE("L3 drop");
             mark_drop(ctx);
@@ -497,7 +502,7 @@ process_debug(struct ctx *ctx)
         return;
     }
 
-    apply_stats(ctx, &debug_entry->stats);
+    pipeline_add_stats(ctx->stats, &debug_entry->stats_handle);
 
     if (debug_entry->value.span != NULL) {
         if (ctx->original_vlan_vid != 0) {
@@ -549,7 +554,9 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
         return;
     }
 
-    apply_stats(ctx, ind_ovs_tx_vlan_stats_select(ctx->internal_vlan_vid));
+    if (!dst_port_entry->value.disable_vlan_counters) {
+        pipeline_add_stats(ctx->stats, ind_ovs_tx_vlan_stats_select(ctx->internal_vlan_vid));
+    }
 
     struct ind_ovs_port_counters *port_counters = ind_ovs_port_stats_select(out_port);
     AIM_ASSERT(port_counters != NULL);
@@ -557,14 +564,14 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
     if (ctx->key->ethernet.eth_dst[0] & 1) {
         if (!memcmp(ctx->key->ethernet.eth_dst, broadcast_mac.addr, OF_MAC_ADDR_BYTES)) {
             /* Increment broadcast port counters */
-            apply_stats(ctx, &port_counters->tx_broadcast_stats);
+            pipeline_add_stats(ctx->stats, &port_counters->tx_broadcast_stats_handle);
         } else {
             /* Increment multicast port counters */
-            apply_stats(ctx, &port_counters->tx_multicast_stats);
+            pipeline_add_stats(ctx->stats, &port_counters->tx_multicast_stats_handle);
         }
     } else {
         /* Increment unicast port counters */
-        apply_stats(ctx, &port_counters->tx_unicast_stats);
+        pipeline_add_stats(ctx->stats, &port_counters->tx_unicast_stats_handle);
     }
 
     /* Egress VLAN translation */
@@ -574,11 +581,7 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
         tag = 0;
     } else {
         struct egr_vlan_xlate_entry *egr_vlan_xlate_entry =
-            pipeline_bvs_table_egr_vlan_xlate_lookup(EGR_VLAN_XLATE_TYPE_PORT_GROUP_ID, dst_port_entry->value.vlan_xlate_port_group_id, ctx->internal_vlan_vid);
-        if (egr_vlan_xlate_entry == NULL) {
-            /* For backwards compatibility */
-            egr_vlan_xlate_entry = pipeline_bvs_table_egr_vlan_xlate_lookup(EGR_VLAN_XLATE_TYPE_PORT, out_port, ctx->internal_vlan_vid);
-        }
+            pipeline_bvs_table_egr_vlan_xlate_lookup(dst_port_entry->value.vlan_xlate_port_group_id, ctx->internal_vlan_vid);
         if (egr_vlan_xlate_entry) {
             tag = egr_vlan_xlate_entry->value.new_vlan_vid;
             action_set_vlan_vid(ctx->actx, tag);
