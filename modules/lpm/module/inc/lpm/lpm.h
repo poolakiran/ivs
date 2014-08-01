@@ -27,7 +27,7 @@
  * the entry where the largest number of leading address bits of the
  * destination address match those in the entry.
  *
- * The actual datastructure used to store the cidr route enteries and the
+ * The actual datastructure used to store the cidr route entries and the
  * associated next hop is a trie.
  */
 
@@ -87,39 +87,14 @@
 #ifndef LPM_H
 #define LPM_H
 
-#include <AIM/aim_list.h>
+#include <stdint.h>
 
-/*
- * lpm trie entry.
- *
- * This struct is intended to be embedded in a containing object.
- *
- * It must not currently be in a lpm trie when the containing object
- * is freed.
- *
- * It should be treated as opaque. It is initialized by lpm_trie_insert.
- */
-struct lpm_trie_entry {
-    uint32_t key;                     /* Node key        */
-    uint8_t mask_len;                 /* Cidr of mask    */
-    uint8_t match_bit_count;          /* Number of bits to match */
-    struct lpm_trie_entry *left;      /* Left pointer    */
-    struct lpm_trie_entry *right;     /* Right pointer   */
-    void *value;                      /* Node value      */
-};
-
-/*
- * Top-level lpm_trie object.
- */
-struct lpm_trie {
-    struct  lpm_trie_entry *root;
-    uint32_t size;
-};
+struct lpm_trie;
 
 /*
  * Create a lpm trie.
  */
-struct lpm_trie *lpm_trie_create();
+struct lpm_trie *lpm_trie_create(void);
 
 /*
  * Destroy a lpm trie.
@@ -139,20 +114,21 @@ void lpm_trie_destroy(struct lpm_trie *lpm_trie);
  * Add a entry to the trie
  * @param lpm_trie top level trie object containing the root info
  * @param key the key to add
- * @param mask the netmask associated with the key in ip format
+ * @param key_mask_len the prefix associated with the key
  * @param value the value to add
  */
-void lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key, uint32_t mask,
-                     void *value);
+void lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
+                     uint8_t key_mask_len, void *value);
 
 /*
  * Remove an entry from a lpm trie.
  *
  * @param lpm_trie top level trie object containing the root info
  * @param key the key to remove
- * @param mask the netmask associated with the key in ip format
+ * @param key_mask_len the prefix associated with the key
  */
-void lpm_trie_remove(struct lpm_trie *lpm_trie, uint32_t key, uint32_t mask);
+void lpm_trie_remove(struct lpm_trie *lpm_trie, uint32_t key,
+                     uint8_t key_mask_len);
 
 /*
  * Find an entry given a key in a lpm trie and return the data

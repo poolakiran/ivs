@@ -22,12 +22,24 @@
  */
 
 #include <AIM/aim.h>
-#include <lpm/lpm.h>
+#include <lpm_int.h>
 #include "lpm_log.h"
 
 /*
+ * lpm trie entry.
+ */
+struct lpm_trie_entry {
+    uint32_t key;                     /* Node key        */
+    uint8_t mask_len;                 /* Cidr of mask    */
+    uint8_t match_bit_count;          /* Number of bits to match */
+    struct lpm_trie_entry *left;      /* Left pointer    */
+    struct lpm_trie_entry *right;     /* Right pointer   */
+    void *value;                      /* Node value      */
+};
+
+/*
  * Private function used to return whether
- * or not bit 'i' is set in 'key'.
+ * or not bit 'i' counting from the MSB is set in 'key'.
  */
 static bool
 is_bit_set(uint32_t key, int i)
@@ -36,33 +48,31 @@ is_bit_set(uint32_t key, int i)
 }
 
 /*
- * Private function used to convert network mask in ip form to a
- * cidr notation specifying number of bits in the key that are significant.
+ * Compute netmask address given prefix
  */
-static uint8_t
-mask_to_cidr(uint32_t mask)
+static uint32_t
+netmask(int prefix)
 {
-    uint8_t cidr = 0;
-    while (mask) {
-        cidr += (mask & 0x01);
-        mask >>= 1;
-    }
-
-    return cidr;
+    if (prefix == 0)
+        return(~((uint32_t) -1));
+    else
+        return(~((1 << (32 - prefix)) - 1));
 }
 
 /*
  * Create a lpm trie entry node
  */
 static struct lpm_trie_entry *
-trie_entry_create(uint32_t key, uint8_t mask_len, void *value)
+trie_entry_create(uint32_t key, uint8_t mask_len, uint8_t bit, void *value)
 {
-    AIM_LOG_TRACE("Create lpm trie entry with ipv4=%{ipv4a}/%u", key, mask_len);
+    AIM_LOG_TRACE("Create lpm trie entry with ipv4=%{ipv4a}/%u, bit=%u",
+                  key, mask_len, bit);
 
     struct lpm_trie_entry *entry = aim_zmalloc(sizeof(struct lpm_trie_entry));
 
     entry->key = key;
     entry->mask_len = mask_len;
+    entry->match_bit_count = bit;
     entry->value = value;
     entry->left = NULL;
     entry->right = NULL;
@@ -89,7 +99,8 @@ trie_entry_remove(struct lpm_trie *lpm_trie, struct lpm_trie_entry *current,
 
     /*
      * Case 2: If current node has only one child present, then the current
-     * node is removed and that child takes its place in the trie
+     * node is removed and that child takes its place in the trie.
+     * This case also handles a node with no children.
      */
     struct lpm_trie_entry *current_child = NULL;
     if (current->left != NULL) {
@@ -112,7 +123,8 @@ trie_entry_remove(struct lpm_trie *lpm_trie, struct lpm_trie_entry *current,
      */
     if (lpm_trie->root == current) {
         lpm_trie->root = current_child;
-        goto free_and_return;
+        aim_free(current);
+        return;
     }
 
     /*
@@ -136,7 +148,8 @@ trie_entry_remove(struct lpm_trie *lpm_trie, struct lpm_trie_entry *current,
      * still has the subtree where the current node was
      */
     if (current_child != NULL) {
-        goto free_and_return;
+        aim_free(current);
+        return;
     }
 
     /*
@@ -146,7 +159,8 @@ trie_entry_remove(struct lpm_trie *lpm_trie, struct lpm_trie_entry *current,
      * copy over the value from the remaining child.
      */
     if (parent->value != NULL) {
-        goto free_and_return;
+        aim_free(current);
+        return;
     }
 
     /*
@@ -170,8 +184,6 @@ trie_entry_remove(struct lpm_trie *lpm_trie, struct lpm_trie_entry *current,
 
     parent->match_bit_count += sibling->match_bit_count;
     aim_free(sibling);
-
-free_and_return:
     aim_free(current);
     return;
 }
@@ -180,11 +192,12 @@ free_and_return:
  * Documented in lpm.h
  */
 struct lpm_trie *
-lpm_trie_create()
+lpm_trie_create(void)
 {
     struct lpm_trie *lpm_trie = aim_zmalloc(sizeof(struct lpm_trie));
 
     lpm_trie->root = NULL;
+    lpm_trie->size = 0;
 
     return lpm_trie;
 }
@@ -199,7 +212,6 @@ lpm_trie_destroy(struct lpm_trie *lpm_trie)
     AIM_ASSERT(lpm_trie->root == NULL, "attempted to delete a non empty lpm trie");
 
     aim_free(lpm_trie);
-    lpm_trie = NULL;
 }
 
 /*
@@ -207,7 +219,7 @@ lpm_trie_destroy(struct lpm_trie *lpm_trie)
  */
 void
 lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
-                uint32_t mask, void *value)
+                uint8_t key_mask_len, void *value)
 {
     AIM_ASSERT(lpm_trie != NULL, "attempted to insert a entry in a NULL lpm trie");
     AIM_ASSERT(value != NULL, "attempted to insert a entry with NULL value in lpm trie");
@@ -215,19 +227,13 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
     /*
      * Make sure the key matches the mask.
      */
-    key &= mask;
-
-    /*
-     * Find total number of bits in the key that are significant.
-     */
-    uint8_t key_mask_len = mask_to_cidr(mask);
+    AIM_ASSERT(key == (key & netmask(key_mask_len)), "key doesn't matches the mask");
 
     AIM_LOG_TRACE("Add lpm trie entry with ipv4=%{ipv4a}/%u", key, key_mask_len);
 
     if (lpm_trie->root == NULL) {
         /* First entry */
-        lpm_trie->root = trie_entry_create(key, key_mask_len, value);
-        lpm_trie->root->match_bit_count = key_mask_len;
+        lpm_trie->root = trie_entry_create(key, key_mask_len, key_mask_len, value);
         lpm_trie->size += 1;
         return;
     }
@@ -268,9 +274,9 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
                  */
                 struct lpm_trie_entry *entry = trie_entry_create(current->key,
                                                                  current->mask_len,
+                                                                 current->match_bit_count-index,
                                                                  current->value);
 
-                entry->match_bit_count = current->match_bit_count - index;
                 entry->left = current->left;
                 entry->right = current->right;
 
@@ -301,15 +307,16 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
                  * need to split node here
                  */
                 struct lpm_trie_entry *new_entry = trie_entry_create(key,
-                                                   key_mask_len, value);
+                                                   key_mask_len,
+                                                   key_mask_len-total_index-index,
+                                                   value);
 
                 struct lpm_trie_entry *old_entry = trie_entry_create(
                                                    current->key,
                                                    current->mask_len,
+                                                   current->match_bit_count-index,
                                                    current->value);
 
-                new_entry->match_bit_count = key_mask_len - total_index - index;
-                old_entry->match_bit_count = current->match_bit_count - index;
                 old_entry->left = current->left;
                 old_entry->right = current->right;
 
@@ -341,37 +348,42 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
         /*
          * Completely matched the key in the node.
          * Traverse its branches
+         * Used bits are the remaining mask bits in the key
          */
         if ((total_index + index) < key_mask_len) {
-            bool insert = false;
 
             if (is_bit_set(key, total_index + index)) {
                 /* left branch */
                 if (current->left == NULL) {
-                    current->left = trie_entry_create(key, key_mask_len, value);
-                    insert = true;
+                    current->left = trie_entry_create(key, key_mask_len,
+                                                      key_mask_len-total_index-index,
+                                                      value);
+                    lpm_trie->size += 1;
+                    return;
                 }
                 current = current->left;
             } else {
                 /* right branch */
                 if (current->right == NULL) {
-                    current->right = trie_entry_create(key, key_mask_len, value);
-                    insert = true;
+                    current->right = trie_entry_create(key, key_mask_len,
+                                                       key_mask_len-total_index-index,
+                                                       value);
+                    lpm_trie->size += 1;
+                    return;
                 }
                 current = current->right;
-            }
-            if (insert) {
-                /* Used bits are the remaining maskBits in the key */
-                current->match_bit_count = key_mask_len - total_index - index;
-                lpm_trie->size += 1;
-
-                return;
             }
 
             total_index += index;
             index = 0;
         } else {
-            /* exact match for existing leaf */
+
+            /*
+             * Its either an exact match for existing leaf or
+             * the match_bit_count of an internal node matches the new key
+             *
+             * Overwriting the current node
+             */
             if (current->value == NULL) {
                 lpm_trie->size += 1;
             }
@@ -396,20 +408,15 @@ lpm_trie_search(struct lpm_trie *lpm_trie, uint32_t key)
 
     struct lpm_trie_entry *current = lpm_trie->root;
 
-    int index = 0;
     int total_index = 0;
 
     AIM_LOG_TRACE("Search lpm trie for key=%{ipv4a}", key);
 
     while (current != NULL) {
-        while (index < current->match_bit_count) {
-            bool current_bit = is_bit_set(current->key, total_index + index);
-            bool key_bit = is_bit_set(key, total_index + index);
-            if (current_bit != key_bit) {
-                return result_value;
-            }
-
-            index += 1;
+        uint8_t prefix_len = total_index + current->match_bit_count;
+        uint32_t mask = prefix_len == 32 ? ~0u : ~((uint32_t)~0 >> prefix_len);
+        if ((current->key & mask) != (key & mask)) {
+            return result_value;
         }
 
         if (current->value != NULL) {
@@ -418,14 +425,12 @@ lpm_trie_search(struct lpm_trie *lpm_trie, uint32_t key)
             result_value = current->value;
         }
 
-        if (is_bit_set(key, total_index + index)) {
+        total_index += current->match_bit_count;
+        if (is_bit_set(key, total_index)) {
             current = current->left;
         } else {
             current = current->right;
         }
-
-        total_index += index;
-        index = 0;
     }
 
     return result_value;
@@ -435,20 +440,14 @@ lpm_trie_search(struct lpm_trie *lpm_trie, uint32_t key)
  * Documented in lpm.h
  */
 void
-lpm_trie_remove(struct lpm_trie *lpm_trie, uint32_t key, uint32_t mask)
+lpm_trie_remove(struct lpm_trie *lpm_trie, uint32_t key, uint8_t key_mask_len)
 {
     AIM_ASSERT(lpm_trie != NULL, "attempted to remove a entry in a NULL lpm trie");
 
     struct lpm_trie_entry *parent = NULL;
     struct lpm_trie_entry *current = lpm_trie->root;
 
-    int index = 0;
     int total_index = 0;
-
-    /*
-     * Find total number of bits in the key that are significant.
-     */
-    uint8_t key_mask_len = mask_to_cidr(mask);
 
     AIM_LOG_TRACE("Remove lpm trie entry with ipv4=%{ipv4a}/%u", key, key_mask_len);
 
@@ -464,17 +463,14 @@ lpm_trie_remove(struct lpm_trie *lpm_trie, uint32_t key, uint32_t mask)
             return;
         }
 
-        while (index < current->match_bit_count) {
-            bool current_bit = is_bit_set(current->key, total_index + index);
-            bool key_bit = is_bit_set(key, total_index + index);
-            if (current_bit != key_bit) {
-                return;
-            }
-
-            index += 1;
+        uint8_t prefix_len = total_index + current->match_bit_count;
+        uint32_t mask = prefix_len == 32 ? ~0u : ~((uint32_t)~0 >> prefix_len);
+        if ((current->key & mask) != (key & mask)) {
+            return;
         }
 
-        if ((total_index + index) == key_mask_len) {
+        total_index += current->match_bit_count;
+        if (total_index == key_mask_len) {
             /* Found the node */
             if (current->value != NULL) {
                 trie_entry_remove(lpm_trie, current, parent);
@@ -484,14 +480,11 @@ lpm_trie_remove(struct lpm_trie *lpm_trie, uint32_t key, uint32_t mask)
         }
 
         parent = current;
-        if (is_bit_set(key, total_index + index)) {
+        if (is_bit_set(key, total_index)) {
             current = current->left;
         } else {
             current = current->right;
         }
-
-        total_index += index;
-        index = 0;
     }
 
     return;
