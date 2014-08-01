@@ -21,14 +21,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <lpm/lpm.h>
+#include <lpm_int.h>
 #include <assert.h>
 #include <arpa/inet.h>
 #include <AIM/aim.h>
 
 struct l3_cidr_route_entry {
     uint32_t key;
-    uint32_t mask;
+    uint8_t mask_len;
     uint32_t value;
+    bool valid;
 };
 
 #define NUM_ENTRIES 16000
@@ -73,15 +75,16 @@ print_preorder(struct lpm_trie_entry *entry)
 #endif
 
 static void
-insert(char *key, char *mask, uint32_t value,
+insert(char *key, uint8_t mask_len, uint32_t value,
        struct l3_cidr_route_entry *route_entry, uint32_t size)
 {
     assert(lpm_trie != NULL);
 
     route_entry->key = convert_ip(key);;
-    route_entry->mask = convert_ip(mask);
+    route_entry->mask_len = mask_len;
     route_entry->value = value;
-    lpm_trie_insert(lpm_trie, route_entry->key, route_entry->mask, &route_entry->value);
+    lpm_trie_insert(lpm_trie, route_entry->key, route_entry->mask_len,
+                    &route_entry->value);
     assert(lpm_trie->size == size);
 }
 
@@ -100,11 +103,11 @@ search(char *key, uint32_t *expected_value)
 }
 
 static void
-delete(char *key, char *mask, uint32_t size)
+delete(char *key, uint8_t mask_len, uint32_t size)
 {
     assert(lpm_trie != NULL);
 
-    lpm_trie_remove(lpm_trie, convert_ip(key), convert_ip(mask));
+    lpm_trie_remove(lpm_trie, convert_ip(key), mask_len);
     assert(lpm_trie->size == size);
 }
 
@@ -113,20 +116,22 @@ test_basic(void)
 {
     uint32_t size = 0;
 
+    memset(route_entries, 0, sizeof(route_entries));
+
     lpm_trie = lpm_trie_create();
 
-    insert("192.168.0.0", "255.255.0.0", 0xa, &route_entries[0], ++size);
-    insert("192.168.2.0", "255.255.255.0", 0xb, &route_entries[1], ++size);
-    insert("192.168.3.0", "255.255.255.0", 0xc, &route_entries[2], ++size);
-    insert("10.0.0.0", "255.0.0.0", 0xd, &route_entries[3], ++size);
-    insert("10.1.1.0", "255.255.255.0", 0xe, &route_entries[4], ++size);
+    insert("192.168.0.0", 16, 0xa, &route_entries[0], ++size);
+    insert("192.168.2.0", 24, 0xb, &route_entries[1], ++size);
+    insert("192.168.3.0", 24, 0xc, &route_entries[2], ++size);
+    insert("10.0.0.0", 8, 0xd, &route_entries[3], ++size);
+    insert("10.1.1.0", 24, 0xe, &route_entries[4], ++size);
 
     /* Add a default route */
-    insert("0.0.0.0", "0.0.0.0", 0xf, &route_entries[5], ++size);
+    insert("0.0.0.0", 0, 0xf, &route_entries[5], ++size);
 
-    insert("10.1.0.0", "255.255.0.0", 0x10, &route_entries[6], ++size);
-    insert("128.0.0.0", "255.0.0.0", 0x11, &route_entries[7], ++size);
-    insert("192.168.3.252", "255.255.255.252", 0x12, &route_entries[8], ++size);
+    insert("10.1.0.0", 16, 0x10, &route_entries[6], ++size);
+    insert("128.0.0.0", 8, 0x11, &route_entries[7], ++size);
+    insert("192.168.3.252", 30, 0x12, &route_entries[8], ++size);
 
 #ifndef DEBUG
     print_preorder(lpm_trie->root);
@@ -142,10 +147,10 @@ test_basic(void)
     search("4.4.4.0", &route_entries[5].value);
 
     /* Remove the default route which is also the root node */
-    delete("0.0.0.0", "0.0.0.0", --size);
-    delete("192.168.2.0", "255.255.255.0", --size);
-    delete("10.1.1.0", "255.255.255.0", --size);
-    delete("128.0.0.0", "255.0.0.0", --size);
+    delete("0.0.0.0", 0, --size);
+    delete("192.168.2.0", 24, --size);
+    delete("10.1.1.0", 24, --size);
+    delete("128.0.0.0", 8, --size);
 
     search("0.0.0.0", NULL);
     search("192.168.2.0", &route_entries[0].value);
@@ -156,40 +161,28 @@ test_basic(void)
     search("4.4.4.0", NULL);
 
     /* Test for duplicate entry with modified value */
-    insert("192.168.3.252", "255.255.255.252", 0x13, &route_entries[9], size);
+    insert("192.168.3.252", 30, 0x13, &route_entries[9], size);
     search("192.168.3.254", &route_entries[9].value);
 
     /* After we remove the previous lpm we should match on the next */
-    delete("192.168.3.252", "255.255.255.252", --size);
+    delete("192.168.3.252", 30, --size);
     search("192.168.3.254", &route_entries[2].value);
 
-    delete("192.168.3.0", "255.255.255.0", --size);
-    delete("10.1.0.0", "255.255.0.0", --size);
+    delete("192.168.3.0", 24, --size);
+    delete("10.1.0.0", 16, --size);
 
     /* Try to delete non-existant values in the trie */
-    delete("192.168.3.253", "255.255.255.252", size);
+    delete("192.168.3.253", 30, size);
 
     search("192.168.3.20", &route_entries[0].value);
     search("10.1.1.1", &route_entries[3].value);
 
-    delete("192.168.0.0", "255.255.0.0", --size);
-    delete("10.0.0.0", "255.0.0.0", --size);
+    delete("192.168.0.0", 16, --size);
+    delete("10.0.0.0", 8, --size);
 
     /* Verify that the trie is empty after all the operations */
     assert(lpm_trie->size == 0);
     lpm_trie_destroy(lpm_trie);
-
-    memset(route_entries, 0, sizeof(route_entries));
-}
-
-static uint32_t
-make_ip()
-{
-    uint32_t random_ip = rand();
-    return (random_ip >> 24 & 0xFF) << 24 |
-           (random_ip >> 16 & 0xFF) << 16 |
-           (random_ip >> 8 & 0xFF) << 8 |
-           (random_ip & 0xFF);
 }
 
 /*
@@ -204,6 +197,27 @@ netmask(int prefix)
         return(~((1 << (32 - prefix)) - 1));
 }
 
+/*
+ * Perform a linear search to find longest prefix match
+ */
+static void *
+linear_search(uint32_t key)
+{
+    int i;
+    uint8_t lpm_mask_len = 0;
+    uint32_t *value = NULL;
+    for (i = NUM_ENTRIES-1; i >= 0; i--) {
+        if (route_entries[i].valid == true &&
+            (key & netmask(route_entries[i].mask_len)) == route_entries[i].key
+            && route_entries[i].mask_len > lpm_mask_len) {
+            value = &route_entries[i].value;
+            lpm_mask_len = route_entries[i].mask_len;
+        }
+    }
+
+    return value;
+}
+
 static void
 test_random()
 {
@@ -213,43 +227,38 @@ test_random()
     lpm_trie = lpm_trie_create();
 
     int i;
-    uint32_t key, mask;
+    uint32_t key;
+    uint8_t mask_len;
+
+    memset(route_entries, 0, sizeof(route_entries));
 
     /* Add entries */
     for (i = 0; i < NUM_ENTRIES; i++) {
-        key = make_ip();
-        mask = netmask(rand() % num_masks);
-        key &= mask;
+        key = rand();
+        mask_len = rand() % num_masks;
+        key &= netmask(mask_len);
         route_entries[i].key = key;
-        route_entries[i].mask = mask;
+        route_entries[i].mask_len = mask_len;
         route_entries[i].value = rand();
+        route_entries[i].valid = true;
 
 #ifndef DEBUG
-        printf("ip = %s, mask = %x, value: %u\n", get_ip(key), mask,
+        printf("insert ipv4 = %s/%u, value: %u\n", get_ip(key), mask_len,
                route_entries[i].value);
 #endif
 
-        lpm_trie_insert(lpm_trie, key, mask, &route_entries[i].value);
+        lpm_trie_insert(lpm_trie, key, mask_len, &route_entries[i].value);
     }
 
     /* Random lookups */
     for (i = 0; i < num_lookups; i++) {
-        key = make_ip();
+        key = rand();
 
         /* Lookup in the trie for lpm associated with the key */
         uint32_t *lpm_value = lpm_trie_search(lpm_trie, key);
 
-        /* Linear search to find longest prefix match */
-        int j;
-        uint32_t lpm_mask = 0;
-        uint32_t *ref_value = NULL;
-        for (j = NUM_ENTRIES-1; j >= 0; j--) {
-            if ((key & route_entries[j].mask) == route_entries[j].key &&
-                route_entries[j].mask > lpm_mask) {
-                ref_value = &route_entries[j].value;
-                lpm_mask = route_entries[j].mask;
-            }
-        }
+        /* Lookup in the route_entries array for lpm associated with the key */
+        uint32_t *ref_value = linear_search(key);
 
 #ifndef DEBUG
         printf("lpm for ipv4: %s, lpm_value: %u, ref_value: %u\n", get_ip(key),
@@ -262,14 +271,94 @@ test_random()
 
     /* Remove entries */
     for (i = 0; i < NUM_ENTRIES; i++) {
-        lpm_trie_remove(lpm_trie, route_entries[i].key, route_entries[i].mask);
+        lpm_trie_remove(lpm_trie, route_entries[i].key, route_entries[i].mask_len);
+        route_entries[i].valid = false;
     }
 
     /* Verify that the trie is empty after all the operations */
     assert(lpm_trie->size == 0);
     lpm_trie_destroy(lpm_trie);
+}
+
+static bool
+duplicate_key_mask(uint32_t key, uint8_t mask_len)
+{
+    int i;
+    for (i = 0; i < NUM_ENTRIES; i++) {
+        if (key == route_entries[i].key && mask_len == route_entries[i].mask_len) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void
+test_mixed()
+{
+    const int num_masks = 32;
+    const int num_lookups = 1000;
+
+    lpm_trie = lpm_trie_create();
+
+    int i;
+    uint32_t key;
+    uint8_t mask_len;
 
     memset(route_entries, 0, sizeof(route_entries));
+
+    /* Add and Remove entries based on valid flag */
+    for (i = 0; i < num_lookups; i++) {
+        int index = rand() % NUM_ENTRIES;
+        key = rand();
+        mask_len = rand() % num_masks;
+        key &= netmask(mask_len);
+        if (route_entries[index].valid == false &&
+            duplicate_key_mask(key, mask_len) == false) {
+            route_entries[index].key = key;
+            route_entries[index].mask_len = mask_len;
+            route_entries[index].value = rand();
+            route_entries[index].valid = true;
+
+#ifndef DEBUG
+            printf("insert ipv4 = %s/%u, value: %u\n", get_ip(key), mask_len,
+                   route_entries[index].value);
+#endif
+
+            lpm_trie_insert(lpm_trie, key, mask_len, &route_entries[index].value);
+        } else {
+            lpm_trie_remove(lpm_trie, route_entries[index].key,
+                            route_entries[index].mask_len);
+            route_entries[index].valid = false;
+        }
+
+        /* Random lookups */
+        int j;
+        for (j = 0; j < num_lookups/10; j++) {
+            key = rand();
+
+            /* Lookup in the trie for lpm associated with the key */
+            uint32_t *lpm_value = lpm_trie_search(lpm_trie, key);
+
+            /* Lookup in the route_entries array for lpm associated with the key */
+            uint32_t *ref_value = linear_search(key);
+
+            AIM_ASSERT(lpm_value == ref_value, "mismatch with reference");
+        }
+    }
+
+    /* Remove entries that are still valid */
+    for (i = 0; i < NUM_ENTRIES; i++) {
+        if (route_entries[i].valid == true) {
+            lpm_trie_remove(lpm_trie, route_entries[i].key,
+                            route_entries[i].mask_len);
+            route_entries[i].valid = false;
+        }
+    }
+
+    /* Verify that the trie is empty after all the operations */
+    assert(lpm_trie->size == 0);
+    lpm_trie_destroy(lpm_trie);
 }
 
 int aim_main(int argc, char* argv[])
@@ -279,6 +368,7 @@ int aim_main(int argc, char* argv[])
 
     test_basic();
     test_random();
+    test_mixed();
 
     return 0;
 }
