@@ -23,13 +23,13 @@ ALLOW_DECLARATION_AFTER_STATEMENT = 1
 #
 # Defining a module and including standardinit.mk
 # initializes the basic build infrastructure, setting
-# it up to build "stuff" -- libraries, binaries, objects, etc. 
-# 
+# it up to build "stuff" -- libraries, binaries, objects, etc.
+#
 MODULE := IVS
 include $(BUILDER)/standardinit.mk
 
 #
-# We're now ready to specify the "stuff" we want built. 
+# We're now ready to specify the "stuff" we want built.
 #
 # First, define a library for our local sources (main.c)
 #
@@ -63,25 +63,25 @@ include $(BUILDER)/dependmodules.mk
 
 
 #
-# Now define the LRI application binary target. 
+# Now define the LRI application binary target.
 # This should come after all of the library dependencies
 # specified above:
 #
 BINARY := ivs
 
-# 
+#
 # This binary is going to link against every library we've included thus far.
 # $(LIBRARY_TARGETS) is kept by the Builder and specifies every
 # library already defined, either through local definitions or
-# module dependencies. 
+# module dependencies.
 #
-$(BINARY)_LIBRARIES := $(LIBRARY_TARGETS) 
+$(BINARY)_LIBRARIES := $(LIBRARY_TARGETS)
 include $(BUILDER)/bin.mk
 
 
 #
-# Now that we've specified all the things we want to build, 
-# finalize with target definitions. 
+# Now that we've specified all the things we want to build,
+# finalize with target definitions.
 #
 include $(BUILDER)/targets.mk
 
