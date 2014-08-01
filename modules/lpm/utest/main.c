@@ -204,7 +204,7 @@ static void *
 linear_search(uint32_t key)
 {
     int i;
-    uint8_t lpm_mask_len = 0;
+    int lpm_mask_len = -1;
     uint32_t *value = NULL;
     for (i = NUM_ENTRIES-1; i >= 0; i--) {
         if (route_entries[i].valid == true &&
@@ -216,6 +216,12 @@ linear_search(uint32_t key)
     }
 
     return value;
+}
+
+static uint32_t
+make_ip (void)
+{
+    return rand() + rand();
 }
 
 static void
@@ -234,7 +240,7 @@ test_random()
 
     /* Add entries */
     for (i = 0; i < NUM_ENTRIES; i++) {
-        key = rand();
+        key = make_ip();
         mask_len = rand() % num_masks;
         key &= netmask(mask_len);
         route_entries[i].key = key;
@@ -252,7 +258,7 @@ test_random()
 
     /* Random lookups */
     for (i = 0; i < num_lookups; i++) {
-        key = rand();
+        key = make_ip();
 
         /* Lookup in the trie for lpm associated with the key */
         uint32_t *lpm_value = lpm_trie_search(lpm_trie, key);
@@ -276,7 +282,7 @@ test_random()
     }
 
     /* Verify that the trie is empty after all the operations */
-    assert(lpm_trie->size == 0);
+    assert(lpm_trie_is_empty(lpm_trie) == true);
     lpm_trie_destroy(lpm_trie);
 }
 
@@ -310,7 +316,7 @@ test_mixed()
     /* Add and Remove entries based on valid flag */
     for (i = 0; i < num_lookups; i++) {
         int index = rand() % NUM_ENTRIES;
-        key = rand();
+        key = make_ip();
         mask_len = rand() % num_masks;
         key &= netmask(mask_len);
         if (route_entries[index].valid == false &&
@@ -335,7 +341,7 @@ test_mixed()
         /* Random lookups */
         int j;
         for (j = 0; j < num_lookups/10; j++) {
-            key = rand();
+            key = make_ip();
 
             /* Lookup in the trie for lpm associated with the key */
             uint32_t *lpm_value = lpm_trie_search(lpm_trie, key);
@@ -357,7 +363,7 @@ test_mixed()
     }
 
     /* Verify that the trie is empty after all the operations */
-    assert(lpm_trie->size == 0);
+    assert(lpm_trie_is_empty(lpm_trie) == true);
     lpm_trie_destroy(lpm_trie);
 }
 

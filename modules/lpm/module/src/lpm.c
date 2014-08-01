@@ -26,18 +26,6 @@
 #include "lpm_log.h"
 
 /*
- * lpm trie entry.
- */
-struct lpm_trie_entry {
-    uint32_t key;                     /* Node key        */
-    uint8_t mask_len;                 /* Cidr of mask    */
-    uint8_t match_bit_count;          /* Number of bits to match */
-    struct lpm_trie_entry *left;      /* Left pointer    */
-    struct lpm_trie_entry *right;     /* Right pointer   */
-    void *value;                      /* Node value      */
-};
-
-/*
  * Private function used to return whether
  * or not bit 'i' counting from the MSB is set in 'key'.
  */
@@ -212,6 +200,17 @@ lpm_trie_destroy(struct lpm_trie *lpm_trie)
     AIM_ASSERT(lpm_trie->root == NULL, "attempted to delete a non empty lpm trie");
 
     aim_free(lpm_trie);
+}
+
+/*
+ * Documented in lpm.h
+ */
+bool
+lpm_trie_is_empty(struct lpm_trie *lpm_trie)
+{
+    AIM_ASSERT(lpm_trie != NULL, "attempted to determine the size of a NULL lpm trie");
+
+    return (lpm_trie->size == 0)? true : false;
 }
 
 /*
@@ -413,8 +412,7 @@ lpm_trie_search(struct lpm_trie *lpm_trie, uint32_t key)
     AIM_LOG_TRACE("Search lpm trie for key=%{ipv4a}", key);
 
     while (current != NULL) {
-        uint8_t prefix_len = total_index + current->match_bit_count;
-        uint32_t mask = prefix_len == 32 ? ~0u : ~((uint32_t)~0 >> prefix_len);
+        uint32_t mask = netmask(total_index + current->match_bit_count);
         if ((current->key & mask) != (key & mask)) {
             return result_value;
         }
@@ -455,7 +453,7 @@ lpm_trie_remove(struct lpm_trie *lpm_trie, uint32_t key, uint8_t key_mask_len)
 
         /*
          * Current node has a longer mask_len than the query
-         * The key requested to be deleted in not present in the trie
+         * The key requested to be deleted is not present in the trie
          */
         if ((key_mask_len - total_index) < current->match_bit_count) {
             AIM_LOG_TRACE("No lpm trie entry present with ipv4=%{ipv4a}/%u",
@@ -463,8 +461,7 @@ lpm_trie_remove(struct lpm_trie *lpm_trie, uint32_t key, uint8_t key_mask_len)
             return;
         }
 
-        uint8_t prefix_len = total_index + current->match_bit_count;
-        uint32_t mask = prefix_len == 32 ? ~0u : ~((uint32_t)~0 >> prefix_len);
+        uint32_t mask = netmask(total_index + current->match_bit_count);
         if ((current->key & mask) != (key & mask)) {
             return;
         }

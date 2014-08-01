@@ -23,6 +23,18 @@
 #include <lpm/lpm.h>
 
 /*
+ * lpm trie entry.
+ */
+struct lpm_trie_entry {
+    uint32_t key;                     /* Node key        */
+    uint8_t mask_len;                 /* Cidr of mask    */
+    uint8_t match_bit_count;          /* Number of bits to match */
+    struct lpm_trie_entry *left;      /* Left pointer    */
+    struct lpm_trie_entry *right;     /* Right pointer   */
+    void *value;                      /* Node value      */
+};
+
+/*
  * Top-level lpm_trie object.
  */
 struct lpm_trie {

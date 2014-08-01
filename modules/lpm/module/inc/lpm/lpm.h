@@ -88,6 +88,7 @@
 #define LPM_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 struct lpm_trie;
 
@@ -139,5 +140,13 @@ void lpm_trie_remove(struct lpm_trie *lpm_trie, uint32_t key,
  * @return the value associated with the longest prefix match if found else null
  */
 void *lpm_trie_search(struct lpm_trie *lpm_trie, uint32_t key);
+
+/*
+ * Find if an lpm trie is empty or not.
+ *
+ * @param lpm_trie top level trie object containing the root info
+ * @return true if lpm trie is empty else return false
+ */
+bool lpm_trie_is_empty(struct lpm_trie *lpm_trie);
 
 #endif /* LPM_H */
