@@ -295,7 +295,8 @@ process_l2(struct ctx *ctx)
     /* DHCP offload */
     if (port_entry->value.dhcp_offload) {
         if (ctx->key->ethertype == htons(0x0800) && ctx->key->ipv4.ipv4_proto == 17 &&
-                (ctx->key->tcp.tcp_dst == htons(67) || ctx->key->tcp.tcp_dst == htons(68))) {
+                (ctx->key->tcp.tcp_dst == htons(67) || ctx->key->tcp.tcp_dst == htons(68)) &&
+                !memcmp(ctx->key->ethernet.eth_dst, &broadcast_mac, OF_MAC_ADDR_BYTES)) {
             AIM_LOG_VERBOSE("sending DHCP packet to agent");
             mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_DHCP);
             mark_drop(ctx);
