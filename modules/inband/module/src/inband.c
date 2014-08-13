@@ -19,10 +19,15 @@
 
 #include <AIM/aim.h>
 #include <stdbool.h>
+#include <arpa/inet.h>
 #include "inband_int.h"
 #include "inband_log.h"
 #include <indigo/of_state_manager.h>
 #include <PPE/ppe.h>
+
+#define LLDP_TLV_MANAGEMENT_ADDRESS 8
+#define LLDP_ADDRESS_FAMILY_IPV4 1
+#define LLDP_ADDRESS_FAMILY_IPV6 2
 
 struct lldp_tlv {
     uint8_t type;
@@ -125,6 +130,27 @@ pktin_listener(of_packet_in_t *packet_in)
     const uint8_t *pos = header;
     while (lldp_parse_tlv(&pos, &remain, &tlv)) {
         AIM_LOG_TRACE("Found tlv type=%u oui=%u subtype=%u payload_length=%u", tlv.type, tlv.oui, tlv.subtype, tlv.payload_length);
+        if (tlv.type == LLDP_TLV_MANAGEMENT_ADDRESS) {
+            AIM_LOG_TRACE("Found management address TLV");
+
+            if (tlv.payload_length < 9 /* from 802.1ab spec */) {
+                AIM_LOG_WARN("Management address TLV too short");
+                continue;
+            }
+
+            int addr_len = tlv.payload[0];
+            int addr_type = tlv.payload[1];
+            if (addr_type == LLDP_ADDRESS_FAMILY_IPV4) {
+                if (addr_len != sizeof(of_ipv4_t)) {
+                    AIM_LOG_WARN("Invalid IPv4 address length in management address TLV");
+                    continue;
+                }
+                uint32_t ipv4 = ntohl(*(uint32_t *)&tlv.payload[2]);
+                AIM_LOG_VERBOSE("Controller address: %{ipv4a}", ipv4);
+            } else {
+                AIM_LOG_WARN("Ignoring management address TLV with unsupported address type %u", addr_type);
+            }
+        }
     }
 
     return INDIGO_CORE_LISTENER_RESULT_PASS;
