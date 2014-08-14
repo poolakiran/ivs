@@ -30,12 +30,36 @@
 #define LLDP_ADDRESS_FAMILY_IPV4 1
 #define LLDP_ADDRESS_FAMILY_IPV6 2
 
+#define MAX_INBAND_CONTROLLERS 4
+
 struct lldp_tlv {
     uint8_t type;
     uint32_t oui;
     uint8_t subtype;
     const uint8_t *payload;
     uint16_t payload_length;
+};
+
+struct inband_controller {
+    indigo_controller_id_t id;
+    indigo_cxn_protocol_params_t protocol_params;
+};
+
+static void synchronize_controllers(
+    struct inband_controller *new_controllers,
+    int num_new_controllers);
+
+static struct inband_controller controllers[MAX_INBAND_CONTROLLERS];
+static int num_controllers = 0;
+
+/* Copied from IVS main.c */
+static indigo_cxn_config_params_t cxn_config_params = {
+    .version = OF_VERSION_1_3,
+    .cxn_priority = 0,
+    .local = false,
+    .listen = false,
+    .periodic_echo_ms = 2000,
+    .reset_echo_count = 3,
 };
 
 /*
@@ -126,6 +150,9 @@ pktin_listener(of_packet_in_t *packet_in)
 
     AIM_LOG_VERBOSE("Parsing LLDP packet");
 
+    struct inband_controller new_controllers[MAX_INBAND_CONTROLLERS];
+    int num_new_controllers = 0;
+
     struct lldp_tlv tlv;
     int remain = octets.bytes - (header - octets.data);
     const uint8_t *pos = header;
@@ -141,20 +168,104 @@ pktin_listener(of_packet_in_t *packet_in)
 
             int addr_len = tlv.payload[0];
             int addr_type = tlv.payload[1];
+
+            if (num_controllers >= MAX_INBAND_CONTROLLERS) {
+                AIM_LOG_WARN("Too many controllers in LLDP");
+                continue;
+            }
+
+            struct inband_controller *new_controller = &new_controllers[num_new_controllers];
+            memset(new_controller, 0, sizeof(*new_controller));
+
             if (addr_type == LLDP_ADDRESS_FAMILY_IPV4) {
                 if (addr_len != sizeof(of_ipv4_t)) {
                     AIM_LOG_WARN("Invalid IPv4 address length in management address TLV");
                     continue;
                 }
-                uint32_t ipv4 = ntohl(*(uint32_t *)&tlv.payload[2]);
-                AIM_LOG_VERBOSE("Controller address: %{ipv4a}", ipv4);
+
+                struct in_addr in = { *(uint32_t *)&tlv.payload[2] };
+                AIM_LOG_VERBOSE("Controller address: %{ipv4a}", ntohl(in.s_addr));
+
+                indigo_cxn_params_tcp_over_ipv4_t *proto = &new_controller->protocol_params.tcp_over_ipv4;
+                proto->protocol = INDIGO_CXN_PROTO_TCP_OVER_IPV4;
+                strcpy(proto->controller_ip, inet_ntoa(in));
+                proto->controller_port = 6653;
             } else {
                 AIM_LOG_WARN("Ignoring management address TLV with unsupported address type %u", addr_type);
+                continue;
             }
+
+            num_new_controllers++;
         }
     }
 
+    synchronize_controllers(new_controllers, num_new_controllers);
+
     return INDIGO_CORE_LISTENER_RESULT_PASS;
+}
+
+static void
+synchronize_controllers(struct inband_controller *new_controllers, int num_new_controllers)
+{
+    int i, j;
+
+    /* Remove old controllers
+     *
+     * For each old controller, search the list of new controllers to find
+     * a match. If no match is found, remove it.
+     */
+    for (i = 0; i < num_controllers; i++) {
+        struct inband_controller *old = &controllers[i];
+        bool found = false;
+
+        for (j = 0; j < num_new_controllers; j++) {
+            struct inband_controller *new = &new_controllers[j];
+            if (!memcmp(&old->protocol_params, &new->protocol_params, sizeof(old->protocol_params))) {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            (void) indigo_controller_remove(old->id);
+
+            /* Copy the last element to this index and decrement the size */
+            controllers[i] = controllers[--num_controllers];
+
+            /* Need to redo this index */
+            i--;
+        }
+    }
+
+    /*
+     * Add new controllers
+     *
+     * For each new controller, search the list of old controllers to find
+     * a match. If no match is found, add it.
+     */
+    for (i = 0; i < num_new_controllers; i++) {
+        struct inband_controller *new = &new_controllers[i];
+        bool found = false;
+
+        for (j = 0; j < num_controllers; j++) {
+            struct inband_controller *old = &controllers[j];
+            if (!memcmp(&old->protocol_params, &new->protocol_params, sizeof(old->protocol_params))) {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            indigo_error_t rv;
+            AIM_ASSERT(num_controllers < MAX_INBAND_CONTROLLERS);
+            if ((rv = indigo_controller_add(&new->protocol_params, &cxn_config_params, &new->id)) < 0) {
+                AIM_LOG_ERROR("Failed to add controller from LLDP: %s", indigo_strerror(rv));
+            } else {
+                /* Append to the controllers list */
+                controllers[num_controllers++] = *new;
+            }
+        }
+    }
 }
 
 void

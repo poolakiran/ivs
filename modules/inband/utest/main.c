@@ -55,6 +55,10 @@ static const uint8_t lldp_prefix[] = {
 };
 
 static indigo_core_packet_in_listener_f listener = NULL;
+static const char *expected_adds[32], *expected_removes[32];
+static int num_expected_adds, num_expected_removes;
+static const char *controller_ips[1024];
+static int next_controller_id;
 
 static void
 packet_in(const uint8_t *data, int length, of_port_no_t in_port)
@@ -122,7 +126,42 @@ lldp_packet_in(of_port_no_t port, const char *controller1_ip, const char *contro
     data[offset++] = 0;
     data[offset++] = 0;
 
+    fprintf(stderr, "Sending LLDP with management IPs %s and %s\n", controller1_ip, controller2_ip);
+
     packet_in(data, offset, port);
+}
+
+static void
+expect_add(const char *ip)
+{
+    expected_adds[num_expected_adds++] = ip;
+}
+
+static void
+expect_remove(const char *ip)
+{
+    expected_removes[num_expected_removes++] = ip;
+}
+
+static void
+check_expectations(void)
+{
+    if (num_expected_adds > 0) {
+        int i;
+        for (i = 0; i < num_expected_adds; i++) {
+            fprintf(stderr, "FAIL: Missing expected add of %s\n", expected_adds[i]);
+        }
+    }
+
+    if (num_expected_removes > 0) {
+        int i;
+        for (i = 0; i < num_expected_removes; i++) {
+            fprintf(stderr, "FAIL: Missing expected remove of %s\n", expected_removes[i]);
+        }
+    }
+
+    AIM_ASSERT(num_expected_adds == 0);
+    AIM_ASSERT(num_expected_removes == 0);
 }
 
 int aim_main(int argc, char* argv[])
@@ -130,11 +169,46 @@ int aim_main(int argc, char* argv[])
     (void) argc;
     (void) argv;
 
+    aim_log_fid_set_all(AIM_LOG_FLAG_VERBOSE, 1);
+    aim_log_fid_set_all(AIM_LOG_FLAG_TRACE, 1);
+
     inband_init();
 
     assert(listener != NULL);
 
+    /* Add two controllers */
+    expect_add("1.2.3.4");
+    expect_add("5.6.7.8");
     lldp_packet_in(1, "1.2.3.4", "5.6.7.8");
+    check_expectations();
+
+    /* Same controllers, different order */
+    lldp_packet_in(1, "5.6.7.8", "1.2.3.4");
+    check_expectations();
+
+    /* Replace one controller */
+    expect_remove("5.6.7.8");
+    expect_add("9.9.9.9");
+    lldp_packet_in(1, "1.2.3.4", "9.9.9.9");
+    check_expectations();
+
+    /* Replace both controllers */
+    expect_remove("1.2.3.4");
+    expect_remove("9.9.9.9");
+    expect_add("10.10.10.10");
+    expect_add("11.11.11.11");
+    lldp_packet_in(1, "10.10.10.10", "11.11.11.11");
+    check_expectations();
+
+    /* Remove a controller */
+    expect_remove("10.10.10.10");
+    lldp_packet_in(1, "11.11.11.11", NULL);
+    check_expectations();
+
+    /* Remove the last controller */
+    expect_remove("11.11.11.11");
+    lldp_packet_in(1, NULL, NULL);
+    check_expectations();
 
     return 0;
 }
@@ -157,11 +231,38 @@ indigo_controller_add(
     indigo_cxn_config_params_t *config_params,
     indigo_controller_id_t *id)
 {
-    return INDIGO_ERROR_NONE;
+    AIM_ASSERT(protocol_params->header.protocol == INDIGO_CXN_PROTO_TCP_OVER_IPV4);
+    const char *ip = protocol_params->tcp_over_ipv4.controller_ip;
+
+    int i;
+    for (i = 0; i < num_expected_adds; i++) {
+        if (!strcmp(expected_adds[i], ip)) {
+            fprintf(stderr, "Received expected add of %s\n", ip);
+            *id = next_controller_id++;
+            controller_ips[*id] = strdup(ip);
+            expected_adds[i] = expected_adds[num_expected_adds-1];
+            expected_adds[--num_expected_adds] = NULL;
+            return INDIGO_ERROR_NONE;
+        }
+    }
+
+    AIM_ASSERT(0, "Unexpected add of %s", ip);
 }
 
 indigo_error_t
 indigo_controller_remove(indigo_controller_id_t id)
 {
-    return INDIGO_ERROR_NONE;
+    const char *ip = controller_ips[id];
+
+    int i;
+    for (i = 0; i < num_expected_removes; i++) {
+        if (!strcmp(expected_removes[i], ip)) {
+            fprintf(stderr, "Received expected remove of %s\n", ip);
+            expected_removes[i] = expected_removes[num_expected_removes-1];
+            expected_removes[--num_expected_removes] = NULL;
+            return INDIGO_ERROR_NONE;
+        }
+    }
+
+    AIM_ASSERT(0, "Unexpected remove of %s", ip);
 }
