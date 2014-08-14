@@ -49,6 +49,9 @@ static void synchronize_controllers(
     struct inband_controller *new_controllers,
     int num_new_controllers);
 
+/* HACK not in IVS yet */
+bool ind_ovs_uplink_check(of_port_no_t port);
+
 static struct inband_controller controllers[MAX_INBAND_CONTROLLERS];
 static int num_controllers = 0;
 
@@ -127,7 +130,10 @@ pktin_listener(of_packet_in_t *packet_in)
         return INDIGO_CORE_LISTENER_RESULT_PASS;
     }
 
-    /* TODO Check if the source port is an uplink */
+    if (!ind_ovs_uplink_check(match.fields.in_port)) {
+        AIM_LOG_TRACE("Not received on an uplink port");
+        return INDIGO_CORE_LISTENER_RESULT_PASS;
+    }
 
     of_octets_t octets;
     of_packet_in_data_get(packet_in, &octets);

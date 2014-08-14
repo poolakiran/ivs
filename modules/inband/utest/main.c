@@ -306,6 +306,10 @@ test_invalid(void)
     /* Unsupported address type */
     lldp_packet_in(1, "unsupported-address-type", "5.6.7.8");
     check_expectations();
+
+    /* Not from an uplink port */
+    lldp_packet_in(2, "1.2.3.4", "5.6.7.8");
+    check_expectations();
 }
 
 int aim_main(int argc, char* argv[])
@@ -389,4 +393,16 @@ indigo_controller_remove(indigo_controller_id_t id)
     }
 
     AIM_ASSERT(0, "Unexpected remove of %s", ip);
+}
+
+/* IVS stubs */
+
+bool
+ind_ovs_uplink_check(of_port_no_t port)
+{
+    if (port == 1) {
+        return true;
+    } else {
+        return false;
+    }
 }
