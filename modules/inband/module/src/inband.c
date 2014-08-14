@@ -22,6 +22,7 @@
 #include <arpa/inet.h>
 #include "inband_int.h"
 #include "inband_log.h"
+#include <indigo/of_connection_manager.h>
 #include <indigo/of_state_manager.h>
 #include <PPE/ppe.h>
 

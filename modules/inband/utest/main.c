@@ -24,26 +24,12 @@
 #include <assert.h>
 #include <arpa/inet.h>
 #include <AIM/aim.h>
+#include <AIM/aim_log.h>
 #include <loci/loci.h>
+#include <indigo/of_connection_manager.h>
 #include <indigo/of_state_manager.h>
 
-/*
- * Management address TLV payload (see 802.1AB spec)
- *
- * - Address length (1 byte)
- * - Address type (1 byte)
- *   - ipv4=1
- *   - ipv6=2
- * - Management address (variable length)
- * - Interface number subtype (1 byte)
- *   - unknown=1
- * - Interface number (4 bytes)
- * - OID length (1 byte)
- * - OID (variable length)
- */
-
-/* Controllers 1.2.3.4 and 1.2.3.5 */
-static uint8_t lldp1[] = {
+static const uint8_t lldp_prefix[] = {
     // Destination MAC
     0x01, 0x80, 0xc2, 0x00, 0x00, 0x0e,
     // Source MAC
@@ -66,12 +52,6 @@ static uint8_t lldp1[] = {
     0xfe, 0x05, 0x00, 0x26, 0xe1, 0x03, 0x01,
     // Controller ID TLV
     0xfe, 0x10, 0x00, 0x26, 0xe1, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
-    // Management Address (ipv4 1.2.3.4, interface unknown, OID empty)
-    0x10, 0x0c, 0x04, 0x01, 0x01, 0x02, 0x03, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
-    // Management Address (ipv4 1.2.3.5, interface unknown, OID empty)
-    0x10, 0x0c, 0x04, 0x01, 0x01, 0x02, 0x03, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
-    // End of LLDP PDU
-    0x00, 0x00
 };
 
 static indigo_core_packet_in_listener_f listener = NULL;
@@ -92,6 +72,59 @@ packet_in(const uint8_t *data, int length, of_port_no_t in_port)
     of_object_delete(obj);
 }
 
+/*
+ * Management address TLV payload (see 802.1AB spec)
+ *
+ * - Address length (1 byte)
+ * - Address type (1 byte)
+ *   - ipv4=1
+ *   - ipv6=2
+ * - Management address (variable length)
+ * - Interface number subtype (1 byte)
+ *   - unknown=1
+ * - Interface number (4 bytes)
+ * - OID length (1 byte)
+ * - OID (variable length)
+ */
+
+static int
+append_management_address_tlv(uint8_t *dest, const char *ip)
+{
+    dest[0] = 0x10; /* type */
+    dest[1] = 0x0c; /* length */
+    dest[2] = 0x04; /* address length */
+    dest[3] = 0x01; /* address type */
+    *(uint32_t *)&dest[4] = inet_addr(ip); /* address */
+    dest[8] = 1; /* interface number subtype */
+    *(uint32_t *)&dest[9] = htonl(0); /* interface number */
+    dest[13] = 0; /* OID length */
+    return dest[1] + 2;
+}
+
+static void
+lldp_packet_in(of_port_no_t port, const char *controller1_ip, const char *controller2_ip)
+{
+    static uint8_t data[1500];
+    int offset = 0;
+
+    memcpy(data, lldp_prefix, sizeof(lldp_prefix));
+    offset += sizeof(lldp_prefix);
+
+    if (controller1_ip) {
+        offset += append_management_address_tlv(data + offset, controller1_ip);
+    }
+
+    if (controller2_ip) {
+        offset += append_management_address_tlv(data + offset, controller2_ip);
+    }
+
+    /* End of LLDPDU */
+    data[offset++] = 0;
+    data[offset++] = 0;
+
+    packet_in(data, offset, port);
+}
+
 int aim_main(int argc, char* argv[])
 {
     (void) argc;
@@ -101,7 +134,7 @@ int aim_main(int argc, char* argv[])
 
     assert(listener != NULL);
 
-    packet_in(lldp1, sizeof(lldp1), 1);
+    lldp_packet_in(1, "1.2.3.4", "5.6.7.8");
 
     return 0;
 }
@@ -113,5 +146,22 @@ indigo_core_packet_in_listener_register(indigo_core_packet_in_listener_f fn)
 {
     assert(listener == NULL);
     listener = fn;
+    return INDIGO_ERROR_NONE;
+}
+
+/* OFConnectionManager stubs */
+
+indigo_error_t
+indigo_controller_add(
+    indigo_cxn_protocol_params_t *protocol_params,
+    indigo_cxn_config_params_t *config_params,
+    indigo_controller_id_t *id)
+{
+    return INDIGO_ERROR_NONE;
+}
+
+indigo_error_t
+indigo_controller_remove(indigo_controller_id_t id)
+{
     return INDIGO_ERROR_NONE;
 }
