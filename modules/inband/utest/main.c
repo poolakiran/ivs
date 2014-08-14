@@ -59,6 +59,7 @@ static const char *expected_adds[32], *expected_removes[32];
 static int num_expected_adds, num_expected_removes;
 static const char *controller_ips[1024];
 static int next_controller_id;
+static bool disable_expectations;
 
 static void
 packet_in(const uint8_t *data, int length, of_port_no_t in_port)
@@ -164,17 +165,10 @@ check_expectations(void)
     AIM_ASSERT(num_expected_removes == 0);
 }
 
-int aim_main(int argc, char* argv[])
+static void
+test_basic(void)
 {
-    (void) argc;
-    (void) argv;
-
-    aim_log_fid_set_all(AIM_LOG_FLAG_VERBOSE, 1);
-    aim_log_fid_set_all(AIM_LOG_FLAG_TRACE, 1);
-
-    inband_init();
-
-    assert(listener != NULL);
+    fprintf(stderr, "Starting basic test\n");
 
     /* Add two controllers */
     expect_add("1.2.3.4");
@@ -209,6 +203,60 @@ int aim_main(int argc, char* argv[])
     expect_remove("11.11.11.11");
     lldp_packet_in(1, NULL, NULL);
     check_expectations();
+}
+
+static void
+test_corrupt(void)
+{
+    static uint8_t data[1500];
+    int offset = 0;
+
+    fprintf(stderr, "Starting corruption test\n");
+
+    memcpy(data, lldp_prefix, sizeof(lldp_prefix));
+    offset += sizeof(lldp_prefix);
+
+    offset += append_management_address_tlv(data + offset, "1.2.3.4");
+    offset += append_management_address_tlv(data + offset, "5.6.7.8");
+
+    /* End of LLDPDU */
+    data[offset++] = 0;
+    data[offset++] = 0;
+
+    disable_expectations = true;
+
+    /* This test generates lots of warnings */
+    aim_log_fid_set_all(AIM_LOG_FLAG_WARN, 0);
+
+    /* Flip each bit and make sure the parser doesn't crash */
+    int bit;
+    for (bit = 0; bit < offset*8; bit++) {
+        data[bit/8] ^= 1<<(bit %8);
+        packet_in(data, offset, 1);
+        data[bit/8] ^= 1<<(bit %8);
+    }
+
+    /* Truncate the message and make sure the parser doesn't crash */
+    int i;
+    for (i = 0; i < offset; i++) {
+        packet_in(data, i, 1);
+    }
+
+    disable_expectations = false;
+    aim_log_fid_set_all(AIM_LOG_FLAG_WARN, 1);
+}
+
+int aim_main(int argc, char* argv[])
+{
+    (void) argc;
+    (void) argv;
+
+    inband_init();
+
+    assert(listener != NULL);
+
+    test_basic();
+    test_corrupt();
 
     return 0;
 }
@@ -231,6 +279,11 @@ indigo_controller_add(
     indigo_cxn_config_params_t *config_params,
     indigo_controller_id_t *id)
 {
+    if (disable_expectations) {
+        *id = 0;
+        return INDIGO_ERROR_NONE;
+    }
+
     AIM_ASSERT(protocol_params->header.protocol == INDIGO_CXN_PROTO_TCP_OVER_IPV4);
     const char *ip = protocol_params->tcp_over_ipv4.controller_ip;
 
@@ -252,6 +305,10 @@ indigo_controller_add(
 indigo_error_t
 indigo_controller_remove(indigo_controller_id_t id)
 {
+    if (disable_expectations) {
+        return INDIGO_ERROR_NONE;
+    }
+
     const char *ip = controller_ips[id];
 
     int i;
