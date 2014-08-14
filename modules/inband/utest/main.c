@@ -95,15 +95,28 @@ packet_in(const uint8_t *data, int length, of_port_no_t in_port)
 static int
 append_management_address_tlv(uint8_t *dest, const char *ip)
 {
-    dest[0] = 0x10; /* type */
-    dest[1] = 0x0c; /* length */
-    dest[2] = 0x04; /* address length */
-    dest[3] = 0x01; /* address type */
-    *(uint32_t *)&dest[4] = inet_addr(ip); /* address */
-    dest[8] = 1; /* interface number subtype */
-    *(uint32_t *)&dest[9] = htonl(0); /* interface number */
-    dest[13] = 0; /* OID length */
-    return dest[1] + 2;
+    int i = 0;
+    dest[i++] = 0x10; /* type */
+    dest[i++] = 0x00; /* length placeholder */
+    if (!strcmp(ip, "invalid-ipv4-length")) {
+        dest[i++] = 0x02; /* address length */
+        dest[i++] = 0x01; /* address type */
+        dest[i++] = 0x55; /* address */
+        dest[i++] = 0x55; /* address */
+    } else if (!strcmp(ip, "unsupported-address-type")) {
+        dest[i++] = 0x04; /* address length */
+        dest[i++] = 0x88; /* address type */
+        *(uint32_t *)&dest[i] = htonl(0x12345678); i+=4; /* address */
+    } else {
+        dest[i++] = 0x04; /* address length */
+        dest[i++] = 0x01; /* address type */
+        *(uint32_t *)&dest[i] = inet_addr(ip); i+=4; /* address */
+    }
+    dest[i++] = 1; /* interface number subtype */
+    *(uint32_t *)&dest[i] = htonl(0); i+=4; /* interface number */
+    dest[i++] = 0; /* OID length */
+    dest[1] = i - 2; /* length */
+    return i;
 }
 
 static void
@@ -165,6 +178,16 @@ check_expectations(void)
     AIM_ASSERT(num_expected_removes == 0);
 }
 
+/* Put the inband module back in a state with no controllers */
+static void
+reset(void)
+{
+    disable_expectations = true;
+    lldp_packet_in(1, NULL, NULL);
+    disable_expectations = false;
+    check_expectations();
+}
+
 static void
 test_basic(void)
 {
@@ -212,6 +235,7 @@ test_corrupt(void)
     int offset = 0;
 
     fprintf(stderr, "Starting corruption test\n");
+    reset();
 
     memcpy(data, lldp_prefix, sizeof(lldp_prefix));
     offset += sizeof(lldp_prefix);
@@ -246,6 +270,44 @@ test_corrupt(void)
     aim_log_fid_set_all(AIM_LOG_FLAG_WARN, 1);
 }
 
+/*
+ * We don't expect the controller to send these LLDPs, but nothing bad should
+ * happen.
+ */
+static void
+test_invalid(void)
+{
+    fprintf(stderr, "Starting invalid LLDP test\n");
+    reset();
+
+    /* Duplicate addresses */
+    expect_add("1.2.3.4");
+    lldp_packet_in(1, "1.2.3.4", "1.2.3.4");
+    check_expectations();
+
+    /* Same duplicate addresses */
+    lldp_packet_in(1, "1.2.3.4", "1.2.3.4");
+    check_expectations();
+
+    /* Different duplicate addresses */
+    expect_remove("1.2.3.4");
+    expect_add("5.6.7.8");
+    lldp_packet_in(1, "5.6.7.8", "5.6.7.8");
+    check_expectations();
+
+    /* Fail indigo_cxn_controller_add */
+    lldp_packet_in(1, "0.0.0.0", "5.6.7.8");
+    check_expectations();
+
+    /* Invalid IP address length */
+    lldp_packet_in(1, "invalid-ipv4-length", "5.6.7.8");
+    check_expectations();
+
+    /* Unsupported address type */
+    lldp_packet_in(1, "unsupported-address-type", "5.6.7.8");
+    check_expectations();
+}
+
 int aim_main(int argc, char* argv[])
 {
     (void) argc;
@@ -257,6 +319,7 @@ int aim_main(int argc, char* argv[])
 
     test_basic();
     test_corrupt();
+    test_invalid();
 
     return 0;
 }
@@ -286,6 +349,10 @@ indigo_controller_add(
 
     AIM_ASSERT(protocol_params->header.protocol == INDIGO_CXN_PROTO_TCP_OVER_IPV4);
     const char *ip = protocol_params->tcp_over_ipv4.controller_ip;
+
+    if (!strcmp(ip, "0.0.0.0")) {
+        return INDIGO_ERROR_UNKNOWN;
+    }
 
     int i;
     for (i = 0; i < num_expected_adds; i++) {
