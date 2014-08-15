@@ -23,7 +23,7 @@
  * "management address" TLV and adds a controller connection for each
  * one.
  *
- * An LLDP without any management addresses will remove all controllers.
+ * An LLDP packet without any management addresses will remove all controllers.
  *
  * The set of controllers configured by this module is independent of those
  * configured with the command line and config file. It's expected that we
