@@ -25,6 +25,7 @@
 #include <indigo/of_connection_manager.h>
 #include <indigo/of_state_manager.h>
 #include <PPE/ppe.h>
+#include <debug_counter/debug_counter.h>
 
 #define LLDP_TLV_MANAGEMENT_ADDRESS 8
 #define LLDP_ADDRESS_FAMILY_IPV4 1
@@ -65,6 +66,11 @@ static indigo_cxn_config_params_t cxn_config_params = {
     .reset_echo_count = 3,
 };
 
+static debug_counter_t received_uplink_lldp;
+static debug_counter_t invalid_tlv;
+static debug_counter_t invalid_management_tlv;
+static debug_counter_t controller_add_failed;
+
 /*
  * Parse the LLDP TLV starting at *data_p. Returns true if parsing was
  * successful. *remain should be initialized with the number of bytes
@@ -78,6 +84,7 @@ lldp_parse_tlv(const uint8_t **data_p, int *remain, struct lldp_tlv *tlv)
 
     if (*remain < 2) {
         AIM_LOG_WARN("Not enough bytes remaining for an LLDP TLV");
+        debug_counter_inc(&invalid_tlv);
         return false;
     }
 
@@ -93,6 +100,7 @@ lldp_parse_tlv(const uint8_t **data_p, int *remain, struct lldp_tlv *tlv)
     int total_length = payload_length + 2;
     if (total_length > *remain) {
         AIM_LOG_WARN("Invalid LLDP TLV length %d", total_length);
+        debug_counter_inc(&invalid_tlv);
         return false;
     }
 
@@ -102,6 +110,7 @@ lldp_parse_tlv(const uint8_t **data_p, int *remain, struct lldp_tlv *tlv)
     if (tlv->type == 127) {
         if (payload_length < 4) {
             AIM_LOG_WARN("Not enough payload bytes for an LLDP organizational TLV");
+            debug_counter_inc(&invalid_tlv);
             return false;
         }
         tlv->oui = (data[2] << 16) | (data[3] << 8) | data[4];
@@ -154,6 +163,8 @@ pktin_listener(of_packet_in_t *packet_in)
         return INDIGO_CORE_LISTENER_RESULT_PASS;
     }
 
+    debug_counter_inc(&received_uplink_lldp);
+
     AIM_LOG_VERBOSE("Parsing LLDP packet");
 
     struct inband_controller new_controllers[MAX_INBAND_CONTROLLERS];
@@ -169,6 +180,7 @@ pktin_listener(of_packet_in_t *packet_in)
 
             if (tlv.payload_length < 9 /* from 802.1ab spec */) {
                 AIM_LOG_WARN("Management address TLV too short");
+                debug_counter_inc(&invalid_management_tlv);
                 continue;
             }
 
@@ -177,6 +189,7 @@ pktin_listener(of_packet_in_t *packet_in)
 
             if (num_controllers >= MAX_INBAND_CONTROLLERS) {
                 AIM_LOG_WARN("Too many controllers in LLDP");
+                debug_counter_inc(&invalid_management_tlv);
                 continue;
             }
 
@@ -186,6 +199,7 @@ pktin_listener(of_packet_in_t *packet_in)
             if (addr_type == LLDP_ADDRESS_FAMILY_IPV4) {
                 if (addr_len != sizeof(of_ipv4_t)) {
                     AIM_LOG_WARN("Invalid IPv4 address length in management address TLV");
+                    debug_counter_inc(&invalid_management_tlv);
                     continue;
                 }
 
@@ -198,6 +212,7 @@ pktin_listener(of_packet_in_t *packet_in)
                 proto->controller_port = 6653;
             } else {
                 AIM_LOG_WARN("Ignoring management address TLV with unsupported address type %u", addr_type);
+                debug_counter_inc(&invalid_management_tlv);
                 continue;
             }
 
@@ -266,6 +281,7 @@ synchronize_controllers(struct inband_controller *new_controllers, int num_new_c
             AIM_ASSERT(num_controllers < MAX_INBAND_CONTROLLERS);
             if ((rv = indigo_controller_add(&new->protocol_params, &cxn_config_params, &new->id)) < 0) {
                 AIM_LOG_ERROR("Failed to add controller from LLDP: %s", indigo_strerror(rv));
+                debug_counter_inc(&controller_add_failed);
             } else {
                 /* Append to the controllers list */
                 controllers[num_controllers++] = *new;
@@ -278,6 +294,15 @@ void
 inband_init(void)
 {
     (void) indigo_core_packet_in_listener_register(pktin_listener);
+
+    debug_counter_register(&received_uplink_lldp, "inband.received_uplink_lldp",
+                           "Received an LLDP on an uplink port");
+    debug_counter_register(&invalid_tlv, "inband.invalid_tlv",
+                           "Found an invalid LLDP TLV");
+    debug_counter_register(&invalid_management_tlv, "inband.invalid_management_tlv",
+                           "Found an invalid LLDP Management Address TLV");
+    debug_counter_register(&controller_add_failed, "inband.controller_add_failed",
+                           "Failed to add a controller specified in a LLDP");
 }
 
 void
