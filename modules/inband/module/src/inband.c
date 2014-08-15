@@ -17,6 +17,19 @@
  *
  ****************************************************************/
 
+/*
+ * This module configures controller connections in response to LLDP
+ * packet-ins received on an uplink port. It looks for the standard
+ * "management address" TLV and adds a controller connection for each
+ * one.
+ *
+ * An LLDP without any management addresses will remove all controllers.
+ *
+ * The set of controllers configured by this module is independent of those
+ * configured with the command line and config file. It's expected that we
+ * won't use those other mechanisms when using this module.
+ */
+
 #include <AIM/aim.h>
 #include <stdbool.h>
 #include <arpa/inet.h>
