@@ -31,28 +31,16 @@
  */
 
 #include <AIM/aim.h>
-#include <stdbool.h>
 #include <arpa/inet.h>
-#include "inband_int.h"
-#include "inband_log.h"
 #include <indigo/of_connection_manager.h>
 #include <indigo/of_state_manager.h>
 #include <PPE/ppe.h>
 #include <debug_counter/debug_counter.h>
-
-#define LLDP_TLV_MANAGEMENT_ADDRESS 8
-#define LLDP_ADDRESS_FAMILY_IPV4 1
-#define LLDP_ADDRESS_FAMILY_IPV6 2
+#include "inband_int.h"
+#include "inband_log.h"
+#include "lldp.h"
 
 #define MAX_INBAND_CONTROLLERS 4
-
-struct lldp_tlv {
-    uint8_t type;
-    uint32_t oui;
-    uint8_t subtype;
-    const uint8_t *payload;
-    uint16_t payload_length;
-};
 
 struct inband_controller {
     indigo_controller_id_t id;
@@ -80,64 +68,8 @@ static indigo_cxn_config_params_t cxn_config_params = {
 };
 
 static debug_counter_t received_uplink_lldp;
-static debug_counter_t invalid_tlv;
 static debug_counter_t invalid_management_tlv;
 static debug_counter_t controller_add_failed;
-
-/*
- * Parse the LLDP TLV starting at *data_p. Returns true if parsing was
- * successful. *remain should be initialized with the number of bytes
- * available starting from *data_p. After each successful call this
- * function will update *data_p, *remain, and *tlv.
- */
-static bool
-lldp_parse_tlv(const uint8_t **data_p, int *remain, struct lldp_tlv *tlv)
-{
-    const uint8_t *data = *data_p;
-
-    if (*remain < 2) {
-        AIM_LOG_WARN("Not enough bytes remaining for an LLDP TLV");
-        debug_counter_inc(&invalid_tlv);
-        return false;
-    }
-
-    memset(tlv, 0, sizeof(*tlv));
-    tlv->type = data[0] >> 1;
-    int payload_length = ((data[0] & 1) << 8) | data[1];
-
-    if (tlv->type == 0 && payload_length == 0) {
-        /* End of LLDPDU */
-        return false;
-    }
-
-    int total_length = payload_length + 2;
-    if (total_length > *remain) {
-        AIM_LOG_WARN("Invalid LLDP TLV length %d", total_length);
-        debug_counter_inc(&invalid_tlv);
-        return false;
-    }
-
-    tlv->payload = data + 2;
-    tlv->payload_length = payload_length;
-
-    if (tlv->type == 127) {
-        if (payload_length < 4) {
-            AIM_LOG_WARN("Not enough payload bytes for an LLDP organizational TLV");
-            debug_counter_inc(&invalid_tlv);
-            return false;
-        }
-        tlv->oui = (data[2] << 16) | (data[3] << 8) | data[4];
-        tlv->subtype = data[5];
-        tlv->payload += 4;
-        tlv->payload_length -= 4;
-    }
-
-    *data_p += total_length;
-    *remain -= total_length;
-    assert(*remain >= 0);
-
-    return true;
-}
 
 static indigo_core_listener_result_t
 pktin_listener(of_packet_in_t *packet_in)
@@ -186,7 +118,7 @@ pktin_listener(of_packet_in_t *packet_in)
     struct lldp_tlv tlv;
     int remain = octets.bytes - (header - octets.data);
     const uint8_t *pos = header;
-    while (lldp_parse_tlv(&pos, &remain, &tlv)) {
+    while (inband_lldp_parse_tlv(&pos, &remain, &tlv)) {
         AIM_LOG_TRACE("Found tlv type=%u oui=%u subtype=%u payload_length=%u", tlv.type, tlv.oui, tlv.subtype, tlv.payload_length);
         if (tlv.type == LLDP_TLV_MANAGEMENT_ADDRESS) {
             AIM_LOG_TRACE("Found management address TLV");
@@ -310,12 +242,12 @@ inband_init(void)
 
     debug_counter_register(&received_uplink_lldp, "inband.received_uplink_lldp",
                            "Received an LLDP on an uplink port");
-    debug_counter_register(&invalid_tlv, "inband.invalid_tlv",
-                           "Found an invalid LLDP TLV");
     debug_counter_register(&invalid_management_tlv, "inband.invalid_management_tlv",
                            "Found an invalid LLDP Management Address TLV");
     debug_counter_register(&controller_add_failed, "inband.controller_add_failed",
                            "Failed to add a controller specified in a LLDP");
+
+    inband_lldp_init();
 }
 
 void
