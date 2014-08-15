@@ -64,7 +64,7 @@ build('targets/upcall-latency-benchmark')
 
 # Unit tests
 utestsdir = 'targets/utests'
-utests = ['tcam', 'l2table', 'xbuf']
+utests = ['tcam', 'l2table', 'xbuf', 'inband', 'lpm']
 for utest in utests:
     build(os.path.join(utestsdir, utest), toolchains=['gcc-local'])
     test(utest, "make -C %s" % os.path.join(utestsdir, utest))
