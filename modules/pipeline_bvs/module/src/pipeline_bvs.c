@@ -25,6 +25,7 @@ static const of_mac_addr_t slow_protocols_mac = { { 0x01, 0x80, 0xC2, 0x00, 0x00
 static const of_mac_addr_t packet_of_death_mac = { { 0x5C, 0x16, 0xC7, 0xFF, 0xFF, 0x04 } };
 static const of_mac_addr_t cdp_mac = { { 0x01, 0x00, 0x0c, 0xcc, 0xcc, 0xcc } };
 static const of_mac_addr_t broadcast_mac = { { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff } };
+static const of_mac_addr_t zero_mac = { { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } };
 
 static void process_l2(struct ctx *ctx);
 static void process_l3(struct ctx *ctx);
@@ -259,6 +260,12 @@ process_l2(struct ctx *ctx)
         ctx->l3_interface_class_id = vlan_entry->value.l3_interface_class_id;
     }
 
+    if (!memcmp(ctx->key->ethernet.eth_src, &zero_mac, OF_MAC_ADDR_BYTES)) {
+        AIM_LOG_VERBOSE("L2 source zero, discarding");
+        mark_drop(ctx);
+        return;
+    }
+
     /* Source lookup */
     struct l2_entry *src_l2_entry =
         pipeline_bvs_table_l2_lookup(vlan_vid, ctx->key->ethernet.eth_src);
@@ -295,7 +302,8 @@ process_l2(struct ctx *ctx)
     /* DHCP offload */
     if (port_entry->value.dhcp_offload) {
         if (ctx->key->ethertype == htons(0x0800) && ctx->key->ipv4.ipv4_proto == 17 &&
-                (ctx->key->tcp.tcp_dst == htons(67) || ctx->key->tcp.tcp_dst == htons(68))) {
+                (ctx->key->tcp.tcp_dst == htons(67) || ctx->key->tcp.tcp_dst == htons(68)) &&
+                !memcmp(ctx->key->ethernet.eth_dst, &broadcast_mac, OF_MAC_ADDR_BYTES)) {
             AIM_LOG_VERBOSE("sending DHCP packet to agent");
             mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_DHCP);
             mark_drop(ctx);
