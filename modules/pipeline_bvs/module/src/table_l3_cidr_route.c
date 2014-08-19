@@ -35,7 +35,7 @@ static const of_match_fields_t minimum_mask = {
     .eth_type = 0xffff,
 };
 
-static struct lpm_trie *lpm_tries[MAX_VRF+1];
+static struct lpm_trie *lpm_tries[MAX_VRF];
 
 static indigo_error_t
 parse_key(of_flow_add_t *obj, struct l3_cidr_route_key *key)
@@ -68,7 +68,7 @@ parse_key(of_flow_add_t *obj, struct l3_cidr_route_key *key)
     }
 
     key->vrf = match.fields.bsn_vrf;
-    if (key->vrf > MAX_VRF) {
+    if (key->vrf >= MAX_VRF) {
         return INDIGO_ERROR_BAD_MATCH;
     }
 
@@ -204,10 +204,10 @@ pipeline_bvs_table_l3_cidr_route_entry_create(
         return rv;
     }
 
-    AIM_LOG_VERBOSE("Create l3_cidr_route entry prio=%u vrf=%u ipv4=%{ipv4a}/%u"
+    AIM_LOG_VERBOSE("Create l3_cidr_route entry vrf=%u ipv4=%{ipv4a}/%u"
                     " -> next_hop=%{next_hop} cpu=%d",
-                    entry->key.mask_len, entry->key.vrf, entry->key.ipv4,
-                    entry->key.mask_len, &entry->value.next_hop, entry->value.cpu);
+                    entry->key.vrf, entry->key.ipv4, entry->key.mask_len,
+                    &entry->value.next_hop, entry->value.cpu);
 
     ind_ovs_fwd_write_lock();
     l3_cidr_route_insert(entry);
@@ -303,10 +303,10 @@ pipeline_bvs_table_l3_cidr_route_lookup(uint32_t vrf, uint32_t ipv4)
     }
 
     if (entry) {
-        AIM_LOG_VERBOSE("Hit l3_cidr_route entry prio=%u vrf=%u ipv4=%{ipv4a}/%u"
+        AIM_LOG_VERBOSE("Hit l3_cidr_route entry vrf=%u ipv4=%{ipv4a}/%u"
                         " -> next_hop=%{next_hop} cpu=%d",
-                        entry->key.mask_len, entry->key.vrf, entry->key.ipv4,
-                        entry->key.mask_len, &entry->value.next_hop, entry->value.cpu);
+                        entry->key.vrf, entry->key.ipv4, entry->key.mask_len,
+                        &entry->value.next_hop, entry->value.cpu);
     } else {
         AIM_LOG_VERBOSE("Miss l3_cidr_route entry vrf=%u ipv4=%{ipv4a}", vrf, ntohl(ipv4));
     }
