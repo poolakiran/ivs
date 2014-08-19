@@ -23,8 +23,8 @@
 struct l3_cidr_route_key {
     uint32_t vrf;
     uint32_t ipv4;
+    uint8_t mask_len;
 };
-AIM_STATIC_ASSERT(L3_CIDR_ROUTE_KEY_SIZE, sizeof(struct l3_cidr_route_key) == 8);
 
 struct l3_cidr_route_value {
     struct next_hop next_hop;
@@ -32,7 +32,7 @@ struct l3_cidr_route_value {
 };
 
 struct l3_cidr_route_entry {
-    struct tcam_entry tcam_entry;
+    struct l3_cidr_route_key key;
     struct l3_cidr_route_value value;
 };
 

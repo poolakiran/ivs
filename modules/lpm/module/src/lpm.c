@@ -22,7 +22,7 @@
  */
 
 #include <AIM/aim.h>
-#include <lpm_int.h>
+#include "lpm_int.h"
 #include "lpm_log.h"
 
 /*
