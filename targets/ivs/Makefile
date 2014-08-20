@@ -54,7 +54,7 @@ GLOBAL_LINK_LIBS += -ldl
 endif
 
 # Closed source modules
-DEPENDMODULES += pipeline_bvs lpm
+DEPENDMODULES += pipeline_bvs lpm inband
 
 #
 # Resolve module dependencies

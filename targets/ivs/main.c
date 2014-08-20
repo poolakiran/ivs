@@ -51,6 +51,7 @@
 #include <pipeline/pipeline.h>
 #include <dhcpra/dhcpra.h>
 #include <malloc.h>
+#include <inband/inband.h>
 
 #define AIM_LOG_MODULE_NAME ivs
 #include <AIM/aim_log.h>
@@ -418,6 +419,8 @@ aim_main(int argc, char* argv[])
         AIM_LOG_FATAL("Failed to initialize DHCP relay table and agent module");
         return 1;
     }
+
+    inband_init();
 
     if (pipeline == NULL) {
         if (openflow_version == NULL || !strcmp(openflow_version, "1.0")) {

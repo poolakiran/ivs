@@ -142,7 +142,7 @@ pktin_listener(of_packet_in_t *packet_in)
             memset(new_controller, 0, sizeof(*new_controller));
 
             if (addr_type == LLDP_ADDRESS_FAMILY_IPV4) {
-                if (addr_len != sizeof(of_ipv4_t)) {
+                if (addr_len != sizeof(of_ipv4_t) + 1) {
                     AIM_LOG_WARN("Invalid IPv4 address length in management address TLV");
                     debug_counter_inc(&invalid_management_tlv);
                     continue;
