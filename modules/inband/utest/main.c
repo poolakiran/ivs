@@ -99,16 +99,16 @@ append_management_address_tlv(uint8_t *dest, const char *ip)
     dest[i++] = 0x10; /* type */
     dest[i++] = 0x00; /* length placeholder */
     if (!strcmp(ip, "invalid-ipv4-length")) {
-        dest[i++] = 0x02; /* address length */
+        dest[i++] = 0x03; /* address length */
         dest[i++] = 0x01; /* address type */
         dest[i++] = 0x55; /* address */
         dest[i++] = 0x55; /* address */
     } else if (!strcmp(ip, "unsupported-address-type")) {
-        dest[i++] = 0x04; /* address length */
+        dest[i++] = 0x05; /* address length */
         dest[i++] = 0x88; /* address type */
         *(uint32_t *)&dest[i] = htonl(0x12345678); i+=4; /* address */
     } else {
-        dest[i++] = 0x04; /* address length */
+        dest[i++] = 0x05; /* address length */
         dest[i++] = 0x01; /* address type */
         *(uint32_t *)&dest[i] = inet_addr(ip); i+=4; /* address */
     }
