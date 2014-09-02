@@ -56,6 +56,7 @@ bool ind_ovs_uplink_check(of_port_no_t port);
 
 static struct inband_controller controllers[MAX_INBAND_CONTROLLERS];
 static int num_controllers = 0;
+static const char *inband_interface_name = "inband";
 
 /* Copied from IVS main.c */
 static indigo_cxn_config_params_t cxn_config_params = {
@@ -154,6 +155,23 @@ pktin_listener(of_packet_in_t *packet_in)
                 indigo_cxn_params_tcp_over_ipv4_t *proto = &new_controller->protocol_params.tcp_over_ipv4;
                 proto->protocol = INDIGO_CXN_PROTO_TCP_OVER_IPV4;
                 strcpy(proto->controller_ip, inet_ntoa(in));
+                proto->controller_port = 6653;
+            } else if (addr_type == LLDP_ADDRESS_FAMILY_IPV6) {
+                if (addr_len != sizeof(of_ipv6_t) + 1) {
+                    AIM_LOG_WARN("Invalid IPv6 address length in management address TLV");
+                    debug_counter_inc(&invalid_management_tlv);
+                    continue;
+                }
+
+                char addr_str[64];
+                inet_ntop(AF_INET6, &tlv.payload[2], addr_str, sizeof(addr_str));
+
+                AIM_LOG_VERBOSE("Controller address: %s", addr_str);
+
+                indigo_cxn_params_tcp_over_ipv6_t *proto = &new_controller->protocol_params.tcp_over_ipv6;
+                proto->protocol = INDIGO_CXN_PROTO_TCP_OVER_IPV6;
+                snprintf(proto->controller_ip, sizeof(proto->controller_ip),
+                        "%s%%%s", addr_str, inband_interface_name);
                 proto->controller_port = 6653;
             } else {
                 AIM_LOG_WARN("Ignoring management address TLV with unsupported address type %u", addr_type);
