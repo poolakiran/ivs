@@ -61,21 +61,21 @@ ifndef SUBMODULE_LUAJIT2
   endif
 endif
 
-ifndef SUBMODULE_SWITCHLIGHT_COMMON
-  ifdef SUBMODULES
-    SUBMODULE_SWITCHLIGHT_COMMON := $(SUBMODULES)/switchlight-common
-  else
-    SUBMODULE_SWITCHLIGHT_COMMON := $(ROOT)/submodules/switchlight-common
-    SUBMODULES_LOCAL += switchlight-common
-  endif
-endif
-
 ifndef SUBMODULE_LOXIGEN_ARTIFACTS
   ifdef SUBMODULES
     SUBMODULE_LOXIGEN_ARTIFACTS := $(SUBMODULES)/loxigen-artifacts
   else
     SUBMODULE_LOXIGEN_ARTIFACTS := $(ROOT)/submodules/loxigen-artifacts
     SUBMODULES_LOCAL += loxigen-artifacts
+  endif
+endif
+
+ifndef SUBMODULE_SWITCHLIGHT_COMMON
+  ifdef SUBMODULES
+    SUBMODULE_SWITCHLIGHT_COMMON := $(SUBMODULES)/switchlight-common
+  else
+    SUBMODULE_SWITCHLIGHT_COMMON := $(ROOT)/submodules/switchlight-common
+    SUBMODULES_LOCAL += switchlight-common
   endif
 endif
 
@@ -89,8 +89,8 @@ export BUILDER := $(SUBMODULE_INFRA)/builder/unix
 MODULE_DIRS := $(ROOT)/modules \
                $(SUBMODULE_INFRA)/modules \
                $(SUBMODULE_BIGCODE)/modules \
-               $(SUBMODULE_INDIGO)/modules \
-               $(SUBMODULE_SWITCHLIGHT_COMMON)/modules
+               $(SUBMODULE_SWITCHLIGHT_COMMON)/modules \
+               $(SUBMODULE_INDIGO)/modules
 
 .show-submodules:
 	@echo infra @ $(SUBMODULE_INFRA)

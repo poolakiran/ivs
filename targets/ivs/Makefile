@@ -42,7 +42,7 @@ include $(BUILDER)/lib.mk
 #
 DEPENDMODULES := SocketManager OFConnectionManager OFStateManager OVSDriver \
                  Configuration loci indigo BigList BigHash ivs_common pipeline pipeline_standard tcam xbuf \
-                 lldpa lacpa arpa router_ip_table icmpa dhcpra PPE IOF \
+                 PPE IOF \
                  AIM murmur cjson OS uCli debug_counter timer_wheel bloom_filter BigRing minimatch action \
                  stats
 
@@ -54,7 +54,7 @@ GLOBAL_LINK_LIBS += -ldl
 endif
 
 # Closed source modules
-DEPENDMODULES += pipeline_bvs lpm inband
+DEPENDMODULES += pipeline_bvs lpm inband lldpa lacpa arpa router_ip_table icmpa dhcpra
 
 #
 # Resolve module dependencies
