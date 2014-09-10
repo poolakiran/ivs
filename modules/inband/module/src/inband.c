@@ -32,8 +32,10 @@
 
 #include <AIM/aim.h>
 #include <arpa/inet.h>
+#include <unistd.h>
 #include <indigo/of_connection_manager.h>
 #include <indigo/of_state_manager.h>
+#include <indigo/port_manager.h>
 #include <PPE/ppe.h>
 #include <debug_counter/debug_counter.h>
 #include "inband_int.h"
@@ -53,6 +55,9 @@ static void synchronize_controllers(
 
 /* HACK not in IVS yet */
 bool ind_ovs_uplink_check(of_port_no_t port);
+
+static void send_lldp_reply(of_port_no_t port_no);
+static void get_port_name(of_port_no_t port, indigo_port_name_t port_name);
 
 static struct inband_controller controllers[MAX_INBAND_CONTROLLERS];
 static int num_controllers = 0;
@@ -167,7 +172,9 @@ pktin_listener(of_packet_in_t *packet_in)
 
     synchronize_controllers(new_controllers, num_new_controllers);
 
-    return INDIGO_CORE_LISTENER_RESULT_PASS;
+    send_lldp_reply(match.fields.in_port);
+
+    return INDIGO_CORE_LISTENER_RESULT_DROP;
 }
 
 static void
@@ -233,6 +240,106 @@ synchronize_controllers(struct inband_controller *new_controllers, int num_new_c
             }
         }
     }
+}
+
+static
+void send_lldp_reply(of_port_no_t port_no)
+{
+    struct lldp_builder builder;
+    inband_lldp_builder_init(&builder);
+
+    {
+        uint8_t chassis_id[] = { 0x04, 0, 0, 0, 0, 0, 0 };
+        of_dpid_t dpid = 0;
+        indigo_core_dpid_get(&dpid);
+
+        /* Use the lower 6 bytes of the DPID for the MAC address */
+        int i;
+        for (i = 0; i < 6; i++) {
+            chassis_id[6-i] = dpid & 0xff;
+            dpid >>= 8;
+        }
+
+        inband_lldp_append(&builder, 1, &chassis_id, sizeof(chassis_id));
+    }
+
+    {
+        uint8_t port_id[INDIGO_PORT_NAME_MAX+1] = { 0x05 };
+        char *port_name = (char *)port_id+1;
+        get_port_name(port_no, port_name);
+        inband_lldp_append(&builder, 2, &port_id, 1 + strnlen(port_name, INDIGO_PORT_NAME_MAX));
+    }
+
+    {
+        uint16_t ttl = htons(120);
+        inband_lldp_append(&builder, 3, &ttl, sizeof(ttl));
+    }
+
+    {
+        char hostname[256];
+        gethostname(hostname, sizeof(hostname));
+        inband_lldp_append(&builder, 5, hostname, strnlen(hostname, sizeof(hostname)));
+    }
+
+    {
+        const char *system_desc = "ivs";
+        inband_lldp_append(&builder, 6, system_desc, strlen(system_desc));
+    }
+
+    of_octets_t octets = inband_lldp_finish(&builder);
+
+    of_packet_out_t *obj = of_packet_out_new(OF_VERSION_1_3);
+    of_packet_out_buffer_id_set(obj, -1);
+    of_packet_out_in_port_set(obj, OF_PORT_DEST_CONTROLLER);
+
+    of_list_action_t *list = of_list_action_new(obj->version);
+    of_action_output_t *action = of_action_output_new(list->version);
+    of_action_output_port_set(action, port_no);
+    of_list_append(list, action);
+    of_object_delete(action);
+    AIM_TRUE_OR_DIE(of_packet_out_actions_set(obj, list) == 0);
+    of_object_delete(list);
+
+    if (of_packet_out_data_set(obj, &octets) < 0) {
+        AIM_DIE("Failed to set data on LLDP reply");
+    }
+
+    indigo_error_t rv = indigo_fwd_packet_out(obj);
+    if (rv < 0) {
+        AIM_LOG_ERROR("Failed to inject LLDP reply: %s", indigo_strerror(rv));
+    }
+
+    of_packet_out_delete(obj);
+}
+
+/*
+ * Get a port name by number
+ *
+ * This could be made much more efficient if PortManager had an interface
+ * to get the info for a single port.
+ */
+static void
+get_port_name(of_port_no_t port, indigo_port_name_t port_name)
+{
+    strcpy(port_name, "unknown");
+
+    indigo_port_info_t *list;
+    indigo_error_t rv = indigo_port_interface_list(&list);
+    if (rv < 0) {
+        AIM_LOG_ERROR("Failed to retrieve port list: %s", indigo_strerror(rv));
+        return;
+    }
+
+    indigo_port_info_t *cur = list;
+    while (cur != NULL) {
+        if (cur->of_port == port) {
+            strncpy(port_name, cur->port_name, INDIGO_PORT_NAME_MAX);
+            break;
+        }
+        cur = cur->next;
+    }
+
+    indigo_port_interface_list_destroy(list);
 }
 
 void
