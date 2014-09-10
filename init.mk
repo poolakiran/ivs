@@ -70,15 +70,26 @@ ifndef SUBMODULE_LOXIGEN_ARTIFACTS
   endif
 endif
 
+ifndef SUBMODULE_SWITCHLIGHT_COMMON
+  ifdef SUBMODULES
+    SUBMODULE_SWITCHLIGHT_COMMON := $(SUBMODULES)/switchlight-common
+  else
+    SUBMODULE_SWITCHLIGHT_COMMON := $(ROOT)/submodules/switchlight-common
+    SUBMODULES_LOCAL += switchlight-common
+  endif
+endif
+
 export SUBMODULE_INFRA
 export SUBMODULE_BIGCODE
 export SUBMODULE_INDIGO
 export SUBMODULE_LUAJIT2
+export SUBMODULE_SWITCHLIGHT_COMMON
 export BUILDER := $(SUBMODULE_INFRA)/builder/unix
 
 MODULE_DIRS := $(ROOT)/modules \
                $(SUBMODULE_INFRA)/modules \
                $(SUBMODULE_BIGCODE)/modules \
+               $(SUBMODULE_SWITCHLIGHT_COMMON)/modules \
                $(SUBMODULE_INDIGO)/modules
 
 .show-submodules:
@@ -86,3 +97,4 @@ MODULE_DIRS := $(ROOT)/modules \
 	@echo bigcode @ $(SUBMODULE_BIGCODE)
 	@echo indigo @ $(SUBMODULE_INDIGO)
 	@echo luajit2 @ $(SUBMODULE_LUAJIT2)
+	@echo switchlight-common @ $(SUBMODULE_SWITCHLIGHT_COMMON)

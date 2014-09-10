@@ -62,6 +62,7 @@ AIM_LOG_STRUCT_DEFINE(
 #endif
 
 void ivs_cli_init(const char *path);
+void ivs_agent_init(void);
 
 static int
 ivs_loci_logger(loci_log_level_t level,
@@ -392,6 +393,7 @@ aim_main(int argc, char* argv[])
     }
 
     inband_init();
+    ivs_agent_init();
 
     if (pipeline == NULL) {
         if (openflow_version == NULL || !strcmp(openflow_version, "1.0")) {
