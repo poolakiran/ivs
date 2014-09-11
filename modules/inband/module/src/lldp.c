@@ -108,20 +108,6 @@ inband_lldp_append(struct lldp_builder *builder, uint8_t type, const void *data,
     memcpy(v+2, data, len);
 }
 
-void
-inband_lldp_append_bsn(struct lldp_builder *builder, uint8_t subtype, const void *data, int len)
-{
-    AIM_ASSERT(len < (256 - 4)); /* we don't support the full 511 bytes */
-    uint8_t *v = xbuf_reserve(&builder->xbuf, len + 2);
-    v[0] = 127 << 1;
-    v[1] = len;
-    v[2] = 0;
-    v[3] = 0x26;
-    v[4] = 0xe1;
-    v[5] = subtype;
-    memcpy(v+6, data, len);
-}
-
 of_octets_t
 inband_lldp_finish(struct lldp_builder *builder)
 {

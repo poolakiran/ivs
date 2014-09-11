@@ -46,7 +46,6 @@ struct lldp_builder {
 
 void inband_lldp_builder_init(struct lldp_builder *builder);
 void inband_lldp_append(struct lldp_builder *builder, uint8_t type, const void *data, int len);
-void inband_lldp_append_bsn(struct lldp_builder *builder, uint8_t subtype, const void *data, int len);
 of_octets_t inband_lldp_finish(struct lldp_builder *builder);
 
 #endif
