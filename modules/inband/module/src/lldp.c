@@ -27,6 +27,9 @@
 
 static debug_counter_t invalid_tlv;
 
+static const of_mac_addr_t dest_mac = { { 0x01, 0x80, 0xc2, 0x00, 0x00, 0x0e } };
+static const of_mac_addr_t source_mac = { { 0x5c, 0x16, 0xc7, 0xff, 0xff, 0x08 } };
+
 /*
  * Parse the LLDP TLV starting at *data_p. Returns true if parsing was
  * successful. *remain should be initialized with the number of bytes
@@ -89,9 +92,8 @@ inband_lldp_builder_init(struct lldp_builder *builder)
 
     /* Construct ethernet header */
     struct ethhdr *eth = xbuf_reserve(&builder->xbuf, sizeof(*eth));
-    uint8_t lldp_dst_mac[] = { 0x01, 0x80, 0xc2, 0x00, 0x00, 0x0e };
-    memcpy(eth->h_dest, lldp_dst_mac, ETH_ALEN);
-    memset(eth->h_source, 0, ETH_ALEN);
+    memcpy(eth->h_dest, &dest_mac, ETH_ALEN);
+    memcpy(eth->h_source, &source_mac, ETH_ALEN);
     eth->h_proto = htons(0x88cc);
 }
 
