@@ -73,6 +73,7 @@ static indigo_cxn_config_params_t cxn_config_params = {
 };
 
 static debug_counter_t received_uplink_lldp;
+static debug_counter_t sent_lldp_reply;
 static debug_counter_t invalid_management_tlv;
 static debug_counter_t controller_add_failed;
 
@@ -307,6 +308,8 @@ void send_lldp_reply(of_port_no_t port_no)
     indigo_error_t rv = indigo_fwd_packet_out(obj);
     if (rv < 0) {
         AIM_LOG_ERROR("Failed to inject LLDP reply: %s", indigo_strerror(rv));
+    } else {
+        debug_counter_inc(&sent_lldp_reply);
     }
 
     of_packet_out_delete(obj);
@@ -349,6 +352,8 @@ inband_init(void)
 
     debug_counter_register(&received_uplink_lldp, "inband.received_uplink_lldp",
                            "Received an LLDP on an uplink port");
+    debug_counter_register(&sent_lldp_reply, "inband.sent_lldp_reply",
+                           "Sent a reply LLDP on an uplink port");
     debug_counter_register(&invalid_management_tlv, "inband.invalid_management_tlv",
                            "Found an invalid LLDP Management Address TLV");
     debug_counter_register(&controller_add_failed, "inband.controller_add_failed",
