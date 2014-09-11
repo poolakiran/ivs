@@ -22,8 +22,13 @@
 #include "inband_int.h"
 #include "inband_log.h"
 #include "lldp.h"
+#include <arpa/inet.h>
+#include <linux/if_ether.h>
 
 static debug_counter_t invalid_tlv;
+
+static const of_mac_addr_t dest_mac = { { 0x01, 0x80, 0xc2, 0x00, 0x00, 0x0e } };
+static const of_mac_addr_t source_mac = { { 0x5c, 0x16, 0xc7, 0xff, 0xff, 0x08 } };
 
 /*
  * Parse the LLDP TLV starting at *data_p. Returns true if parsing was
@@ -78,6 +83,40 @@ inband_lldp_parse_tlv(const uint8_t **data_p, int *remain, struct lldp_tlv *tlv)
     AIM_ASSERT(*remain >= 0);
 
     return true;
+}
+
+void
+inband_lldp_builder_init(struct lldp_builder *builder)
+{
+    xbuf_init(&builder->xbuf);
+
+    /* Construct ethernet header */
+    struct ethhdr *eth = xbuf_reserve(&builder->xbuf, sizeof(*eth));
+    memcpy(eth->h_dest, &dest_mac, ETH_ALEN);
+    memcpy(eth->h_source, &source_mac, ETH_ALEN);
+    eth->h_proto = htons(0x88cc);
+}
+
+void
+inband_lldp_append(struct lldp_builder *builder, uint8_t type, const void *data, int len)
+{
+    AIM_ASSERT(type < 128);
+    AIM_ASSERT(len < 256); /* we don't support the full 511 bytes */
+    uint8_t *v = xbuf_reserve(&builder->xbuf, len + 2);
+    v[0] = type << 1;
+    v[1] = len;
+    memcpy(v+2, data, len);
+}
+
+of_octets_t
+inband_lldp_finish(struct lldp_builder *builder)
+{
+    inband_lldp_append(builder, 0, NULL, 0);
+
+    of_octets_t octets;
+    octets.bytes = xbuf_length(&builder->xbuf);
+    octets.data = xbuf_steal(&builder->xbuf);
+    return octets;
 }
 
 void

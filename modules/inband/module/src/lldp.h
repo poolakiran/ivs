@@ -22,6 +22,8 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <xbuf/xbuf.h>
+#include <loci/loci.h>
 
 #define LLDP_TLV_MANAGEMENT_ADDRESS 8
 #define LLDP_ADDRESS_FAMILY_IPV4 1
@@ -37,5 +39,13 @@ struct lldp_tlv {
 
 bool inband_lldp_parse_tlv(const uint8_t **data_p, int *remain, struct lldp_tlv *tlv);
 void inband_lldp_init(void);
+
+struct lldp_builder {
+    struct xbuf xbuf;
+};
+
+void inband_lldp_builder_init(struct lldp_builder *builder);
+void inband_lldp_append(struct lldp_builder *builder, uint8_t type, const void *data, int len);
+of_octets_t inband_lldp_finish(struct lldp_builder *builder);
 
 #endif

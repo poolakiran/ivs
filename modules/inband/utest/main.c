@@ -28,6 +28,13 @@
 #include <loci/loci.h>
 #include <indigo/of_connection_manager.h>
 #include <indigo/of_state_manager.h>
+#include <indigo/port_manager.h>
+
+enum listener_result_assertion {
+    PASS = INDIGO_CORE_LISTENER_RESULT_PASS,
+    DROP = INDIGO_CORE_LISTENER_RESULT_DROP,
+    DONTCARE,
+};
 
 static const uint8_t lldp_prefix[] = {
     // Destination MAC
@@ -54,6 +61,31 @@ static const uint8_t lldp_prefix[] = {
     0xfe, 0x10, 0x00, 0x26, 0xe1, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
 };
 
+static const uint8_t expected_reply[] = {
+    // Destination MAC
+    0x01, 0x80, 0xc2, 0x00, 0x00, 0x0e,
+    // Source MAC
+    0x5c, 0x16, 0xc7, 0xff, 0xff, 0x08,
+    // LLDP Ether Type
+    0x88, 0xcc,
+    // Chassis ID
+    0x02, 0x07, 0x04, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+    // Port ID
+    0x04, 0x05, 0x05, 'e', 't', 'h', '0',
+    // TTL
+    0x06, 0x02, 0x00, 0x78,
+    // System Name
+    0x0a, 0x08, 'h', 'o', 's', 't', 'n', 'a', 'm', 'e',
+    // System Desc
+    0x0c, 0x03, 'i', 'v', 's',
+};
+
+static indigo_port_info_t port_info[] = {
+    { &port_info[1], "eth0", 1 },
+    { &port_info[2], "eth1", 2 },
+    { NULL, "eth2", 3 },
+};
+
 static indigo_core_packet_in_listener_f listener = NULL;
 static const char *expected_adds[32], *expected_removes[32];
 static int num_expected_adds, num_expected_removes;
@@ -62,7 +94,9 @@ static int next_controller_id;
 static bool disable_expectations;
 
 static void
-packet_in(const uint8_t *data, int length, of_port_no_t in_port)
+packet_in(const uint8_t *data, int length,
+          of_port_no_t in_port,
+          enum listener_result_assertion expect)
 {
     of_packet_in_t *obj = of_packet_in_new(OF_VERSION_1_3);
     of_match_t match = { 0 };
@@ -73,7 +107,9 @@ packet_in(const uint8_t *data, int length, of_port_no_t in_port)
     of_octets_t octets = { .data = (uint8_t *)data, .bytes = length };
     AIM_TRUE_OR_DIE(of_packet_in_data_set(obj, &octets) == 0);
     indigo_core_listener_result_t result = listener(obj);
-    AIM_ASSERT(result == INDIGO_CORE_LISTENER_RESULT_PASS);
+    if (expect != DONTCARE) {
+        AIM_ASSERT(expect == (int)result);
+    }
     of_object_delete(obj);
 }
 
@@ -120,7 +156,10 @@ append_management_address_tlv(uint8_t *dest, const char *ip)
 }
 
 static void
-lldp_packet_in(of_port_no_t port, const char *controller1_ip, const char *controller2_ip)
+lldp_packet_in(of_port_no_t port,
+               const char *controller1_ip,
+               const char *controller2_ip,
+               enum listener_result_assertion expect)
 {
     static uint8_t data[1500];
     int offset = 0;
@@ -142,7 +181,7 @@ lldp_packet_in(of_port_no_t port, const char *controller1_ip, const char *contro
 
     fprintf(stderr, "Sending LLDP with management IPs %s and %s\n", controller1_ip, controller2_ip);
 
-    packet_in(data, offset, port);
+    packet_in(data, offset, port, expect);
 }
 
 static void
@@ -183,7 +222,7 @@ static void
 reset(void)
 {
     disable_expectations = true;
-    lldp_packet_in(1, NULL, NULL);
+    lldp_packet_in(1, NULL, NULL, DROP);
     disable_expectations = false;
     check_expectations();
 }
@@ -196,17 +235,17 @@ test_basic(void)
     /* Add two controllers */
     expect_add("1.2.3.4");
     expect_add("5.6.7.8");
-    lldp_packet_in(1, "1.2.3.4", "5.6.7.8");
+    lldp_packet_in(1, "1.2.3.4", "5.6.7.8", DROP);
     check_expectations();
 
     /* Same controllers, different order */
-    lldp_packet_in(1, "5.6.7.8", "1.2.3.4");
+    lldp_packet_in(1, "5.6.7.8", "1.2.3.4", DROP);
     check_expectations();
 
     /* Replace one controller */
     expect_remove("5.6.7.8");
     expect_add("9.9.9.9");
-    lldp_packet_in(1, "1.2.3.4", "9.9.9.9");
+    lldp_packet_in(1, "1.2.3.4", "9.9.9.9", DROP);
     check_expectations();
 
     /* Replace both controllers */
@@ -214,17 +253,17 @@ test_basic(void)
     expect_remove("9.9.9.9");
     expect_add("10.10.10.10");
     expect_add("11.11.11.11");
-    lldp_packet_in(1, "10.10.10.10", "11.11.11.11");
+    lldp_packet_in(1, "10.10.10.10", "11.11.11.11", DROP);
     check_expectations();
 
     /* Remove a controller */
     expect_remove("10.10.10.10");
-    lldp_packet_in(1, "11.11.11.11", NULL);
+    lldp_packet_in(1, "11.11.11.11", NULL, DROP);
     check_expectations();
 
     /* Remove the last controller */
     expect_remove("11.11.11.11");
-    lldp_packet_in(1, NULL, NULL);
+    lldp_packet_in(1, NULL, NULL, DROP);
     check_expectations();
 }
 
@@ -256,14 +295,14 @@ test_corrupt(void)
     int bit;
     for (bit = 0; bit < offset*8; bit++) {
         data[bit/8] ^= 1<<(bit %8);
-        packet_in(data, offset, 1);
+        packet_in(data, offset, 1, DONTCARE);
         data[bit/8] ^= 1<<(bit %8);
     }
 
     /* Truncate the message and make sure the parser doesn't crash */
     int i;
     for (i = 0; i < offset; i++) {
-        packet_in(data, i, 1);
+        packet_in(data, i, 1, DONTCARE);
     }
 
     disable_expectations = false;
@@ -282,33 +321,33 @@ test_invalid(void)
 
     /* Duplicate addresses */
     expect_add("1.2.3.4");
-    lldp_packet_in(1, "1.2.3.4", "1.2.3.4");
+    lldp_packet_in(1, "1.2.3.4", "1.2.3.4", DROP);
     check_expectations();
 
     /* Same duplicate addresses */
-    lldp_packet_in(1, "1.2.3.4", "1.2.3.4");
+    lldp_packet_in(1, "1.2.3.4", "1.2.3.4", DROP);
     check_expectations();
 
     /* Different duplicate addresses */
     expect_remove("1.2.3.4");
     expect_add("5.6.7.8");
-    lldp_packet_in(1, "5.6.7.8", "5.6.7.8");
+    lldp_packet_in(1, "5.6.7.8", "5.6.7.8", DROP);
     check_expectations();
 
     /* Fail indigo_cxn_controller_add */
-    lldp_packet_in(1, "0.0.0.0", "5.6.7.8");
+    lldp_packet_in(1, "0.0.0.0", "5.6.7.8", DROP);
     check_expectations();
 
     /* Invalid IP address length */
-    lldp_packet_in(1, "invalid-ipv4-length", "5.6.7.8");
+    lldp_packet_in(1, "invalid-ipv4-length", "5.6.7.8", DROP);
     check_expectations();
 
     /* Unsupported address type */
-    lldp_packet_in(1, "unsupported-address-type", "5.6.7.8");
+    lldp_packet_in(1, "unsupported-address-type", "5.6.7.8", DROP);
     check_expectations();
 
     /* Not from an uplink port */
-    lldp_packet_in(2, "1.2.3.4", "5.6.7.8");
+    lldp_packet_in(2, "1.2.3.4", "5.6.7.8", PASS);
     check_expectations();
 }
 
@@ -335,6 +374,13 @@ indigo_core_packet_in_listener_register(indigo_core_packet_in_listener_f fn)
 {
     assert(listener == NULL);
     listener = fn;
+    return INDIGO_ERROR_NONE;
+}
+
+indigo_error_t
+indigo_core_dpid_get(of_dpid_t *dpid)
+{
+    *dpid = 0xaabb010203040506;
     return INDIGO_ERROR_NONE;
 }
 
@@ -405,4 +451,35 @@ ind_ovs_uplink_check(of_port_no_t port)
     } else {
         return false;
     }
+}
+
+indigo_error_t
+indigo_fwd_packet_out(of_packet_out_t *obj)
+{
+    of_octets_t data;
+    of_packet_out_data_get(obj, &data);
+    AIM_ASSERT(data.bytes = sizeof(expected_reply));
+    AIM_ASSERT(!memcmp(data.data, expected_reply, data.bytes));
+    return INDIGO_ERROR_NONE;
+}
+
+indigo_error_t
+indigo_port_interface_list(indigo_port_info_t** list)
+{
+    *list = &port_info[0];
+    return INDIGO_ERROR_NONE;
+}
+
+void
+indigo_port_interface_list_destroy(indigo_port_info_t* list)
+{
+}
+
+/* libc stubs */
+
+int
+gethostname(char *name, size_t len)
+{
+    strncpy(name, "hostname", len);
+    return 0;
 }
