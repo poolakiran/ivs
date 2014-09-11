@@ -222,7 +222,7 @@ static void
 reset(void)
 {
     disable_expectations = true;
-    lldp_packet_in(1, NULL, NULL, DROP);
+    lldp_packet_in(1, NULL, NULL, PASS);
     disable_expectations = false;
     check_expectations();
 }
@@ -235,17 +235,17 @@ test_basic(void)
     /* Add two controllers */
     expect_add("1.2.3.4");
     expect_add("5.6.7.8");
-    lldp_packet_in(1, "1.2.3.4", "5.6.7.8", DROP);
+    lldp_packet_in(1, "1.2.3.4", "5.6.7.8", PASS);
     check_expectations();
 
     /* Same controllers, different order */
-    lldp_packet_in(1, "5.6.7.8", "1.2.3.4", DROP);
+    lldp_packet_in(1, "5.6.7.8", "1.2.3.4", PASS);
     check_expectations();
 
     /* Replace one controller */
     expect_remove("5.6.7.8");
     expect_add("9.9.9.9");
-    lldp_packet_in(1, "1.2.3.4", "9.9.9.9", DROP);
+    lldp_packet_in(1, "1.2.3.4", "9.9.9.9", PASS);
     check_expectations();
 
     /* Replace both controllers */
@@ -253,17 +253,17 @@ test_basic(void)
     expect_remove("9.9.9.9");
     expect_add("10.10.10.10");
     expect_add("11.11.11.11");
-    lldp_packet_in(1, "10.10.10.10", "11.11.11.11", DROP);
+    lldp_packet_in(1, "10.10.10.10", "11.11.11.11", PASS);
     check_expectations();
 
     /* Remove a controller */
     expect_remove("10.10.10.10");
-    lldp_packet_in(1, "11.11.11.11", NULL, DROP);
+    lldp_packet_in(1, "11.11.11.11", NULL, PASS);
     check_expectations();
 
     /* Remove the last controller */
     expect_remove("11.11.11.11");
-    lldp_packet_in(1, NULL, NULL, DROP);
+    lldp_packet_in(1, NULL, NULL, PASS);
     check_expectations();
 }
 
@@ -321,29 +321,29 @@ test_invalid(void)
 
     /* Duplicate addresses */
     expect_add("1.2.3.4");
-    lldp_packet_in(1, "1.2.3.4", "1.2.3.4", DROP);
+    lldp_packet_in(1, "1.2.3.4", "1.2.3.4", PASS);
     check_expectations();
 
     /* Same duplicate addresses */
-    lldp_packet_in(1, "1.2.3.4", "1.2.3.4", DROP);
+    lldp_packet_in(1, "1.2.3.4", "1.2.3.4", PASS);
     check_expectations();
 
     /* Different duplicate addresses */
     expect_remove("1.2.3.4");
     expect_add("5.6.7.8");
-    lldp_packet_in(1, "5.6.7.8", "5.6.7.8", DROP);
+    lldp_packet_in(1, "5.6.7.8", "5.6.7.8", PASS);
     check_expectations();
 
     /* Fail indigo_cxn_controller_add */
-    lldp_packet_in(1, "0.0.0.0", "5.6.7.8", DROP);
+    lldp_packet_in(1, "0.0.0.0", "5.6.7.8", PASS);
     check_expectations();
 
     /* Invalid IP address length */
-    lldp_packet_in(1, "invalid-ipv4-length", "5.6.7.8", DROP);
+    lldp_packet_in(1, "invalid-ipv4-length", "5.6.7.8", PASS);
     check_expectations();
 
     /* Unsupported address type */
-    lldp_packet_in(1, "unsupported-address-type", "5.6.7.8", DROP);
+    lldp_packet_in(1, "unsupported-address-type", "5.6.7.8", PASS);
     check_expectations();
 
     /* Not from an uplink port */

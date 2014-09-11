@@ -193,7 +193,7 @@ pktin_listener(of_packet_in_t *packet_in)
 
     send_lldp_reply(match.fields.in_port);
 
-    return INDIGO_CORE_LISTENER_RESULT_DROP;
+    return INDIGO_CORE_LISTENER_RESULT_PASS;
 }
 
 static void
