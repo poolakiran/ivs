@@ -141,6 +141,8 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
         case OF_INSTRUCTION_BSN_DISABLE_VLAN_COUNTERS:
             value->disable_vlan_counters = true;
             break;
+        case OF_INSTRUCTION_BSN_SPAN_DESTINATION:
+            break;
         default:
             AIM_LOG_ERROR("Unexpected instruction %s in port table", of_object_id_str[inst.header.object_id]);
             goto error;
