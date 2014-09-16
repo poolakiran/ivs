@@ -61,10 +61,11 @@ get_ip(uint32_t ip)
 }
 
 static void
-print_preorder(struct lpm_trie_entry *entry)
+print_preorder(uint32_t slot)
 {
-    if (entry == NULL) return;
+    if (slot == SLOT_INVALID) return;
 
+    struct lpm_trie_entry *entry = LPM_TRIE_ENTRY_OBJECT(lpm_trie, slot);
     printf("ipv4: %s/%u, bit: %u, value: %x\n",
            get_ip(entry->key), entry->mask_len, entry->match_bit_count,
            entry->value? *(uint32_t *)entry->value: 0);
