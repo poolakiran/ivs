@@ -25,6 +25,14 @@
 #include "lpm_int.h"
 #include "lpm_log.h"
 
+static inline struct lpm_trie_entry *
+lpm_trie_entry_object(struct lpm_trie *lpm_trie, uint32_t slot)
+{
+    AIM_ASSERT(slot != SLOT_INVALID, "invalid slot");
+
+    return &((lpm_trie)->lpm_trie_entries[slot]);
+}
+
 /*
  * Private function used to return whether
  * or not bit 'i' counting from the MSB is set in 'key'.
@@ -58,12 +66,9 @@ trie_entry_create(struct lpm_trie *lpm_trie, uint32_t key, uint8_t mask_len,
                   key, mask_len, bit);
 
     uint32_t slot = slot_allocator_alloc(lpm_trie->lpm_trie_entry_allocator);
-    if (slot == SLOT_INVALID) {
-        AIM_LOG_ERROR("Failed to create lpm trie entry");
-        return SLOT_INVALID;
-    }
+    AIM_ASSERT(slot != SLOT_INVALID, "Failed to create slot for lpm trie entry");
 
-    struct lpm_trie_entry *entry = LPM_TRIE_ENTRY_OBJECT(lpm_trie, slot);
+    struct lpm_trie_entry *entry = lpm_trie_entry_object(lpm_trie, slot);
 
     entry->key = key;
     entry->mask_len = mask_len;
@@ -100,10 +105,10 @@ trie_entry_remove(struct lpm_trie *lpm_trie, struct lpm_trie_entry *current,
     struct lpm_trie_entry *current_child = NULL;
     uint32_t current_child_slot = SLOT_INVALID;
     if (current->left != SLOT_INVALID) {
-        current_child = LPM_TRIE_ENTRY_OBJECT(lpm_trie, current->left);
+        current_child = lpm_trie_entry_object(lpm_trie, current->left);
         current_child_slot = current->left;
     } else if (current->right != SLOT_INVALID) {
-        current_child = LPM_TRIE_ENTRY_OBJECT(lpm_trie, current->right);
+        current_child = lpm_trie_entry_object(lpm_trie, current->right);
         current_child_slot = current->right;
     }
 
@@ -168,10 +173,10 @@ trie_entry_remove(struct lpm_trie *lpm_trie, struct lpm_trie_entry *current,
     struct lpm_trie_entry *sibling;
     uint32_t sibling_slot;
     if (is_current_left_child) {
-        sibling = LPM_TRIE_ENTRY_OBJECT(lpm_trie, parent->right);
+        sibling = lpm_trie_entry_object(lpm_trie, parent->right);
         sibling_slot = parent->right;
     } else {
-        sibling = LPM_TRIE_ENTRY_OBJECT(lpm_trie, parent->left);
+        sibling = lpm_trie_entry_object(lpm_trie, parent->left);
         sibling_slot = parent->left;
     }
 
@@ -200,8 +205,6 @@ lpm_trie_create(void)
     lpm_trie->lpm_trie_entry_allocator = slot_allocator_create(LPM_TRIE_ENTRY_COUNT);
     lpm_trie->lpm_trie_entries = aim_malloc(LPM_TRIE_ENTRY_COUNT *
                                             sizeof(struct lpm_trie_entry));
-    AIM_TRUE_OR_DIE(lpm_trie->lpm_trie_entries != NULL,
-                    "failed to allocate lpm_trie_entries");
     lpm_trie->root = SLOT_INVALID;
     lpm_trie->size = 0;
 
@@ -244,6 +247,14 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
     AIM_ASSERT(value != NULL, "attempted to insert a entry with NULL value in lpm trie");
 
     /*
+     * Max entries per lpm trie is 16000.
+     */
+    if (lpm_trie->size == LPM_TRIE_ENTRY_COUNT/2) {
+        AIM_LOG_ERROR("Attempted to insert a entry in a full lpm trie");
+        return;
+    }
+
+    /*
      * Make sure the key matches the mask.
      */
     AIM_ASSERT(key == (key & netmask(key_mask_len)), "key doesn't matches the mask");
@@ -262,7 +273,7 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
     /*
      * Find closest matching leaf node.
      */
-    struct lpm_trie_entry *current = LPM_TRIE_ENTRY_OBJECT(lpm_trie, lpm_trie->root);
+    struct lpm_trie_entry *current = lpm_trie_entry_object(lpm_trie, lpm_trie->root);
 
     /*
      * index is the count of the number of bits matched for the current node
@@ -298,9 +309,6 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
                                                         current->match_bit_count-index,
                                                         current->value, current->left,
                                                         current->right);
-                if (entry_slot == SLOT_INVALID) {
-                    return;
-                }
 
                 /* The current node has the new key and value */
                 current->key = key;
@@ -339,11 +347,6 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
                                                             current->match_bit_count-index,
                                                             current->value, current->left,
                                                             current->right);
-
-                if (new_entry_slot == SLOT_INVALID ||
-                    old_entry_slot == SLOT_INVALID) {
-                    return;
-                }
 
                 /*
                  * set up new intermediate node and truncate its match_bit_count
@@ -385,14 +388,11 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
                                                             key_mask_len-total_index-index,
                                                             value, SLOT_INVALID,
                                                             SLOT_INVALID);
-                    if (entry_slot == SLOT_INVALID) {
-                        return;
-                    }
                     current->left = entry_slot;
                     lpm_trie->size += 1;
                     return;
                 }
-                current = LPM_TRIE_ENTRY_OBJECT(lpm_trie, current->left);
+                current = lpm_trie_entry_object(lpm_trie, current->left);
             } else {
                 /* right branch */
                 if (current->right == SLOT_INVALID) {
@@ -401,14 +401,11 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
                                                             key_mask_len-total_index-index,
                                                             value, SLOT_INVALID,
                                                             SLOT_INVALID);
-                    if (entry_slot == SLOT_INVALID) {
-                        return;
-                    }
                     current->right = entry_slot;
                     lpm_trie->size += 1;
                     return;
                 }
-                current = LPM_TRIE_ENTRY_OBJECT(lpm_trie, current->right);
+                current = lpm_trie_entry_object(lpm_trie, current->right);
             }
 
             total_index += index;
@@ -450,7 +447,7 @@ lpm_trie_search(struct lpm_trie *lpm_trie, uint32_t key)
     AIM_LOG_TRACE("Search lpm trie for key=%{ipv4a}", key);
 
     while (current_slot != SLOT_INVALID) {
-        struct lpm_trie_entry *current = LPM_TRIE_ENTRY_OBJECT(lpm_trie, current_slot);
+        struct lpm_trie_entry *current = lpm_trie_entry_object(lpm_trie, current_slot);
         uint32_t mask = netmask(total_index + current->match_bit_count);
         if ((current->key & mask) != (key & mask)) {
             return result_value;
@@ -489,7 +486,7 @@ lpm_trie_remove(struct lpm_trie *lpm_trie, uint32_t key, uint8_t key_mask_len)
     AIM_LOG_TRACE("Remove lpm trie entry with ipv4=%{ipv4a}/%u", key, key_mask_len);
 
     while (current_slot != SLOT_INVALID) {
-        struct lpm_trie_entry *current = LPM_TRIE_ENTRY_OBJECT(lpm_trie, current_slot);
+        struct lpm_trie_entry *current = lpm_trie_entry_object(lpm_trie, current_slot);
 
         /*
          * Current node has a longer mask_len than the query
