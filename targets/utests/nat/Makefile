@@ -17,19 +17,19 @@
 #
 ################################################################
 
-BASEDIR := $(dir $(lastword $(MAKEFILE_LIST)))
-OVSDriver_BASEDIR := $(BASEDIR)/OVSDriver
-flowtable_BASEDIR := $(BASEDIR)/flowtable
-l2table_BASEDIR := $(BASEDIR)/l2table
-luajit_BASEDIR := $(BASEDIR)/luajit
-xbuf_BASEDIR := $(BASEDIR)/xbuf
-pipeline_BASEDIR := $(BASEDIR)/pipeline
-pipeline_bvs_BASEDIR := $(BASEDIR)/pipeline_bvs
-pipeline_standard_BASEDIR := $(BASEDIR)/pipeline_standard
-ivs_common_BASEDIR := $(BASEDIR)/ivs
-tcam_BASEDIR := $(BASEDIR)/tcam
-action_BASEDIR := $(BASEDIR)/action
-stats_BASEDIR := $(BASEDIR)/stats
-lpm_BASEDIR := $(BASEDIR)/lpm
-inband_BASEDIR := $(BASEDIR)/inband
-nat_BASEDIR := $(BASEDIR)/nat
+###############################################################################
+#
+#  nat Unit Testing Module Makefile
+#
+#
+#
+###############################################################################
+MODULE := nat_utest
+NOMODULEMAKE := 1
+TEST_MODULE :=  nat
+DEPENDMODULES := AIM
+GLOBAL_CFLAGS += -DAIM_CONFIG_INCLUDE_POSIX=1
+GLOBAL_CFLAGS += -DAIM_CONFIG_INCLUDE_MAIN=1
+GLOBAL_CFLAGS += -DAIM_CONFIG_INCLUDE_MODULES_INIT=1
+OS_MAKE_CONFIG_AUTOSELECT := 1
+include ../make/utestmodule.mk
