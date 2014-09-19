@@ -117,8 +117,9 @@ void lpm_trie_destroy(struct lpm_trie *lpm_trie);
  * @param key the key to add
  * @param key_mask_len the prefix associated with the key
  * @param value the value to add
+ * @return 0 on success and -1 on failure
  */
-void lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
+int lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
                      uint8_t key_mask_len, void *value);
 
 /*

@@ -239,7 +239,7 @@ lpm_trie_is_empty(struct lpm_trie *lpm_trie)
 /*
  * Documented in lpm.h
  */
-void
+int
 lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
                 uint8_t key_mask_len, void *value)
 {
@@ -251,7 +251,7 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
      */
     if (lpm_trie->size == LPM_TRIE_ENTRY_COUNT/2) {
         AIM_LOG_ERROR("Attempted to insert a entry in a full lpm trie");
-        return;
+        return -1;
     }
 
     /*
@@ -267,7 +267,7 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
                                            key_mask_len, value, SLOT_INVALID,
                                            SLOT_INVALID);
         lpm_trie->size += 1;
-        return;
+        return 0;
     }
 
     /*
@@ -326,7 +326,7 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
                 }
 
                 lpm_trie->size += 1;
-                return;
+                return 0;
             }
 
             bool key_bit = is_bit_set(key, total_index + index);
@@ -367,7 +367,7 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
                 }
 
                 lpm_trie->size += 1;
-                return;
+                return 0;
             }
 
             index += 1;
@@ -390,7 +390,7 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
                                                             SLOT_INVALID);
                     current->left = entry_slot;
                     lpm_trie->size += 1;
-                    return;
+                    return 0;
                 }
                 current = lpm_trie_entry_object(lpm_trie, current->left);
             } else {
@@ -403,7 +403,7 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
                                                             SLOT_INVALID);
                     current->right = entry_slot;
                     lpm_trie->size += 1;
-                    return;
+                    return 0;
                 }
                 current = lpm_trie_entry_object(lpm_trie, current->right);
             }
@@ -425,7 +425,7 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
             current->key = key;
             current->mask_len = key_mask_len;
             current->value = value;
-            return;
+            return 0;
         }
     }
 }
