@@ -215,7 +215,7 @@ pipeline_bvs_table_l3_cidr_route_entry_create(
 
     if (rv < 0) {
         aim_free(entry);
-        return rv;
+        return INDIGO_ERROR_RESOURCE;
     }
 
     *entry_priv = entry;
