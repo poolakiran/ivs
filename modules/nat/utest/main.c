@@ -24,6 +24,9 @@
 #include <assert.h>
 #include <AIM/aim.h>
 #include <AIM/aim_log.h>
+#include <indigo/of_state_manager.h>
+
+static const indigo_core_gentable_ops_t *nat_ops;
 
 int aim_main(int argc, char* argv[])
 {
@@ -31,6 +34,20 @@ int aim_main(int argc, char* argv[])
     (void) argv;
 
     nat_init();
+    AIM_ASSERT(nat_ops != NULL);
 
     return 0;
+}
+
+void
+indigo_core_gentable_register(
+    const of_table_name_t name,
+    const indigo_core_gentable_ops_t *ops,
+    void *table_priv,
+    uint32_t max_size,
+    uint32_t buckets_size,
+    indigo_core_gentable_t **gentable)
+{
+    *gentable = NULL;
+    nat_ops = ops;
 }
