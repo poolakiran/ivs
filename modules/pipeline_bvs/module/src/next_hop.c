@@ -134,10 +134,14 @@ pipeline_bvs_cleanup_next_hop(struct next_hop *next_hop)
 {
     switch (next_hop->type) {
     case NEXT_HOP_TYPE_LAG:
-        pipeline_bvs_group_lag_release(next_hop->lag);
+        if (next_hop->lag != NULL) {
+            pipeline_bvs_group_lag_release(next_hop->lag);
+        }
         break;
     case NEXT_HOP_TYPE_ECMP:
-        pipeline_bvs_group_ecmp_release(next_hop->ecmp);
+        if (next_hop->ecmp != NULL) {
+            pipeline_bvs_group_ecmp_release(next_hop->ecmp);
+        }
         break;
     default:
         break;
