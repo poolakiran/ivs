@@ -89,6 +89,10 @@ parse_value(of_flow_add_t *obj, struct flood_value *value)
                     uint32_t lag_id;
                     of_action_group_group_id_get(&act.group, &lag_id);
                     struct lag_group *lag = pipeline_bvs_group_lag_lookup(lag_id);
+                    if (lag == NULL) {
+                        AIM_LOG_ERROR("Nonexistent LAG in flood table");
+                        goto error;
+                    }
                     xbuf_append_ptr(&lags_xbuf, lag);
                     value->num_lags++;
                     break;
