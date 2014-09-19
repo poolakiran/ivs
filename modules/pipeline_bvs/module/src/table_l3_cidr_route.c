@@ -161,15 +161,15 @@ cleanup_value(struct l3_cidr_route_value *value)
     pipeline_bvs_cleanup_next_hop(&value->next_hop);
 }
 
-static void
+static indigo_error_t
 l3_cidr_route_insert(struct l3_cidr_route_entry *entry)
 {
     if (lpm_tries[entry->key.vrf] == NULL) {
         lpm_tries[entry->key.vrf] = lpm_trie_create();
     }
 
-    lpm_trie_insert(lpm_tries[entry->key.vrf], entry->key.ipv4,
-                    entry->key.mask_len, entry);
+    return lpm_trie_insert(lpm_tries[entry->key.vrf], entry->key.ipv4,
+                           entry->key.mask_len, entry);
 }
 
 static void
@@ -210,8 +210,13 @@ pipeline_bvs_table_l3_cidr_route_entry_create(
                     &entry->value.next_hop, entry->value.cpu);
 
     ind_ovs_fwd_write_lock();
-    l3_cidr_route_insert(entry);
+    rv = l3_cidr_route_insert(entry);
     ind_ovs_fwd_write_unlock();
+
+    if (rv < 0) {
+        aim_free(entry);
+        return INDIGO_ERROR_RESOURCE;
+    }
 
     *entry_priv = entry;
     ind_ovs_barrier_defer_revalidation(cxn_id);

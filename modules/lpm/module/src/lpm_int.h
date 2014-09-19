@@ -21,6 +21,14 @@
 #define __LPM_INT_H__
 
 #include <lpm/lpm.h>
+#include <slot_allocator/slot_allocator.h>
+
+/*
+ * Max entries limit per lpm trie is 16000. And since each entry creation
+ * can lead to 2 slots being used, so 32000 slots are a sufficient upper
+ * bound of 16000 entries.
+ */
+#define LPM_TRIE_ENTRY_COUNT 32000
 
 /*
  * lpm trie entry.
@@ -29,8 +37,8 @@ struct lpm_trie_entry {
     uint32_t key;                     /* Node key        */
     uint8_t mask_len;                 /* Cidr of mask    */
     uint8_t match_bit_count;          /* Number of bits to match */
-    struct lpm_trie_entry *left;      /* Left pointer    */
-    struct lpm_trie_entry *right;     /* Right pointer   */
+    uint32_t left;                    /* Slot number of left child */
+    uint32_t right;                   /* Slot number of right child */
     void *value;                      /* Node value      */
 };
 
@@ -38,7 +46,9 @@ struct lpm_trie_entry {
  * Top-level lpm_trie object.
  */
 struct lpm_trie {
-    struct  lpm_trie_entry *root;
+    struct slot_allocator *lpm_trie_entry_allocator;
+    struct lpm_trie_entry *lpm_trie_entries;
+    uint32_t root;
     uint32_t size;
 };
 
