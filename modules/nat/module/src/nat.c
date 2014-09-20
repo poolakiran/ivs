@@ -22,6 +22,12 @@
 #include <indigo/indigo.h>
 #include <indigo/of_state_manager.h>
 #include <debug_counter/debug_counter.h>
+#include <fcntl.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#include <sched.h>
+#include <linux/sched.h>
+#include <sys/errno.h>
 #include "nat_int.h"
 #include "nat_log.h"
 
@@ -40,11 +46,18 @@ struct nat_entry_value {
 struct nat_entry {
     struct nat_entry_key key;
     struct nat_entry_value value;
+    int netns;
 };
+
+static int create_netns(void);
+static void enter_netns(int fd);
+static int open_current_netns(void);
 
 static indigo_core_gentable_t *nat_table;
 
 static const indigo_core_gentable_ops_t nat_ops;
+
+static int root_netns = -1;
 
 /* Debug counters */
 static debug_counter_t add_success_counter;
@@ -60,6 +73,8 @@ nat_init(void)
 
     indigo_core_gentable_register("nat", &nat_ops, NULL, 4096, 128,
                                   &nat_table);
+
+    root_netns = open_current_netns();
 
     debug_counter_register(
         &add_success_counter, "nat.table_add",
@@ -86,6 +101,29 @@ void
 __nat_module_init__(void)
 {
     AIM_LOG_STRUCT_REGISTER();
+}
+
+
+/* nat container setup/teardown */
+
+static indigo_error_t
+nat_container_setup(struct nat_entry *entry)
+{
+    int new_netns;
+    if ((new_netns = create_netns()) < 0) {
+        return INDIGO_ERROR_UNKNOWN;
+    }
+    entry->netns = new_netns;
+    /* TODO setup NAT */
+    enter_netns(root_netns);
+
+    return INDIGO_ERROR_NONE;
+}
+
+static void
+nat_container_teardown(struct nat_entry *entry)
+{
+    close(entry->netns);
 }
 
 
@@ -222,6 +260,12 @@ nat_add(void *table_priv, of_list_bsn_tlv_t *key_tlvs, of_list_bsn_tlv_t *value_
     entry->key = key;
     entry->value = value;
 
+    if ((rv = nat_container_setup(entry)) < 0) {
+        aim_free(entry);
+        debug_counter_inc(&add_failure_counter);
+        return rv;
+    }
+
     *entry_priv = entry;
     debug_counter_inc(&add_success_counter);
     return INDIGO_ERROR_NONE;
@@ -240,9 +284,20 @@ nat_modify(void *table_priv, void *entry_priv, of_list_bsn_tlv_t *key_tlvs, of_l
         return rv;
     }
 
+    nat_container_teardown(entry);
+
+    struct nat_entry_value old_value = value;
     entry->value = value;
-    entry->stats.internal_port = 1;
-    entry->stats.external_port = 2;
+
+    if ((rv = nat_container_setup(entry)) < 0) {
+        entry->value = old_value;
+        if (nat_container_setup(entry) < 0) {
+            AIM_LOG_ERROR("Failed to restore previous NAT entry after failed modify");
+            /* NAT will be permanently broken for this entry */
+        }
+        debug_counter_inc(&modify_failure_counter);
+        return rv;
+    }
 
     debug_counter_inc(&modify_success_counter);
     return INDIGO_ERROR_NONE;
@@ -252,6 +307,7 @@ static indigo_error_t
 nat_delete(void *table_priv, void *entry_priv, of_list_bsn_tlv_t *key_tlvs)
 {
     struct nat_entry *entry = entry_priv;
+    nat_container_teardown(entry);
     aim_free(entry);
     debug_counter_inc(&delete_success_counter);
     return INDIGO_ERROR_NONE;
@@ -269,3 +325,45 @@ static const indigo_core_gentable_ops_t nat_ops = {
     .del = nat_delete,
     .get_stats = nat_get_stats,
 };
+
+
+/*
+ * Create and enter a new network namespace
+ *
+ * Returns a file descriptor referring to the new network namespace, or -1.
+ */
+int
+create_netns(void)
+{
+    if (syscall(__NR_unshare, CLONE_NEWNET) < 0) {
+        AIM_LOG_ERROR("Failed to create network namespace: %s", strerror(errno));
+        return -1;
+    }
+    return open_current_netns();
+}
+
+/*
+ * Enter an existing network namespace
+ */
+void
+enter_netns(int fd)
+{
+    if (syscall(__NR_setns, fd, CLONE_NEWNET) < 0) {
+        perror("syscall");
+        abort();
+    }
+}
+
+/*
+ * Get a file descriptor for the current network namespace
+ */
+int
+open_current_netns(void)
+{
+    int fd = open("/proc/self/ns/net", O_RDONLY);
+    if (fd < 0) {
+        perror("open");
+        abort();
+    }
+    return fd;
+}
