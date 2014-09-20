@@ -21,6 +21,7 @@
 #include <loci/loci.h>
 #include <indigo/indigo.h>
 #include <indigo/of_state_manager.h>
+#include <indigo/port_manager.h>
 #include <debug_counter/debug_counter.h>
 #include <fcntl.h>
 #include <sys/syscall.h>
@@ -28,6 +29,9 @@
 #include <sched.h>
 #include <linux/sched.h>
 #include <sys/errno.h>
+#include <signal.h>
+#include <netlink/genl/ctrl.h>
+#include <linux/rtnetlink.h>
 #include "nat_int.h"
 #include "nat_log.h"
 
@@ -52,6 +56,8 @@ struct nat_entry {
 static int create_netns(void);
 static void enter_netns(int fd);
 static int open_current_netns(void);
+static bool run(const char *fmt, ...);
+static indigo_error_t move_link(const char *name, int netns);
 
 static indigo_core_gentable_t *nat_table;
 
@@ -114,10 +120,50 @@ nat_container_setup(struct nat_entry *entry)
         return INDIGO_ERROR_UNKNOWN;
     }
     entry->netns = new_netns;
-    /* TODO setup NAT */
+
+    char ext_ifname[IFNAMSIZ+1];
+    snprintf(ext_ifname, sizeof(ext_ifname), "nat-%08x-e", entry->key.external_ip);
+    char int_ifname[IFNAMSIZ+1];
+    snprintf(int_ifname, sizeof(int_ifname), "nat-%08x-i", entry->key.external_ip);
+
+    /* Fake IP for next-hop to fabric router */
+    const char *internal_ip = "127.100.0.1";
+    const char *internal_netmask = "255.255.255.0";
+    const char *internal_gateway_ip = "127.100.0.2";
+
+    bool ok = true;
+    ok = ok && run("echo 1 > /proc/sys/net/ipv6/conf/default/disable_ipv6");
+    ok = ok && run("echo 1 > /proc/sys/net/ipv4/ip_forward");
+    ok = ok && run("ip link add ext type veth peer name %s", ext_ifname);
+    ok = ok && run("ip link add int type veth peer name %s", int_ifname);
+    ok = ok && run("ip link set dev lo down");
+    ok = ok && run("ip link set dev ext up address %{mac}", &entry->value.external_mac);
+    ok = ok && run("ip addr add %{ipv4a}/%{ipv4a} dev ext", entry->key.external_ip, entry->value.external_netmask);
+    ok = ok && run("ip link set dev int up address %{mac}", &entry->value.internal_mac);
+    ok = ok && run("ip addr add %s/%s dev int", internal_ip, internal_netmask);
+    ok = ok && run("ip route add to default via %{ipv4a}", entry->value.external_gateway_ip);
+    ok = ok && run("ip route add to default via %s table 1000", internal_gateway_ip);
+    ok = ok && run("ip rule add priority 1 iif ext lookup 1000");
+    ok = ok && run("iptables -t nat -A POSTROUTING -o ext -j SNAT --to %{ipv4a}", entry->key.external_ip);
+    ok = ok && run("iptables -A FORWARD -i ext -m state --state RELATED,ESTABLISHED -j ACCEPT");
+    ok = ok && run("iptables -A FORWARD -o ext -j ACCEPT");
+    ok = ok && run("iptables -P FORWARD DROP");
+    ok = ok && run("ip neigh replace %s lladdr %{mac} nud permanent dev int", internal_gateway_ip, &entry->value.internal_gateway_mac);
+
+    ok = ok && move_link(int_ifname, root_netns) == INDIGO_ERROR_NONE;
+    ok = ok && move_link(ext_ifname, root_netns) == INDIGO_ERROR_NONE;
+
     enter_netns(root_netns);
 
-    return INDIGO_ERROR_NONE;
+    ok = ok && indigo_port_interface_add(int_ifname, OF_PORT_DEST_NONE, NULL) == INDIGO_ERROR_NONE;
+    ok = ok && indigo_port_interface_add(ext_ifname, OF_PORT_DEST_NONE, NULL) == INDIGO_ERROR_NONE;
+
+    if (ok) {
+        return INDIGO_ERROR_NONE;
+    } else {
+        close(new_netns);
+        return INDIGO_ERROR_UNKNOWN;
+    }
 }
 
 static void
@@ -366,4 +412,75 @@ open_current_netns(void)
         abort();
     }
     return fd;
+}
+
+/*
+ * Run a shell command with AIM printf formatting
+ *
+ * Returns true if the command succeeded, false otherwise.
+ */
+static bool
+run(const char *fmt, ...)
+{
+    bool result;
+
+    va_list args;
+    va_start(args, fmt);
+    char *cmd = aim_vdfstrdup(fmt, args);
+    va_end(args);
+
+    AIM_LOG_VERBOSE("Running command '%s'", cmd);
+
+    int status = system(cmd);
+    if (WIFEXITED(status)) {
+        if (WEXITSTATUS(status) != 0) {
+            AIM_LOG_ERROR("Failed to execute command '%s': exited with status %u", cmd, WEXITSTATUS(status));
+            result = false;
+        } else {
+            result = true;
+        }
+    } else if (WIFSIGNALED(status)) {
+        AIM_LOG_ERROR("Failed to execute command '%s': terminated by signal %u", cmd, WTERMSIG(status));
+        result = false;
+    } else {
+        AIM_LOG_ERROR("Failed to execute command '%s': %s", cmd, strerror(errno));
+        result = false;
+    }
+
+    aim_free(cmd);
+
+    return result;
+}
+
+/* Move a link from the current netns to another one */
+static indigo_error_t
+move_link(const char *name, int netns)
+{
+    int rv;
+
+    struct nl_sock *sk = nl_socket_alloc();
+    if (sk == NULL) {
+        AIM_DIE("failed to allocate netlink socket");
+    }
+
+    if ((rv = nl_connect(sk, NETLINK_ROUTE)) < 0) {
+        AIM_DIE("Failed to connect netlink socket: %s", nl_geterror(rv));
+    }
+
+    struct nl_msg *msg = nlmsg_alloc();
+    AIM_TRUE_OR_DIE(msg != NULL);
+    struct nlmsghdr *nlh = nlmsg_hdr(msg);
+    nlh->nlmsg_type = RTM_SETLINK;
+    struct ifinfomsg *ifm = nlmsg_reserve(msg, sizeof(*ifm), NLMSG_ALIGNTO);
+    nla_put_string(msg, IFLA_IFNAME, name);
+    nla_put_u32(msg, IFLA_NET_NS_FD, netns);
+
+    if ((rv = nl_send_sync(sk, msg)) < 0) {
+        AIM_LOG_ERROR("Moving interface to netns failed: %s", nl_geterror(rv));
+        nl_socket_free(sk);
+        return INDIGO_ERROR_UNKNOWN;
+    }
+
+    nl_socket_free(sk);
+    return INDIGO_ERROR_NONE;
 }
