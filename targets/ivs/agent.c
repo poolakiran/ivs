@@ -5,6 +5,7 @@
 #include <icmpa/icmpa.h>
 #include <pipeline/pipeline.h>
 #include <dhcpra/dhcpra.h>
+#include <nat/nat.h>
 
 void
 ivs_agent_init(void)
@@ -32,4 +33,6 @@ ivs_agent_init(void)
     if (dhcpra_system_init() < 0) {
         AIM_DIE("Failed to initialize DHCP relay table and agent module");
     }
+
+    nat_init();
 }
