@@ -77,7 +77,7 @@ static const uint8_t expected_reply[] = {
     // System Name
     0x0a, 0x08, 'h', 'o', 's', 't', 'n', 'a', 'm', 'e',
     // System Desc
-    0x0c, 0x03, 'i', 'v', 's',
+    0x0c, 0x11, '5', 'c', ':', '1', '6', ':', 'c', '7', ':', '0', '0', ':', '0', '0', ':', '0', '3',
 };
 
 static indigo_port_info_t port_info[] = {
