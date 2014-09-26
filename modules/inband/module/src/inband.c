@@ -301,7 +301,7 @@ void send_lldp_reply(of_port_no_t port_no)
     }
 
     {
-        const char *system_desc = "ivs";
+        const char *system_desc = "5c:16:c7:00:00:03";
         inband_lldp_append(&builder, 6, system_desc, strlen(system_desc));
     }
 
