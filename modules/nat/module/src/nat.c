@@ -356,7 +356,7 @@ nat_modify(void *table_priv, void *entry_priv, of_list_bsn_tlv_t *key_tlvs, of_l
 
     nat_container_teardown(entry);
 
-    struct nat_entry_value old_value = value;
+    struct nat_entry_value old_value = entry->value;
     entry->value = value;
 
     if ((rv = nat_container_setup(entry)) < 0) {
