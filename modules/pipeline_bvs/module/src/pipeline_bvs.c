@@ -205,7 +205,34 @@ process_l2(struct ctx *ctx)
         return;
     }
 
-    uint16_t vlan_vid = VLAN_VID(ntohs(ctx->key->vlan));
+    uint16_t tag = VLAN_VID(ntohs(ctx->key->vlan));
+    uint16_t vlan_vid;
+
+    if (!(ctx->key->vlan & htons(VLAN_CFI_BIT))) {
+        AIM_LOG_VERBOSE("Using VLAN from port table");
+        vlan_vid = port_entry->value.default_vlan_vid;
+        action_push_vlan(ctx->actx);
+        action_set_vlan_vid(ctx->actx, vlan_vid);
+    } else {
+        struct vlan_xlate_entry *vlan_xlate_entry =
+            pipeline_bvs_table_vlan_xlate_lookup(port_entry->value.vlan_xlate_port_group_id, tag);
+        if (vlan_xlate_entry) {
+            AIM_LOG_VERBOSE("Using VLAN from vlan_xlate");
+            vlan_vid = vlan_xlate_entry->value.new_vlan_vid;
+            action_set_vlan_vid(ctx->actx, vlan_vid);
+        } else if (port_entry->value.require_vlan_xlate) {
+            AIM_LOG_VERBOSE("vlan_xlate required and missed, dropping");
+            mark_drop(ctx);
+            process_debug(ctx);
+            process_pktin(ctx);
+            return;
+        } else {
+            AIM_LOG_VERBOSE("Using VLAN from packet");
+            vlan_vid = tag;
+        }
+    }
+
+    ctx->internal_vlan_vid = vlan_vid;
 
     struct vlan_acl_key vlan_acl_key = make_vlan_acl_key(ctx);
     struct vlan_acl_entry *vlan_acl_entry =
@@ -214,28 +241,7 @@ process_l2(struct ctx *ctx)
         ctx->vrf = vlan_acl_entry->value.vrf;
         ctx->l3_interface_class_id = vlan_acl_entry->value.l3_interface_class_id;
         ctx->l3_src_class_id = vlan_acl_entry->value.l3_src_class_id;
-    } else {
-        if (ctx->key->vlan & htons(VLAN_CFI_BIT)) {
-            struct vlan_xlate_entry *vlan_xlate_entry =
-                pipeline_bvs_table_vlan_xlate_lookup(port_entry->value.vlan_xlate_port_group_id, vlan_vid);
-            if (vlan_xlate_entry) {
-                vlan_vid = vlan_xlate_entry->value.new_vlan_vid;
-                action_set_vlan_vid(ctx->actx, vlan_vid);
-            } else if (port_entry->value.require_vlan_xlate) {
-                AIM_LOG_VERBOSE("vlan_xlate required and missed, dropping");
-                mark_drop(ctx);
-                process_debug(ctx);
-                process_pktin(ctx);
-                return;
-            }
-        } else {
-            vlan_vid = port_entry->value.default_vlan_vid;
-            action_push_vlan(ctx->actx);
-            action_set_vlan_vid(ctx->actx, vlan_vid);
-        }
     }
-
-    ctx->internal_vlan_vid = vlan_vid;
 
     struct vlan_entry *vlan_entry = pipeline_bvs_table_vlan_lookup(vlan_vid);
     if (!vlan_entry) {
