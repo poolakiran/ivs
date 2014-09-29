@@ -111,10 +111,13 @@ __nat_module_init__(void)
 
 
 /* nat container setup/teardown */
-
 static indigo_error_t
 nat_container_setup(struct nat_entry *entry)
 {
+    /*
+     * Create and enter a new network namespace with unshare(CLONE_NEWNET)
+     * Save a reference to the new namespace with open("/proc/self/ns/net", O_RDONLY)
+     */
     int new_netns;
     if ((new_netns = create_netns()) < 0) {
         return INDIGO_ERROR_UNKNOWN;
@@ -132,29 +135,50 @@ nat_container_setup(struct nat_entry *entry)
     const char *internal_gateway_ip = "127.100.0.2";
 
     bool ok = true;
+
+    /* Disable IPv6 to stop the container from sending autoconfiguration packets */
     ok = ok && run("echo 1 > /proc/sys/net/ipv6/conf/default/disable_ipv6");
+
+    /* Enable IPv4 forwarding */
     ok = ok && run("echo 1 > /proc/sys/net/ipv4/ip_forward");
+
+    /* Create two veth pairs */
     ok = ok && run("ip link add ext type veth peer name %s", ext_ifname);
     ok = ok && run("ip link add int type veth peer name %s", int_ifname);
+
+    /* Disable the loopback interface to allow us to use the 127.0.0.0/8 subnet */
     ok = ok && run("ip link set dev lo down");
+
+    /* Configure MACs, IPs, and netmasks on the container side of each veth pair */
     ok = ok && run("ip link set dev ext up address %{mac}", &entry->value.external_mac);
     ok = ok && run("ip addr add %{ipv4a}/%{ipv4a} dev ext", entry->key.external_ip, entry->value.external_netmask);
     ok = ok && run("ip link set dev int up address %{mac}", &entry->value.internal_mac);
     ok = ok && run("ip addr add %s/%s dev int", internal_ip, internal_netmask);
+
+    /* Create the default route to external_gateway */
     ok = ok && run("ip route add to default via %{ipv4a}", entry->value.external_gateway_ip);
+
+    /* Create the policy-based routing rule and route to internal_gateway */
     ok = ok && run("ip route add to default via %s table 1000", internal_gateway_ip);
     ok = ok && run("ip rule add priority 1 iif ext lookup 1000");
+
+    /* Create static ARP entry for the internal gateway */
+    ok = ok && run("ip neigh replace %s lladdr %{mac} nud permanent dev int", internal_gateway_ip, &entry->value.internal_gateway_mac);
+
+    /* Setup iptables for NAT */
     ok = ok && run("iptables -t nat -A POSTROUTING -o ext -j SNAT --to %{ipv4a}", entry->key.external_ip);
     ok = ok && run("iptables -A FORWARD -i ext -m state --state RELATED,ESTABLISHED -j ACCEPT");
     ok = ok && run("iptables -A FORWARD -o ext -j ACCEPT");
     ok = ok && run("iptables -P FORWARD DROP");
-    ok = ok && run("ip neigh replace %s lladdr %{mac} nud permanent dev int", internal_gateway_ip, &entry->value.internal_gateway_mac);
 
+    /* Move the switch side of each veth pair into the original namespace */
     ok = ok && move_link(int_ifname, root_netns) == INDIGO_ERROR_NONE;
     ok = ok && move_link(ext_ifname, root_netns) == INDIGO_ERROR_NONE;
 
+    /* Revert to the original namespace */
     enter_netns(root_netns);
 
+    /* Connect the switch side of each veth pair to IVS */
     ok = ok && indigo_port_interface_add(int_ifname, OF_PORT_DEST_NONE, NULL) == INDIGO_ERROR_NONE;
     ok = ok && indigo_port_interface_add(ext_ifname, OF_PORT_DEST_NONE, NULL) == INDIGO_ERROR_NONE;
 
