@@ -167,7 +167,7 @@ nat_container_setup(struct nat_entry *entry)
     ok = ok && run("ip neigh replace %s lladdr %{mac} nud permanent dev int", internal_gateway_ip, &entry->value.internal_gateway_mac);
 
     /* Setup iptables for NAT */
-    ok = ok && run("iptables -t nat -A POSTROUTING -o ext -j SNAT --to %{ipv4a}", entry->key.external_ip);
+    ok = ok && run("iptables -t nat -A POSTROUTING -o ext -j SNAT --to-source %{ipv4a}", entry->key.external_ip);
     ok = ok && run("iptables -A FORWARD -i ext -m state --state RELATED,ESTABLISHED -j ACCEPT");
     ok = ok && run("iptables -A FORWARD -o ext -j ACCEPT");
     ok = ok && run("iptables -P FORWARD DROP");
