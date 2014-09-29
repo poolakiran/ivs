@@ -53,6 +53,7 @@ struct nat_entry {
     int netns;
 };
 
+static void nat_container_teardown(struct nat_entry *entry);
 static int create_netns(void);
 static void enter_netns(int fd);
 static int open_current_netns(void);
@@ -185,7 +186,7 @@ nat_container_setup(struct nat_entry *entry)
     if (ok) {
         return INDIGO_ERROR_NONE;
     } else {
-        close(new_netns);
+        nat_container_teardown(entry);
         return INDIGO_ERROR_UNKNOWN;
     }
 }
