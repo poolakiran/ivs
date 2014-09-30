@@ -25,12 +25,19 @@
 #define TEMPLATE_ENTRY_FIELD hash_entry
 #include <BigHash/bighash_template.h>
 
+#define WILDCARD_VLAN 0xffff
+
 static void cleanup_value(struct l2_value *value);
 
 static bighash_table_t *l2_hashtable;
+static struct l2_entry *miss_entry;
 static const of_match_fields_t required_mask = {
     .vlan_vid = 0xffff,
     .eth_dst = { { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff } },
+};
+static const of_match_fields_t required_miss_mask = {
+    .vlan_vid = 0,
+    .eth_dst = { { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } },
 };
 
 static indigo_error_t
@@ -40,11 +47,15 @@ parse_key(of_flow_add_t *obj, struct l2_key *key)
     if (of_flow_add_match_get(obj, &match) < 0) {
         return INDIGO_ERROR_BAD_MATCH;
     }
-    if (memcmp(&match.masks, &required_mask, sizeof(of_match_fields_t))) {
+    if (memcmp(&match.masks, &required_mask, sizeof(of_match_fields_t)) == 0) {
+        key->vlan_vid = match.fields.vlan_vid & ~VLAN_CFI_BIT;
+        key->mac = match.fields.eth_dst;
+    } else if (memcmp(&match.masks, &required_miss_mask, sizeof(of_match_fields_t)) == 0) {
+        key->vlan_vid = WILDCARD_VLAN;
+    } else {
         return INDIGO_ERROR_BAD_MATCH;
     }
-    key->vlan_vid = match.fields.vlan_vid & ~VLAN_CFI_BIT;
-    key->mac = match.fields.eth_dst;
+
     return INDIGO_ERROR_NONE;
 }
 
@@ -130,7 +141,12 @@ pipeline_bvs_table_l2_entry_create(
                     entry->value.lag ? entry->value.lag->id : OF_GROUP_ANY);
 
     ind_ovs_fwd_write_lock();
-    l2_hashtable_insert(l2_hashtable, entry);
+    if (entry->key.vlan_vid == WILDCARD_VLAN) {
+        AIM_ASSERT(miss_entry == NULL);
+        miss_entry = entry;
+    } else {
+        l2_hashtable_insert(l2_hashtable, entry);
+    }
     ind_ovs_fwd_write_unlock();
 
     stats_alloc(&entry->stats_handle);
@@ -171,7 +187,11 @@ pipeline_bvs_table_l2_entry_delete(
     struct l2_entry *entry = entry_priv;
 
     ind_ovs_fwd_write_lock();
-    bighash_remove(l2_hashtable, &entry->hash_entry);
+    if (entry == miss_entry) {
+        miss_entry = NULL;
+    } else {
+        bighash_remove(l2_hashtable, &entry->hash_entry);
+    }
     ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
@@ -251,9 +271,10 @@ pipeline_bvs_table_l2_lookup(uint16_t vlan_vid, const uint8_t *mac)
         AIM_LOG_VERBOSE("Hit L2 entry vlan=%u, mac=%{mac} -> lag %u",
                         entry->key.vlan_vid, &entry->key.mac,
                         entry->value.lag ? entry->value.lag->id : OF_GROUP_ANY);
+        return entry;
     } else {
         AIM_LOG_VERBOSE("Miss L2 entry vlan=%u, mac=%{mac}",
                         key.vlan_vid, &key.mac);
+        return miss_entry;
     }
-    return entry;
 }
