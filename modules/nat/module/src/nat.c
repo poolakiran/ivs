@@ -41,8 +41,7 @@ struct nat_entry_key {
 
 struct nat_entry_value {
     of_mac_addr_t external_mac;
-    of_ipv4_t external_netmask;
-    of_ipv4_t external_gateway_ip;
+    of_mac_addr_t external_gateway_mac;
     of_mac_addr_t internal_mac;
     of_mac_addr_t internal_gateway_mac;
 };
@@ -130,10 +129,15 @@ nat_container_setup(struct nat_entry *entry)
     char int_ifname[IFNAMSIZ+1];
     snprintf(int_ifname, sizeof(int_ifname), "nat-%08x-i", entry->key.external_ip);
 
-    /* Fake IP for next-hop to fabric router */
+    /* Fake IP for next-hop on the internal interface */
     const char *internal_ip = "127.100.0.1";
     const char *internal_netmask = "255.255.255.0";
     const char *internal_gateway_ip = "127.100.0.2";
+
+    /* Fake IP for next-hop on the external interface */
+    const char *external_ip = "127.100.1.1";
+    const char *external_netmask = "255.255.255.0";
+    const char *external_gateway_ip = "127.100.1.2";
 
     bool ok = true;
 
@@ -152,19 +156,20 @@ nat_container_setup(struct nat_entry *entry)
 
     /* Configure MACs, IPs, and netmasks on the container side of each veth pair */
     ok = ok && run("ip link set dev ext up address %{mac}", &entry->value.external_mac);
-    ok = ok && run("ip addr add %{ipv4a}/%{ipv4a} dev ext", entry->key.external_ip, entry->value.external_netmask);
+    ok = ok && run("ip addr add %s/%s dev ext", external_ip, external_netmask);
     ok = ok && run("ip link set dev int up address %{mac}", &entry->value.internal_mac);
     ok = ok && run("ip addr add %s/%s dev int", internal_ip, internal_netmask);
 
     /* Create the default route to external_gateway */
-    ok = ok && run("ip route add to default via %{ipv4a}", entry->value.external_gateway_ip);
+    ok = ok && run("ip route add to default via %s", external_gateway_ip);
 
     /* Create the policy-based routing rule and route to internal_gateway */
     ok = ok && run("ip route add to default via %s table 1000", internal_gateway_ip);
     ok = ok && run("ip rule add priority 1 iif ext lookup 1000");
 
-    /* Create static ARP entry for the internal gateway */
+    /* Create static ARP entries for the internal and external gateways */
     ok = ok && run("ip neigh replace %s lladdr %{mac} nud permanent dev int", internal_gateway_ip, &entry->value.internal_gateway_mac);
+    ok = ok && run("ip neigh replace %s lladdr %{mac} nud permanent dev ext", external_gateway_ip, &entry->value.external_gateway_mac);
 
     /* Setup iptables for NAT */
     ok = ok && run("iptables -t nat -A POSTROUTING -o ext -j SNAT --to-source %{ipv4a}", entry->key.external_ip);
@@ -252,24 +257,11 @@ nat_parse_value(of_list_bsn_tlv_t *tlvs, struct nat_entry_value *value)
         return INDIGO_ERROR_PARAM;
     }
 
-    /* External netmask */
-    if (tlv.header.object_id == OF_BSN_TLV_EXTERNAL_NETMASK) {
-        of_bsn_tlv_external_netmask_value_get(&tlv.external_netmask, &value->external_netmask);
+    /* External gateway MAC */
+    if (tlv.header.object_id == OF_BSN_TLV_EXTERNAL_GATEWAY_MAC) {
+        of_bsn_tlv_external_gateway_mac_value_get(&tlv.external_gateway_mac, &value->external_gateway_mac);
     } else {
-        AIM_LOG_ERROR("expected ipv4 external_netmask value TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
-        return INDIGO_ERROR_PARAM;
-    }
-
-    if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
-        AIM_LOG_ERROR("unexpected end of value list");
-        return INDIGO_ERROR_PARAM;
-    }
-
-    /* External gateway IP */
-    if (tlv.header.object_id == OF_BSN_TLV_EXTERNAL_GATEWAY_IP) {
-        of_bsn_tlv_external_gateway_ip_value_get(&tlv.external_gateway_ip, &value->external_gateway_ip);
-    } else {
-        AIM_LOG_ERROR("expected external_gateway_ip value TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
+        AIM_LOG_ERROR("expected external_gateway_mac value TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
         return INDIGO_ERROR_PARAM;
     }
 
