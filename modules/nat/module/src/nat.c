@@ -36,10 +36,11 @@
 #include "nat_log.h"
 
 struct nat_entry_key {
-    uint32_t external_ip;
+    char name[128];
 };
 
 struct nat_entry_value {
+    of_ipv4_t external_ip;
     of_mac_addr_t external_mac;
     of_ipv4_t external_netmask;
     of_ipv4_t external_gateway_ip;
@@ -123,6 +124,8 @@ format_port_name(char ifname[IFNAMSIZ+1], of_mac_addr_t mac)
 static indigo_error_t
 nat_container_setup(struct nat_entry *entry)
 {
+    AIM_LOG_VERBOSE("Creating NAT container %s", entry->key.name);
+
     /*
      * Create and enter a new network namespace with unshare(CLONE_NEWNET)
      * Save a reference to the new namespace with open("/proc/self/ns/net", O_RDONLY)
@@ -160,7 +163,7 @@ nat_container_setup(struct nat_entry *entry)
 
     /* Configure MACs, IPs, and netmasks on the container side of each veth pair */
     ok = ok && run("ip link set dev ext up address %{mac}", &entry->value.external_mac);
-    ok = ok && run("ip addr add %{ipv4a}/%{ipv4a} dev ext", entry->key.external_ip, entry->value.external_netmask);
+    ok = ok && run("ip addr add %{ipv4a}/%{ipv4a} dev ext", entry->value.external_ip, entry->value.external_netmask);
     ok = ok && run("ip link set dev int up address %{mac}", &entry->value.internal_mac);
     ok = ok && run("ip addr add %s/%s dev int", internal_ip, internal_netmask);
 
@@ -175,7 +178,7 @@ nat_container_setup(struct nat_entry *entry)
     ok = ok && run("ip neigh replace %s lladdr %{mac} nud permanent dev int", internal_gateway_ip, &entry->value.internal_gateway_mac);
 
     /* Setup iptables for NAT */
-    ok = ok && run("iptables -t nat -A POSTROUTING -o ext -j SNAT --to-source %{ipv4a}", entry->key.external_ip);
+    ok = ok && run("iptables -t nat -A POSTROUTING -o ext -j SNAT --to-source %{ipv4a}", entry->value.external_ip);
     ok = ok && run("iptables -A FORWARD -i ext -m state --state RELATED,ESTABLISHED -j ACCEPT");
     ok = ok && run("iptables -A FORWARD -o ext -j ACCEPT");
     ok = ok && run("iptables -P FORWARD DROP");
@@ -202,6 +205,7 @@ nat_container_setup(struct nat_entry *entry)
 static void
 nat_container_teardown(struct nat_entry *entry)
 {
+    AIM_LOG_VERBOSE("Destroying NAT container %s", entry->key.name);
     close(entry->netns);
 }
 
@@ -220,10 +224,16 @@ nat_parse_key(of_list_bsn_tlv_t *tlvs, struct nat_entry_key *key)
         return INDIGO_ERROR_PARAM;
     }
 
-    if (tlv.header.object_id == OF_BSN_TLV_EXTERNAL_IP) {
-        of_bsn_tlv_external_ip_value_get(&tlv.external_ip, &key->external_ip);
+    if (tlv.header.object_id == OF_BSN_TLV_NAME) {
+        of_octets_t name;
+        of_bsn_tlv_name_value_get(&tlv.name, &name);
+        if (name.bytes >= sizeof(key->name)) {
+            AIM_LOG_ERROR("name key TLV too long");
+            return INDIGO_ERROR_PARAM;
+        }
+        memcpy(key->name, name.data, name.bytes);
     } else {
-        AIM_LOG_ERROR("expected external_ip key TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
+        AIM_LOG_ERROR("expected name key TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
         return INDIGO_ERROR_PARAM;
     }
 
@@ -244,6 +254,19 @@ nat_parse_value(of_list_bsn_tlv_t *tlvs, struct nat_entry_value *value)
 
     if (of_list_bsn_tlv_first(tlvs, &tlv) < 0) {
         AIM_LOG_ERROR("empty value list");
+        return INDIGO_ERROR_PARAM;
+    }
+
+    /* External IP */
+    if (tlv.header.object_id == OF_BSN_TLV_EXTERNAL_IP) {
+        of_bsn_tlv_external_ip_value_get(&tlv.external_ip, &value->external_ip);
+    } else {
+        AIM_LOG_ERROR("expected external_ip value TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
+        return INDIGO_ERROR_PARAM;
+    }
+
+    if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
+        AIM_LOG_ERROR("unexpected end of value list");
         return INDIGO_ERROR_PARAM;
     }
 
