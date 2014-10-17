@@ -110,6 +110,14 @@ __nat_module_init__(void)
     AIM_LOG_STRUCT_REGISTER();
 }
 
+static void
+format_port_name(char ifname[IFNAMSIZ+1], of_mac_addr_t mac)
+{
+    snprintf(ifname, IFNAMSIZ+1, "nat%02x%02x%02x%02x%02x%02x",
+             mac.addr[0], mac.addr[1], mac.addr[2],
+             mac.addr[3], mac.addr[4], mac.addr[5]);
+}
+
 
 /* nat container setup/teardown */
 static indigo_error_t
@@ -126,9 +134,9 @@ nat_container_setup(struct nat_entry *entry)
     entry->netns = new_netns;
 
     char ext_ifname[IFNAMSIZ+1];
-    snprintf(ext_ifname, sizeof(ext_ifname), "nat-%08x-e", entry->key.external_ip);
+    format_port_name(ext_ifname, entry->value.external_mac);
     char int_ifname[IFNAMSIZ+1];
-    snprintf(int_ifname, sizeof(int_ifname), "nat-%08x-i", entry->key.external_ip);
+    format_port_name(int_ifname, entry->value.internal_mac);
 
     /* Fake IP for next-hop to fabric router */
     const char *internal_ip = "127.100.0.1";
