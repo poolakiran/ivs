@@ -46,6 +46,7 @@
 #include <pipeline/pipeline.h>
 #include <malloc.h>
 #include <inband/inband.h>
+#include <sys/resource.h>
 
 #define AIM_LOG_MODULE_NAME ivs
 #include <AIM/aim_log.h>
@@ -369,6 +370,15 @@ aim_main(int argc, char* argv[])
     }
 
     AIM_LOG_MSG("Starting %s (%s) pid %d", program_version, AIM_STRINGIFY(BUILD_ID), getpid());
+
+    /* Increase maximum number of file descriptors */
+    struct rlimit rlim = {
+        .rlim_cur = SOCKETMANAGER_CONFIG_MAX_SOCKETS,
+        .rlim_max = SOCKETMANAGER_CONFIG_MAX_SOCKETS
+    };
+    if (setrlimit(RLIMIT_NOFILE, &rlim) < 0) {
+        AIM_DIE("Failed to increase RLIMIT_NOFILE");
+    }
 
     /* Initialize all modules */
 
