@@ -36,12 +36,14 @@
 #include "nat_log.h"
 
 struct nat_entry_key {
-    uint32_t external_ip;
+    char name[128];
 };
 
 struct nat_entry_value {
+    of_ipv4_t external_ip;
     of_mac_addr_t external_mac;
-    of_mac_addr_t external_gateway_mac;
+    of_ipv4_t external_netmask;
+    of_ipv4_t external_gateway_ip;
     of_mac_addr_t internal_mac;
     of_mac_addr_t internal_gateway_mac;
 };
@@ -109,11 +111,21 @@ __nat_module_init__(void)
     AIM_LOG_STRUCT_REGISTER();
 }
 
+static void
+format_port_name(char ifname[IFNAMSIZ+1], of_mac_addr_t mac)
+{
+    snprintf(ifname, IFNAMSIZ+1, "nat%02x%02x%02x%02x%02x%02x",
+             mac.addr[0], mac.addr[1], mac.addr[2],
+             mac.addr[3], mac.addr[4], mac.addr[5]);
+}
+
 
 /* nat container setup/teardown */
 static indigo_error_t
 nat_container_setup(struct nat_entry *entry)
 {
+    AIM_LOG_VERBOSE("Creating NAT container %s", entry->key.name);
+
     /*
      * Create and enter a new network namespace with unshare(CLONE_NEWNET)
      * Save a reference to the new namespace with open("/proc/self/ns/net", O_RDONLY)
@@ -125,19 +137,14 @@ nat_container_setup(struct nat_entry *entry)
     entry->netns = new_netns;
 
     char ext_ifname[IFNAMSIZ+1];
-    snprintf(ext_ifname, sizeof(ext_ifname), "nat-%08x-e", entry->key.external_ip);
+    format_port_name(ext_ifname, entry->value.external_mac);
     char int_ifname[IFNAMSIZ+1];
-    snprintf(int_ifname, sizeof(int_ifname), "nat-%08x-i", entry->key.external_ip);
+    format_port_name(int_ifname, entry->value.internal_mac);
 
-    /* Fake IP for next-hop on the internal interface */
+    /* Fake IP for next-hop to fabric router */
     const char *internal_ip = "127.100.0.1";
     const char *internal_netmask = "255.255.255.0";
     const char *internal_gateway_ip = "127.100.0.2";
-
-    /* Fake IP for next-hop on the external interface */
-    const char *external_ip = "127.100.1.1";
-    const char *external_netmask = "255.255.255.0";
-    const char *external_gateway_ip = "127.100.1.2";
 
     bool ok = true;
 
@@ -156,23 +163,22 @@ nat_container_setup(struct nat_entry *entry)
 
     /* Configure MACs, IPs, and netmasks on the container side of each veth pair */
     ok = ok && run("ip link set dev ext up address %{mac}", &entry->value.external_mac);
-    ok = ok && run("ip addr add %s/%s dev ext", external_ip, external_netmask);
+    ok = ok && run("ip addr add %{ipv4a}/%{ipv4a} dev ext", entry->value.external_ip, entry->value.external_netmask);
     ok = ok && run("ip link set dev int up address %{mac}", &entry->value.internal_mac);
     ok = ok && run("ip addr add %s/%s dev int", internal_ip, internal_netmask);
 
     /* Create the default route to external_gateway */
-    ok = ok && run("ip route add to default via %s", external_gateway_ip);
+    ok = ok && run("ip route add to default via %{ipv4a}", entry->value.external_gateway_ip);
 
     /* Create the policy-based routing rule and route to internal_gateway */
     ok = ok && run("ip route add to default via %s table 1000", internal_gateway_ip);
     ok = ok && run("ip rule add priority 1 iif ext lookup 1000");
 
-    /* Create static ARP entries for the internal and external gateways */
+    /* Create static ARP entry for the internal gateway */
     ok = ok && run("ip neigh replace %s lladdr %{mac} nud permanent dev int", internal_gateway_ip, &entry->value.internal_gateway_mac);
-    ok = ok && run("ip neigh replace %s lladdr %{mac} nud permanent dev ext", external_gateway_ip, &entry->value.external_gateway_mac);
 
     /* Setup iptables for NAT */
-    ok = ok && run("iptables -t nat -A POSTROUTING -o ext -j SNAT --to-source %{ipv4a}", entry->key.external_ip);
+    ok = ok && run("iptables -t nat -A POSTROUTING -o ext -j SNAT --to-source %{ipv4a}", entry->value.external_ip);
     ok = ok && run("iptables -A FORWARD -i ext -m state --state RELATED,ESTABLISHED -j ACCEPT");
     ok = ok && run("iptables -A FORWARD -o ext -j ACCEPT");
     ok = ok && run("iptables -P FORWARD DROP");
@@ -199,6 +205,7 @@ nat_container_setup(struct nat_entry *entry)
 static void
 nat_container_teardown(struct nat_entry *entry)
 {
+    AIM_LOG_VERBOSE("Destroying NAT container %s", entry->key.name);
     close(entry->netns);
 }
 
@@ -217,10 +224,16 @@ nat_parse_key(of_list_bsn_tlv_t *tlvs, struct nat_entry_key *key)
         return INDIGO_ERROR_PARAM;
     }
 
-    if (tlv.header.object_id == OF_BSN_TLV_EXTERNAL_IP) {
-        of_bsn_tlv_external_ip_value_get(&tlv.external_ip, &key->external_ip);
+    if (tlv.header.object_id == OF_BSN_TLV_NAME) {
+        of_octets_t name;
+        of_bsn_tlv_name_value_get(&tlv.name, &name);
+        if (name.bytes >= sizeof(key->name)) {
+            AIM_LOG_ERROR("name key TLV too long");
+            return INDIGO_ERROR_PARAM;
+        }
+        memcpy(key->name, name.data, name.bytes);
     } else {
-        AIM_LOG_ERROR("expected external_ip key TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
+        AIM_LOG_ERROR("expected name key TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
         return INDIGO_ERROR_PARAM;
     }
 
@@ -244,6 +257,19 @@ nat_parse_value(of_list_bsn_tlv_t *tlvs, struct nat_entry_value *value)
         return INDIGO_ERROR_PARAM;
     }
 
+    /* External IP */
+    if (tlv.header.object_id == OF_BSN_TLV_EXTERNAL_IP) {
+        of_bsn_tlv_external_ip_value_get(&tlv.external_ip, &value->external_ip);
+    } else {
+        AIM_LOG_ERROR("expected external_ip value TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
+        return INDIGO_ERROR_PARAM;
+    }
+
+    if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
+        AIM_LOG_ERROR("unexpected end of value list");
+        return INDIGO_ERROR_PARAM;
+    }
+
     /* External MAC */
     if (tlv.header.object_id == OF_BSN_TLV_EXTERNAL_MAC) {
         of_bsn_tlv_external_mac_value_get(&tlv.external_mac, &value->external_mac);
@@ -257,11 +283,24 @@ nat_parse_value(of_list_bsn_tlv_t *tlvs, struct nat_entry_value *value)
         return INDIGO_ERROR_PARAM;
     }
 
-    /* External gateway MAC */
-    if (tlv.header.object_id == OF_BSN_TLV_EXTERNAL_GATEWAY_MAC) {
-        of_bsn_tlv_external_gateway_mac_value_get(&tlv.external_gateway_mac, &value->external_gateway_mac);
+    /* External netmask */
+    if (tlv.header.object_id == OF_BSN_TLV_EXTERNAL_NETMASK) {
+        of_bsn_tlv_external_netmask_value_get(&tlv.external_netmask, &value->external_netmask);
     } else {
-        AIM_LOG_ERROR("expected external_gateway_mac value TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
+        AIM_LOG_ERROR("expected ipv4 external_netmask value TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
+        return INDIGO_ERROR_PARAM;
+    }
+
+    if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
+        AIM_LOG_ERROR("unexpected end of value list");
+        return INDIGO_ERROR_PARAM;
+    }
+
+    /* External gateway IP */
+    if (tlv.header.object_id == OF_BSN_TLV_EXTERNAL_GATEWAY_IP) {
+        of_bsn_tlv_external_gateway_ip_value_get(&tlv.external_gateway_ip, &value->external_gateway_ip);
+    } else {
+        AIM_LOG_ERROR("expected external_gateway_ip value TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
         return INDIGO_ERROR_PARAM;
     }
 
