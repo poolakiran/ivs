@@ -52,6 +52,7 @@
 #include "table_egress_mirror.h"
 #include "table_egress_acl.h"
 #include "table_vlan_acl.h"
+#include "table_source_miss_override.h"
 #include "table_qos_weight.h"
 #include "group_lag.h"
 #include "group_ecmp.h"
@@ -83,6 +84,7 @@ enum table_id {
     TABLE_ID_EGRESS_MIRROR = 17,
     TABLE_ID_EGRESS_ACL = 18,
     TABLE_ID_VLAN_ACL = 19,
+    TABLE_ID_SOURCE_MISS_OVERRIDE = 20,
 };
 
 enum group_table_id {

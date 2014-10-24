@@ -83,6 +83,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_egress_mirror_register();
     pipeline_bvs_table_egress_acl_register();
     pipeline_bvs_table_vlan_acl_register();
+    pipeline_bvs_table_source_miss_override_register();
     pipeline_bvs_table_qos_weight_register();
     pipeline_bvs_group_ecmp_register();
     pipeline_bvs_group_lag_register();
@@ -109,6 +110,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_egress_mirror_unregister();
     pipeline_bvs_table_egress_acl_unregister();
     pipeline_bvs_table_vlan_acl_unregister();
+    pipeline_bvs_table_source_miss_override_unregister();
     pipeline_bvs_table_qos_weight_unregister();
     pipeline_bvs_group_ecmp_unregister();
     pipeline_bvs_group_span_unregister();
@@ -275,13 +277,18 @@ process_l2(struct ctx *ctx)
     /* Source lookup */
     struct l2_entry *src_l2_entry =
         pipeline_bvs_table_l2_lookup(vlan_vid, ctx->key->ethernet.eth_src);
+
+    bool disable_src_mac_check =
+        port_entry->value.disable_src_mac_check &&
+            !pipeline_bvs_table_source_miss_override_lookup(vlan_vid, ctx->key->in_port);
+
     if (src_l2_entry) {
         pipeline_add_stats(ctx->stats, &src_l2_entry->stats_handle);
 
         if (src_l2_entry->value.lag == NULL) {
             AIM_LOG_VERBOSE("L2 source discard");
             mark_drop(ctx);
-        } else if (!port_entry->value.disable_src_mac_check) {
+        } else if (!disable_src_mac_check) {
             if (src_l2_entry->value.lag->id != ctx->ingress_lag_id) {
                 AIM_LOG_VERBOSE("incorrect lag_id in source l2table lookup (station move)");
                 mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_STATION_MOVE);
@@ -289,7 +296,7 @@ process_l2(struct ctx *ctx)
             }
         }
     } else {
-        if (!port_entry->value.disable_src_mac_check) {
+        if (!disable_src_mac_check) {
             AIM_LOG_VERBOSE("miss in source l2table lookup (new host)");
             mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_NEW_HOST);
             mark_drop(ctx);
