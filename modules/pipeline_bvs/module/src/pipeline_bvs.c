@@ -235,6 +235,7 @@ process_l2(struct ctx *ctx)
     }
 
     ctx->internal_vlan_vid = vlan_vid;
+    ctx->cur_tag = vlan_vid;
 
     struct vlan_acl_key vlan_acl_key = make_vlan_acl_key(ctx);
     struct vlan_acl_entry *vlan_acl_entry =
@@ -598,16 +599,36 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
     /* Egress VLAN translation */
     uint16_t tag = ctx->internal_vlan_vid;
     if (!out_port_tagged) {
-        action_pop_vlan(ctx->actx);
         tag = 0;
     } else {
         struct egr_vlan_xlate_entry *egr_vlan_xlate_entry =
             pipeline_bvs_table_egr_vlan_xlate_lookup(dst_port_entry->value.vlan_xlate_port_group_id, ctx->internal_vlan_vid);
         if (egr_vlan_xlate_entry) {
             tag = egr_vlan_xlate_entry->value.new_vlan_vid;
+        }
+    }
+
+    /*
+     * The current tag on the packet persists between calls to process_egress.
+     * If one port we're flooding to is untagged and the next is tagged,
+     * we have to pop the tag, output to the first port, push a tag, and
+     * output to the second port.
+     */
+    if (tag != ctx->cur_tag) {
+        if (tag == 0) {
+            /* tagged -> untagged */
+            action_pop_vlan(ctx->actx);
+        } else if (ctx->cur_tag == 0) {
+            /* untagged -> tagged */
+            action_push_vlan(ctx->actx);
+            action_set_vlan_vid(ctx->actx, tag);
+        } else {
+            /* different tag */
             action_set_vlan_vid(ctx->actx, tag);
         }
     }
+
+    ctx->cur_tag = tag;
 
     /* Egress ACL */
     if (l3) {
