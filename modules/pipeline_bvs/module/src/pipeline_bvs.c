@@ -169,7 +169,8 @@ process_l2(struct ctx *ctx)
         if (!memcmp(ctx->key->ethernet.eth_src, packet_of_death_mac.addr, OF_MAC_ADDR_BYTES)) {
             packet_of_death = true;
         } else if (!memcmp(ctx->key->ethernet.eth_dst, cdp_mac.addr, OF_MAC_ADDR_BYTES)) {
-            AIM_LOG_VERBOSE("dropping CDP packet");
+            AIM_LOG_VERBOSE("sending CDP packet directly to controller");
+            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_PDU);
             mark_drop(ctx);
         } else {
             AIM_LOG_VERBOSE("sending ethertype %#x directly to controller", ntohs(ctx->key->ethertype));
