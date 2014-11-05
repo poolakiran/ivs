@@ -66,7 +66,7 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
 {
     int rv;
     of_list_instruction_t insts;
-    of_instruction_t inst;
+    of_object_t inst;
 
     value->lag_id = OF_GROUP_ANY;
     value->egr_port_group_id = 0;
@@ -82,39 +82,39 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
 
     of_flow_add_instructions_bind(obj, &insts);
     OF_LIST_INSTRUCTION_ITER(&insts, &inst, rv) {
-        switch (inst.header.object_id) {
+        switch (inst.object_id) {
         case OF_INSTRUCTION_APPLY_ACTIONS: {
             of_list_action_t actions;
-            of_instruction_apply_actions_actions_bind(&inst.apply_actions, &actions);
-            of_action_t act;
+            of_instruction_apply_actions_actions_bind(&inst, &actions);
+            of_object_t act;
             int rv;
             OF_LIST_ACTION_ITER(&actions, &act, rv) {
-                switch (act.header.object_id) {
+                switch (act.object_id) {
                 case OF_ACTION_SET_FIELD: {
-                    of_oxm_t oxm;
-                    of_action_set_field_field_bind(&act.set_field, &oxm.header);
-                    switch (oxm.header.object_id) {
+                    of_object_t oxm;
+                    of_action_set_field_field_bind(&act, &oxm);
+                    switch (oxm.object_id) {
                     case OF_OXM_VLAN_VID:
-                        of_oxm_vlan_vid_value_get(&oxm.vlan_vid, &value->default_vlan_vid);
+                        of_oxm_vlan_vid_value_get(&oxm, &value->default_vlan_vid);
                         value->default_vlan_vid &= ~VLAN_CFI_BIT;
                         break;
                     case OF_OXM_BSN_LAG_ID:
-                        of_oxm_bsn_lag_id_value_get(&oxm.vlan_vid, &value->lag_id);
+                        of_oxm_bsn_lag_id_value_get(&oxm, &value->lag_id);
                         break;
                     case OF_OXM_BSN_EGR_PORT_GROUP_ID:
-                        of_oxm_bsn_egr_port_group_id_value_get(&oxm.vlan_vid, &value->egr_port_group_id);
+                        of_oxm_bsn_egr_port_group_id_value_get(&oxm, &value->egr_port_group_id);
                         break;
                     case OF_OXM_BSN_VLAN_XLATE_PORT_GROUP_ID:
-                        of_oxm_bsn_vlan_xlate_port_group_id_value_get(&oxm.vlan_vid, &value->vlan_xlate_port_group_id);
+                        of_oxm_bsn_vlan_xlate_port_group_id_value_get(&oxm, &value->vlan_xlate_port_group_id);
                         break;
                     default:
-                        AIM_LOG_ERROR("Unexpected set-field OXM %s in port table", of_object_id_str[oxm.header.object_id]);
+                        AIM_LOG_ERROR("Unexpected set-field OXM %s in port table", of_object_id_str[oxm.object_id]);
                         goto error;
                     }
                     break;
                 }
                 default:
-                    AIM_LOG_ERROR("Unexpected action %s in port table", of_object_id_str[act.header.object_id]);
+                    AIM_LOG_ERROR("Unexpected action %s in port table", of_object_id_str[act.object_id]);
                     goto error;
                 }
             }
@@ -144,7 +144,7 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
         case OF_INSTRUCTION_BSN_SPAN_DESTINATION:
             break;
         default:
-            AIM_LOG_ERROR("Unexpected instruction %s in port table", of_object_id_str[inst.header.object_id]);
+            AIM_LOG_ERROR("Unexpected instruction %s in port table", of_object_id_str[inst.object_id]);
             goto error;
         }
     }

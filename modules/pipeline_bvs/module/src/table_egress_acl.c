@@ -74,18 +74,18 @@ parse_value(of_flow_add_t *obj, struct egress_acl_value *value)
 {
     int rv;
     of_list_instruction_t insts;
-    of_instruction_t inst;
+    of_object_t inst;
 
     value->drop = false;
 
     of_flow_add_instructions_bind(obj, &insts);
     OF_LIST_INSTRUCTION_ITER(&insts, &inst, rv) {
-        switch (inst.header.object_id) {
+        switch (inst.object_id) {
         case OF_INSTRUCTION_BSN_DENY:
             value->drop = true;
             break;
         default:
-            AIM_LOG_ERROR("Unexpected instruction %s in egress_acl table", of_object_id_str[inst.header.object_id]);
+            AIM_LOG_ERROR("Unexpected instruction %s in egress_acl table", of_object_id_str[inst.object_id]);
             goto error;
         }
     }

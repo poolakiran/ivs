@@ -37,12 +37,12 @@ parse_value(of_list_bucket_t *of_buckets, struct lag_value *value)
         of_bucket_actions_bind(&of_bucket, &of_actions);
 
         int rv;
-        of_action_t act;
+        of_object_t act;
         OF_LIST_ACTION_ITER(&of_actions, &act, rv) {
-            switch (act.header.object_id) {
+            switch (act.object_id) {
             case OF_ACTION_OUTPUT:
                 if (!seen_port) {
-                    of_action_output_port_get(&act.output, &bucket->port_no);
+                    of_action_output_port_get(&act, &bucket->port_no);
                     seen_port = true;
                 } else {
                     AIM_LOG_ERROR("duplicate output action in LAG group");
@@ -53,7 +53,7 @@ parse_value(of_list_bucket_t *of_buckets, struct lag_value *value)
                 /* ignore */
                 break;
             default:
-                AIM_LOG_ERROR("unsupported LAG group action %s", of_object_id_str[act.header.object_id]);
+                AIM_LOG_ERROR("unsupported LAG group action %s", of_object_id_str[act.object_id]);
                 goto error;
             }
         }

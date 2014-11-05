@@ -25,27 +25,27 @@ static const indigo_core_gentable_ops_t qos_weight_ops;
 static indigo_error_t
 parse_key(of_list_bsn_tlv_t *tlvs)
 {
-    of_bsn_tlv_t tlv;
+    of_object_t tlv;
 
     if (of_list_bsn_tlv_first(tlvs, &tlv) < 0) {
         AIM_LOG_ERROR("expected queue_id key TLV, instead got end of list");
         return INDIGO_ERROR_PARAM;
     }
 
-    if (tlv.header.object_id == OF_BSN_TLV_QUEUE_ID) {
+    if (tlv.object_id == OF_BSN_TLV_QUEUE_ID) {
         uint32_t queue_id;
-        of_bsn_tlv_queue_id_value_get(&tlv.mac, &queue_id);
+        of_bsn_tlv_queue_id_value_get(&tlv, &queue_id);
         if (queue_id >= 4) {
             AIM_LOG_ERROR("invalid queue id");
             return INDIGO_ERROR_PARAM;
         }
     } else {
-        AIM_LOG_ERROR("expected queue_id key TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
+        AIM_LOG_ERROR("expected queue_id key TLV, instead got %s", of_object_id_str[tlv.object_id]);
         return INDIGO_ERROR_PARAM;
     }
 
     if (of_list_bsn_tlv_next(tlvs, &tlv) == 0) {
-        AIM_LOG_ERROR("expected end of key TLV list, instead got %s", of_object_id_str[tlv.header.object_id]);
+        AIM_LOG_ERROR("expected end of key TLV list, instead got %s", of_object_id_str[tlv.object_id]);
         return INDIGO_ERROR_PARAM;
     }
 
@@ -55,27 +55,27 @@ parse_key(of_list_bsn_tlv_t *tlvs)
 static indigo_error_t
 parse_value(of_list_bsn_tlv_t *tlvs)
 {
-    of_bsn_tlv_t tlv;
+    of_object_t tlv;
 
     if (of_list_bsn_tlv_first(tlvs, &tlv) < 0) {
         AIM_LOG_ERROR("expected queue_weight value TLV, instead got end of list");
         return INDIGO_ERROR_PARAM;
     }
 
-    if (tlv.header.object_id == OF_BSN_TLV_QUEUE_WEIGHT) {
+    if (tlv.object_id == OF_BSN_TLV_QUEUE_WEIGHT) {
         uint32_t queue_weight;
-        of_bsn_tlv_queue_weight_value_get(&tlv.mac, &queue_weight);
+        of_bsn_tlv_queue_weight_value_get(&tlv, &queue_weight);
         if (queue_weight == 0 || queue_weight >= 128) {
             AIM_LOG_ERROR("invalid queue weight");
             return INDIGO_ERROR_PARAM;
         }
     } else {
-        AIM_LOG_ERROR("expected queue_weight value TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
+        AIM_LOG_ERROR("expected queue_weight value TLV, instead got %s", of_object_id_str[tlv.object_id]);
         return INDIGO_ERROR_PARAM;
     }
 
     if (of_list_bsn_tlv_next(tlvs, &tlv) == 0) {
-        AIM_LOG_ERROR("expected end of value TLV list, instead got %s", of_object_id_str[tlv.header.object_id]);
+        AIM_LOG_ERROR("expected end of value TLV list, instead got %s", of_object_id_str[tlv.object_id]);
         return INDIGO_ERROR_PARAM;
     }
 

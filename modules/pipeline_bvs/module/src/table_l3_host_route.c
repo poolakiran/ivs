@@ -54,47 +54,47 @@ parse_value(of_flow_add_t *obj, struct l3_host_route_value *value)
 {
     int rv;
     of_list_instruction_t insts;
-    of_instruction_t inst;
+    of_object_t inst;
 
     value->cpu = false;
 
     of_flow_add_instructions_bind(obj, &insts);
     OF_LIST_INSTRUCTION_ITER(&insts, &inst, rv) {
-        switch (inst.header.object_id) {
+        switch (inst.object_id) {
         case OF_INSTRUCTION_WRITE_ACTIONS: {
             of_list_action_t actions;
-            of_instruction_write_actions_actions_bind(&inst.write_actions, &actions);
+            of_instruction_write_actions_actions_bind(&inst, &actions);
 
             if (pipeline_bvs_parse_next_hop(&actions, &value->next_hop) < 0) {
                 AIM_LOG_ERROR("Failed to parse next-hop in L3 host table");
                 goto error;
             }
 
-            of_action_t act;
+            of_object_t act;
             int rv;
             OF_LIST_ACTION_ITER(&actions, &act, rv) {
-                switch (act.header.object_id) {
+                switch (act.object_id) {
                 case OF_ACTION_GROUP:
                     /* Handled by pipeline_bvs_parse_next_hop */
                     break;
                 case OF_ACTION_SET_FIELD: {
-                    of_oxm_t oxm;
-                    of_action_set_field_field_bind(&act.set_field, &oxm.header);
-                    switch (oxm.header.object_id) {
+                    of_object_t oxm;
+                    of_action_set_field_field_bind(&act, &oxm);
+                    switch (oxm.object_id) {
                     case OF_OXM_VLAN_VID:
                     case OF_OXM_ETH_SRC:
                     case OF_OXM_ETH_DST:
                         /* Handled by pipeline_bvs_parse_next_hop */
                         break;
                     default:
-                        AIM_LOG_ERROR("Unexpected set-field OXM %s in l3_host_route table", of_object_id_str[oxm.header.object_id]);
+                        AIM_LOG_ERROR("Unexpected set-field OXM %s in l3_host_route table", of_object_id_str[oxm.object_id]);
                         goto error;
                     }
                     break;
                 }
                 case OF_ACTION_OUTPUT: {
                     of_port_no_t port_no;
-                    of_action_output_port_get(&act.output, &port_no);
+                    of_action_output_port_get(&act, &port_no);
                     switch (port_no) {
                         case OF_PORT_DEST_CONTROLLER: {
                             value->cpu = true;
@@ -107,14 +107,14 @@ parse_value(of_flow_add_t *obj, struct l3_host_route_value *value)
                     break;
                 }
                 default:
-                    AIM_LOG_ERROR("Unexpected action %s in l3_host_route table", of_object_id_str[act.header.object_id]);
+                    AIM_LOG_ERROR("Unexpected action %s in l3_host_route table", of_object_id_str[act.object_id]);
                     goto error;
                 }
             }
             break;
         }
         default:
-            AIM_LOG_ERROR("Unexpected instruction %s in l3_host_route table", of_object_id_str[inst.header.object_id]);
+            AIM_LOG_ERROR("Unexpected instruction %s in l3_host_route table", of_object_id_str[inst.object_id]);
             goto error;
         }
     }

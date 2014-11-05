@@ -42,30 +42,30 @@ parse_value(of_list_bucket_t *of_buckets, struct ecmp_value *value)
 
         value->num_buckets++;
 
-        of_action_t act;
+        of_object_t act;
         int rv;
         OF_LIST_ACTION_ITER(&actions, &act, rv) {
-            switch (act.header.object_id) {
+            switch (act.object_id) {
             case OF_ACTION_GROUP:
                 /* Handled by pipeline_bvs_parse_next_hop */
                 break;
             case OF_ACTION_SET_FIELD: {
-                of_oxm_t oxm;
-                of_action_set_field_field_bind(&act.set_field, &oxm.header);
-                switch (oxm.header.object_id) {
+                of_object_t oxm;
+                of_action_set_field_field_bind(&act, &oxm);
+                switch (oxm.object_id) {
                 case OF_OXM_VLAN_VID:
                 case OF_OXM_ETH_SRC:
                 case OF_OXM_ETH_DST:
                     /* Handled by pipeline_bvs_parse_next_hop */
                     break;
                 default:
-                    AIM_LOG_ERROR("Unexpected set-field OXM %s in ECMP group", of_object_id_str[oxm.header.object_id]);
+                    AIM_LOG_ERROR("Unexpected set-field OXM %s in ECMP group", of_object_id_str[oxm.object_id]);
                     goto error;
                 }
                 break;
             }
             default:
-                AIM_LOG_ERROR("Unexpected action %s in ECMP group", of_object_id_str[act.header.object_id]);
+                AIM_LOG_ERROR("Unexpected action %s in ECMP group", of_object_id_str[act.object_id]);
                 goto error;
             }
         }
