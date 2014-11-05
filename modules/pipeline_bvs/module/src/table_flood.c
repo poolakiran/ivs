@@ -69,7 +69,7 @@ parse_value(of_flow_add_t *obj, struct flood_value *value)
 {
     int rv;
     of_list_instruction_t insts;
-    of_instruction_t inst;
+    of_object_t inst;
     struct xbuf lags_xbuf;
 
     xbuf_init(&lags_xbuf);
@@ -77,17 +77,17 @@ parse_value(of_flow_add_t *obj, struct flood_value *value)
 
     of_flow_add_instructions_bind(obj, &insts);
     OF_LIST_INSTRUCTION_ITER(&insts, &inst, rv) {
-        switch (inst.header.object_id) {
+        switch (inst.object_id) {
         case OF_INSTRUCTION_APPLY_ACTIONS: {
             of_list_action_t actions;
-            of_instruction_apply_actions_actions_bind(&inst.apply_actions, &actions);
-            of_action_t act;
+            of_instruction_apply_actions_actions_bind(&inst, &actions);
+            of_object_t act;
             int rv;
             OF_LIST_ACTION_ITER(&actions, &act, rv) {
-                switch (act.header.object_id) {
+                switch (act.object_id) {
                 case OF_ACTION_GROUP: {
                     uint32_t lag_id;
-                    of_action_group_group_id_get(&act.group, &lag_id);
+                    of_action_group_group_id_get(&act, &lag_id);
                     struct lag_group *lag = pipeline_bvs_group_lag_lookup(lag_id);
                     if (lag == NULL) {
                         AIM_LOG_ERROR("Nonexistent LAG in flood table");
@@ -98,14 +98,14 @@ parse_value(of_flow_add_t *obj, struct flood_value *value)
                     break;
                 }
                 default:
-                    AIM_LOG_ERROR("Unexpected action %s in flood table", of_object_id_str[act.header.object_id]);
+                    AIM_LOG_ERROR("Unexpected action %s in flood table", of_object_id_str[act.object_id]);
                     goto error;
                 }
             }
             break;
         }
         default:
-            AIM_LOG_ERROR("Unexpected instruction %s in flood table", of_object_id_str[inst.header.object_id]);
+            AIM_LOG_ERROR("Unexpected instruction %s in flood table", of_object_id_str[inst.object_id]);
             goto error;
         }
     }

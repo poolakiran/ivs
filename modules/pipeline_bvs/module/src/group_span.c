@@ -31,13 +31,13 @@ parse_value(of_list_bucket_t *of_buckets, struct span_value *value)
         of_bucket_actions_bind(&of_bucket, &of_actions);
 
         int rv;
-        of_action_t act;
+        of_object_t act;
         OF_LIST_ACTION_ITER(&of_actions, &act, rv) {
-            switch (act.header.object_id) {
+            switch (act.object_id) {
             case OF_ACTION_GROUP:
                 if (!seen_lag) {
                     uint32_t lag_id;
-                    of_action_group_group_id_get(&act.group, &lag_id);
+                    of_action_group_group_id_get(&act, &lag_id);
                     value->lag = pipeline_bvs_group_lag_acquire(lag_id);
                     if (value->lag == NULL) {
                         AIM_LOG_ERROR("nonexistent LAG in SPAN group");
@@ -50,7 +50,7 @@ parse_value(of_list_bucket_t *of_buckets, struct span_value *value)
                 }
                 break;
             default:
-                AIM_LOG_ERROR("unsupported SPAN group action %s", of_object_id_str[act.header.object_id]);
+                AIM_LOG_ERROR("unsupported SPAN group action %s", of_object_id_str[act.object_id]);
                 goto error;
             }
         }

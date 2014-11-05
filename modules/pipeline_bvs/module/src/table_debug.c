@@ -133,7 +133,7 @@ parse_value(of_flow_add_t *obj, struct debug_value *value)
 {
     int rv;
     of_list_instruction_t insts;
-    of_instruction_t inst;
+    of_object_t inst;
     bool seen_span = false;
 
     value->span = NULL;
@@ -142,18 +142,18 @@ parse_value(of_flow_add_t *obj, struct debug_value *value)
 
     of_flow_add_instructions_bind(obj, &insts);
     OF_LIST_INSTRUCTION_ITER(&insts, &inst, rv) {
-        switch (inst.header.object_id) {
+        switch (inst.object_id) {
         case OF_INSTRUCTION_APPLY_ACTIONS: {
             of_list_action_t actions;
-            of_instruction_apply_actions_actions_bind(&inst.apply_actions, &actions);
-            of_action_t act;
+            of_instruction_apply_actions_actions_bind(&inst, &actions);
+            of_object_t act;
             int rv;
             OF_LIST_ACTION_ITER(&actions, &act, rv) {
-                switch (act.header.object_id) {
+                switch (act.object_id) {
                 case OF_ACTION_GROUP: {
                     if (!seen_span) {
                         uint32_t span_id;
-                        of_action_group_group_id_get(&act.group, &span_id);
+                        of_action_group_group_id_get(&act, &span_id);
                         value->span = pipeline_bvs_group_span_acquire(span_id);
                         if (value->span == NULL) {
                             AIM_LOG_ERROR("Nonexistent SPAN in debug table");
@@ -168,7 +168,7 @@ parse_value(of_flow_add_t *obj, struct debug_value *value)
                 }
                 case OF_ACTION_OUTPUT: {
                     of_port_no_t port_no;
-                    of_action_output_port_get(&act.output, &port_no);
+                    of_action_output_port_get(&act, &port_no);
                     switch (port_no) {
                         case OF_PORT_DEST_CONTROLLER: {
                             value->cpu = true;
@@ -181,7 +181,7 @@ parse_value(of_flow_add_t *obj, struct debug_value *value)
                     break;
                 }
                 default:
-                    AIM_LOG_ERROR("Unexpected action %s in debug table", of_object_id_str[act.header.object_id]);
+                    AIM_LOG_ERROR("Unexpected action %s in debug table", of_object_id_str[act.object_id]);
                     goto error;
                 }
             }
@@ -191,7 +191,7 @@ parse_value(of_flow_add_t *obj, struct debug_value *value)
             value->drop = true;
             break;
         default:
-            AIM_LOG_ERROR("Unexpected instruction %s in debug table", of_object_id_str[inst.header.object_id]);
+            AIM_LOG_ERROR("Unexpected instruction %s in debug table", of_object_id_str[inst.object_id]);
             goto error;
         }
     }

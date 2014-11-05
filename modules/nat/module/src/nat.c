@@ -215,7 +215,7 @@ nat_container_teardown(struct nat_entry *entry)
 static indigo_error_t
 nat_parse_key(of_list_bsn_tlv_t *tlvs, struct nat_entry_key *key)
 {
-    of_bsn_tlv_t tlv;
+    of_object_t tlv;
 
     memset(key, 0, sizeof(*key));
 
@@ -224,21 +224,21 @@ nat_parse_key(of_list_bsn_tlv_t *tlvs, struct nat_entry_key *key)
         return INDIGO_ERROR_PARAM;
     }
 
-    if (tlv.header.object_id == OF_BSN_TLV_NAME) {
+    if (tlv.object_id == OF_BSN_TLV_NAME) {
         of_octets_t name;
-        of_bsn_tlv_name_value_get(&tlv.name, &name);
+        of_bsn_tlv_name_value_get(&tlv, &name);
         if (name.bytes >= sizeof(key->name)) {
             AIM_LOG_ERROR("name key TLV too long");
             return INDIGO_ERROR_PARAM;
         }
         memcpy(key->name, name.data, name.bytes);
     } else {
-        AIM_LOG_ERROR("expected name key TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
+        AIM_LOG_ERROR("expected name key TLV, instead got %s", of_object_id_str[tlv.object_id]);
         return INDIGO_ERROR_PARAM;
     }
 
     if (of_list_bsn_tlv_next(tlvs, &tlv) == 0) {
-        AIM_LOG_ERROR("expected end of key list, instead got %s", of_object_id_str[tlv.header.object_id]);
+        AIM_LOG_ERROR("expected end of key list, instead got %s", of_object_id_str[tlv.object_id]);
         return INDIGO_ERROR_PARAM;
     }
 
@@ -248,7 +248,7 @@ nat_parse_key(of_list_bsn_tlv_t *tlvs, struct nat_entry_key *key)
 static indigo_error_t
 nat_parse_value(of_list_bsn_tlv_t *tlvs, struct nat_entry_value *value)
 {
-    of_bsn_tlv_t tlv;
+    of_object_t tlv;
 
     memset(value, 0, sizeof(*value));
 
@@ -258,10 +258,10 @@ nat_parse_value(of_list_bsn_tlv_t *tlvs, struct nat_entry_value *value)
     }
 
     /* External IP */
-    if (tlv.header.object_id == OF_BSN_TLV_EXTERNAL_IP) {
-        of_bsn_tlv_external_ip_value_get(&tlv.external_ip, &value->external_ip);
+    if (tlv.object_id == OF_BSN_TLV_EXTERNAL_IP) {
+        of_bsn_tlv_external_ip_value_get(&tlv, &value->external_ip);
     } else {
-        AIM_LOG_ERROR("expected external_ip value TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
+        AIM_LOG_ERROR("expected external_ip value TLV, instead got %s", of_object_id_str[tlv.object_id]);
         return INDIGO_ERROR_PARAM;
     }
 
@@ -271,10 +271,10 @@ nat_parse_value(of_list_bsn_tlv_t *tlvs, struct nat_entry_value *value)
     }
 
     /* External MAC */
-    if (tlv.header.object_id == OF_BSN_TLV_EXTERNAL_MAC) {
-        of_bsn_tlv_external_mac_value_get(&tlv.external_mac, &value->external_mac);
+    if (tlv.object_id == OF_BSN_TLV_EXTERNAL_MAC) {
+        of_bsn_tlv_external_mac_value_get(&tlv, &value->external_mac);
     } else {
-        AIM_LOG_ERROR("expected external_mac value TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
+        AIM_LOG_ERROR("expected external_mac value TLV, instead got %s", of_object_id_str[tlv.object_id]);
         return INDIGO_ERROR_PARAM;
     }
 
@@ -284,10 +284,10 @@ nat_parse_value(of_list_bsn_tlv_t *tlvs, struct nat_entry_value *value)
     }
 
     /* External netmask */
-    if (tlv.header.object_id == OF_BSN_TLV_EXTERNAL_NETMASK) {
-        of_bsn_tlv_external_netmask_value_get(&tlv.external_netmask, &value->external_netmask);
+    if (tlv.object_id == OF_BSN_TLV_EXTERNAL_NETMASK) {
+        of_bsn_tlv_external_netmask_value_get(&tlv, &value->external_netmask);
     } else {
-        AIM_LOG_ERROR("expected ipv4 external_netmask value TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
+        AIM_LOG_ERROR("expected ipv4 external_netmask value TLV, instead got %s", of_object_id_str[tlv.object_id]);
         return INDIGO_ERROR_PARAM;
     }
 
@@ -297,10 +297,10 @@ nat_parse_value(of_list_bsn_tlv_t *tlvs, struct nat_entry_value *value)
     }
 
     /* External gateway IP */
-    if (tlv.header.object_id == OF_BSN_TLV_EXTERNAL_GATEWAY_IP) {
-        of_bsn_tlv_external_gateway_ip_value_get(&tlv.external_gateway_ip, &value->external_gateway_ip);
+    if (tlv.object_id == OF_BSN_TLV_EXTERNAL_GATEWAY_IP) {
+        of_bsn_tlv_external_gateway_ip_value_get(&tlv, &value->external_gateway_ip);
     } else {
-        AIM_LOG_ERROR("expected external_gateway_ip value TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
+        AIM_LOG_ERROR("expected external_gateway_ip value TLV, instead got %s", of_object_id_str[tlv.object_id]);
         return INDIGO_ERROR_PARAM;
     }
 
@@ -310,10 +310,10 @@ nat_parse_value(of_list_bsn_tlv_t *tlvs, struct nat_entry_value *value)
     }
 
     /* Internal MAC */
-    if (tlv.header.object_id == OF_BSN_TLV_INTERNAL_MAC) {
-        of_bsn_tlv_internal_mac_value_get(&tlv.internal_mac, &value->internal_mac);
+    if (tlv.object_id == OF_BSN_TLV_INTERNAL_MAC) {
+        of_bsn_tlv_internal_mac_value_get(&tlv, &value->internal_mac);
     } else {
-        AIM_LOG_ERROR("expected internal_mac value TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
+        AIM_LOG_ERROR("expected internal_mac value TLV, instead got %s", of_object_id_str[tlv.object_id]);
         return INDIGO_ERROR_PARAM;
     }
 
@@ -323,15 +323,15 @@ nat_parse_value(of_list_bsn_tlv_t *tlvs, struct nat_entry_value *value)
     }
 
     /* Internal gateway MAC */
-    if (tlv.header.object_id == OF_BSN_TLV_INTERNAL_GATEWAY_MAC) {
-        of_bsn_tlv_internal_gateway_mac_value_get(&tlv.internal_gateway_mac, &value->internal_gateway_mac);
+    if (tlv.object_id == OF_BSN_TLV_INTERNAL_GATEWAY_MAC) {
+        of_bsn_tlv_internal_gateway_mac_value_get(&tlv, &value->internal_gateway_mac);
     } else {
-        AIM_LOG_ERROR("expected internal_gateway_mac value TLV, instead got %s", of_object_id_str[tlv.header.object_id]);
+        AIM_LOG_ERROR("expected internal_gateway_mac value TLV, instead got %s", of_object_id_str[tlv.object_id]);
         return INDIGO_ERROR_PARAM;
     }
 
     if (of_list_bsn_tlv_next(tlvs, &tlv) == 0) {
-        AIM_LOG_ERROR("expected end of value list, instead got %s", of_object_id_str[tlv.header.object_id]);
+        AIM_LOG_ERROR("expected end of value list, instead got %s", of_object_id_str[tlv.object_id]);
         return INDIGO_ERROR_PARAM;
     }
 

@@ -30,13 +30,13 @@ pipeline_bvs_parse_next_hop(of_list_action_t *actions, struct next_hop *next_hop
     bool seen_new_eth_dst = false;
     uint32_t group_id;
 
-    of_action_t act;
+    of_object_t act;
     int rv;
     OF_LIST_ACTION_ITER(actions, &act, rv) {
-        switch (act.header.object_id) {
+        switch (act.object_id) {
         case OF_ACTION_GROUP:
             if (!seen_group) {
-                of_action_group_group_id_get(&act.group, &group_id);
+                of_action_group_group_id_get(&act, &group_id);
                 seen_group = true;
             } else {
                 AIM_LOG_ERROR("duplicate group action in next-hop");
@@ -44,12 +44,12 @@ pipeline_bvs_parse_next_hop(of_list_action_t *actions, struct next_hop *next_hop
             }
             break;
         case OF_ACTION_SET_FIELD: {
-            of_oxm_t oxm;
-            of_action_set_field_field_bind(&act.set_field, &oxm.header);
-            switch (oxm.header.object_id) {
+            of_object_t oxm;
+            of_action_set_field_field_bind(&act, &oxm);
+            switch (oxm.object_id) {
             case OF_OXM_VLAN_VID:
                 if (!seen_new_vlan_vid) {
-                    of_oxm_vlan_vid_value_get(&oxm.vlan_vid, &next_hop->new_vlan_vid);
+                    of_oxm_vlan_vid_value_get(&oxm, &next_hop->new_vlan_vid);
                     next_hop->new_vlan_vid &= ~VLAN_CFI_BIT;
                     seen_new_vlan_vid = true;
                 } else {
@@ -59,7 +59,7 @@ pipeline_bvs_parse_next_hop(of_list_action_t *actions, struct next_hop *next_hop
                 break;
             case OF_OXM_ETH_SRC:
                 if (!seen_new_eth_src) {
-                    of_oxm_eth_src_value_get(&oxm.eth_src, &next_hop->new_eth_src);
+                    of_oxm_eth_src_value_get(&oxm, &next_hop->new_eth_src);
                     seen_new_eth_src = true;
                 } else {
                     AIM_LOG_ERROR("duplicate set-field eth_src action in next-hop");
@@ -68,7 +68,7 @@ pipeline_bvs_parse_next_hop(of_list_action_t *actions, struct next_hop *next_hop
                 break;
             case OF_OXM_ETH_DST:
                 if (!seen_new_eth_dst) {
-                    of_oxm_eth_dst_value_get(&oxm.eth_dst, &next_hop->new_eth_dst);
+                    of_oxm_eth_dst_value_get(&oxm, &next_hop->new_eth_dst);
                     seen_new_eth_dst = true;
                 } else {
                     AIM_LOG_ERROR("duplicate set-field eth_dst action in next-hop");

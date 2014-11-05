@@ -51,7 +51,7 @@ parse_value(of_flow_add_t *obj, struct vlan_value *value)
 {
     int rv;
     of_list_instruction_t insts;
-    of_instruction_t inst;
+    of_object_t inst;
     bool tagged = true;
     int ports_size = 1;
 
@@ -63,20 +63,20 @@ parse_value(of_flow_add_t *obj, struct vlan_value *value)
 
     of_flow_add_instructions_bind(obj, &insts);
     OF_LIST_INSTRUCTION_ITER(&insts, &inst, rv) {
-        switch (inst.header.object_id) {
+        switch (inst.object_id) {
         case OF_INSTRUCTION_APPLY_ACTIONS: {
             of_list_action_t actions;
-            of_instruction_apply_actions_actions_bind(&inst.apply_actions, &actions);
-            of_action_t act;
+            of_instruction_apply_actions_actions_bind(&inst, &actions);
+            of_object_t act;
             int rv;
             OF_LIST_ACTION_ITER(&actions, &act, rv) {
-                switch (act.header.object_id) {
+                switch (act.object_id) {
                 case OF_ACTION_OUTPUT:
                     if (value->num_ports >= ports_size) {
                         ports_size *= 2;
                         value->ports = aim_realloc(value->ports, ports_size * sizeof(value->ports[0]));
                     }
-                    of_action_output_port_get(&act.output, &value->ports[value->num_ports++]);
+                    of_action_output_port_get(&act, &value->ports[value->num_ports++]);
                     if (tagged) {
                         value->num_tagged_ports++;
                     }
@@ -85,30 +85,30 @@ parse_value(of_flow_add_t *obj, struct vlan_value *value)
                     tagged = false;
                     break;
                 case OF_ACTION_SET_FIELD: {
-                    of_oxm_t oxm;
-                    of_action_set_field_field_bind(&act.set_field, &oxm.header);
-                    switch (oxm.header.object_id) {
+                    of_object_t oxm;
+                    of_action_set_field_field_bind(&act, &oxm);
+                    switch (oxm.object_id) {
                     case OF_OXM_BSN_L3_INTERFACE_CLASS_ID:
-                        of_oxm_bsn_l3_interface_class_id_value_get(&oxm.bsn_l3_interface_class_id, &value->l3_interface_class_id);
+                        of_oxm_bsn_l3_interface_class_id_value_get(&oxm, &value->l3_interface_class_id);
                         break;
                     case OF_OXM_BSN_VRF:
-                        of_oxm_bsn_vrf_value_get(&oxm.bsn_vrf, &value->vrf);
+                        of_oxm_bsn_vrf_value_get(&oxm, &value->vrf);
                         break;
                     default:
-                        AIM_LOG_ERROR("Unexpected set-field OXM %s in vlan table", of_object_id_str[oxm.header.object_id]);
+                        AIM_LOG_ERROR("Unexpected set-field OXM %s in vlan table", of_object_id_str[oxm.object_id]);
                         goto error;
                     }
                     break;
                 }
                 default:
-                    AIM_LOG_ERROR("Unexpected action %s in vlan table", of_object_id_str[act.header.object_id]);
+                    AIM_LOG_ERROR("Unexpected action %s in vlan table", of_object_id_str[act.object_id]);
                     goto error;
                 }
             }
             break;
         }
         default:
-            AIM_LOG_ERROR("Unexpected instruction %s in vlan table", of_object_id_str[inst.header.object_id]);
+            AIM_LOG_ERROR("Unexpected instruction %s in vlan table", of_object_id_str[inst.object_id]);
             goto error;
         }
     }
