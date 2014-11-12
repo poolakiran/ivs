@@ -54,6 +54,7 @@
 #include "table_vlan_acl.h"
 #include "table_source_miss_override.h"
 #include "table_qos_weight.h"
+#include "table_breakout.h"
 #include "group_lag.h"
 #include "group_ecmp.h"
 #include "group_span.h"
