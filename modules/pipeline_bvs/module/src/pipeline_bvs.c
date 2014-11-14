@@ -43,6 +43,8 @@ static void mark_pktin_controller(struct ctx *ctx, uint64_t flag);
 static void mark_drop(struct ctx *ctx);
 static void process_pktin(struct ctx *ctx);
 
+enum pipeline_bvs_version version;
+
 /*
  * Switch -> Controller async msg channel selector.
  *
@@ -66,6 +68,12 @@ pipeline_bvs_cxn_async_channel_selector(const of_object_t *obj, uint32_t num_aux
 static void
 pipeline_bvs_init(const char *name)
 {
+    if (!strcmp(name, "bvs-2.0")) {
+        version = V2_0;
+    } else {
+        version = V1_0;
+    }
+
     indigo_cxn_async_channel_selector_register(pipeline_bvs_cxn_async_channel_selector);
     pipeline_bvs_register_next_hop_datatype();
     pipeline_bvs_table_port_register();
@@ -836,5 +844,6 @@ __pipeline_bvs_module_init__(void)
 {
     AIM_LOG_STRUCT_REGISTER();
     pipeline_register("bvs-1.0", &pipeline_bvs_ops);
+    pipeline_register("bvs-2.0", &pipeline_bvs_ops);
     pipeline_register("experimental", &pipeline_bvs_ops); /* For command-line compatibility */
 }

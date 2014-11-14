@@ -116,6 +116,13 @@ struct ctx {
     uint16_t cur_tag;
 };
 
+enum pipeline_bvs_version {
+    V1_0,
+    V2_0,
+};
+
+extern enum pipeline_bvs_version version;
+
 /* Utility functions */
 
 static inline uint32_t
