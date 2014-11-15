@@ -159,14 +159,12 @@ pipeline_bvs_table_flood_entry_create(
 
     AIM_LOG_VERBOSE("Create flood entry lag_id=%u", entry->key.lag_id);
 
-    ind_ovs_fwd_write_lock();
     if (entry->key.lag_id == OF_GROUP_ANY) {
         AIM_ASSERT(miss_entry == NULL);
         miss_entry = entry;
     } else {
         flood_hashtable_insert(flood_hashtable, entry);
     }
-    ind_ovs_fwd_write_unlock();
 
     *entry_priv = entry;
     ind_ovs_barrier_defer_revalidation(cxn_id);
@@ -187,10 +185,8 @@ pipeline_bvs_table_flood_entry_modify(
         return rv;
     }
 
-    ind_ovs_fwd_write_lock();
     cleanup_value(&entry->value);
     entry->value = value;
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
@@ -203,13 +199,11 @@ pipeline_bvs_table_flood_entry_delete(
 {
     struct flood_entry *entry = entry_priv;
 
-    ind_ovs_fwd_write_lock();
     if (entry == miss_entry) {
         miss_entry = NULL;
     } else {
         bighash_remove(flood_hashtable, &entry->hash_entry);
     }
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     cleanup_value(&entry->value);

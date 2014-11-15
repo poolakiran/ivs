@@ -128,9 +128,7 @@ pipeline_bvs_table_egr_vlan_xlate_entry_create(
                     entry->key.vlan_xlate_port_group_id, &entry->key.vlan_vid,
                     entry->value.new_vlan_vid);
 
-    ind_ovs_fwd_write_lock();
     egr_vlan_xlate_hashtable_insert(egr_vlan_xlate_hashtable, entry);
-    ind_ovs_fwd_write_unlock();
 
     *entry_priv = entry;
     ind_ovs_barrier_defer_revalidation(cxn_id);
@@ -151,9 +149,7 @@ pipeline_bvs_table_egr_vlan_xlate_entry_modify(
         return rv;
     }
 
-    ind_ovs_fwd_write_lock();
     entry->value = value;
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
@@ -166,9 +162,7 @@ pipeline_bvs_table_egr_vlan_xlate_entry_delete(
 {
     struct egr_vlan_xlate_entry *entry = entry_priv;
 
-    ind_ovs_fwd_write_lock();
     bighash_remove(egr_vlan_xlate_hashtable, &entry->hash_entry);
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     aim_free(entry);

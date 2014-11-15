@@ -70,9 +70,7 @@ pipeline_bvs_table_my_station_entry_create(
 
     AIM_LOG_VERBOSE("Create my_station entry mac=%{mac}/%{mac}", &key.mac, &mask.mac);
 
-    ind_ovs_fwd_write_lock();
     tcam_insert(my_station_tcam, &entry->tcam_entry, &key, &mask, 0);
-    ind_ovs_fwd_write_unlock();
 
     *entry_priv = entry;
     ind_ovs_barrier_defer_revalidation(cxn_id);
@@ -94,9 +92,7 @@ pipeline_bvs_table_my_station_entry_delete(
 {
     struct my_station_entry *entry = entry_priv;
 
-    ind_ovs_fwd_write_lock();
     tcam_remove(my_station_tcam, &entry->tcam_entry);
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     aim_free(entry);

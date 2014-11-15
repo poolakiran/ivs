@@ -121,9 +121,7 @@ pipeline_bvs_table_egress_acl_entry_create(
     AIM_LOG_VERBOSE("Create egress_acl entry vlan_vid=%u l3_interface_class_id=%u/%#x egr_port_group_id=%u drop=%u",
                     key.vlan_vid, key.l3_interface_class_id, mask.l3_interface_class_id, key.egr_port_group_id, entry->value.drop);
 
-    ind_ovs_fwd_write_lock();
     tcam_insert(egress_acl_tcam, &entry->tcam_entry, &key, &mask, 0);
-    ind_ovs_fwd_write_unlock();
 
     *entry_priv = entry;
     ind_ovs_barrier_defer_revalidation(cxn_id);
@@ -144,9 +142,7 @@ pipeline_bvs_table_egress_acl_entry_modify(
         return rv;
     }
 
-    ind_ovs_fwd_write_lock();
     entry->value = value;
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
@@ -159,9 +155,7 @@ pipeline_bvs_table_egress_acl_entry_delete(
 {
     struct egress_acl_entry *entry = entry_priv;
 
-    ind_ovs_fwd_write_lock();
     tcam_remove(egress_acl_tcam, &entry->tcam_entry);
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     aim_free(entry);

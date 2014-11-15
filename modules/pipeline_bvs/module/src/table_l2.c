@@ -140,14 +140,12 @@ pipeline_bvs_table_l2_entry_create(
                     entry->key.vlan_vid, &entry->key.mac,
                     entry->value.lag ? entry->value.lag->id : OF_GROUP_ANY);
 
-    ind_ovs_fwd_write_lock();
     if (entry->key.vlan_vid == WILDCARD_VLAN) {
         AIM_ASSERT(miss_entry == NULL);
         miss_entry = entry;
     } else {
         l2_hashtable_insert(l2_hashtable, entry);
     }
-    ind_ovs_fwd_write_unlock();
 
     stats_alloc(&entry->stats_handle);
 
@@ -170,10 +168,8 @@ pipeline_bvs_table_l2_entry_modify(
         return rv;
     }
 
-    ind_ovs_fwd_write_lock();
     cleanup_value(&entry->value);
     entry->value = value;
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
@@ -186,13 +182,11 @@ pipeline_bvs_table_l2_entry_delete(
 {
     struct l2_entry *entry = entry_priv;
 
-    ind_ovs_fwd_write_lock();
     if (entry == miss_entry) {
         miss_entry = NULL;
     } else {
         bighash_remove(l2_hashtable, &entry->hash_entry);
     }
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
 

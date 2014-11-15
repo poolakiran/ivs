@@ -148,9 +148,7 @@ pipeline_bvs_table_vlan_acl_entry_create(
                     key.vlan_vid, mask.vlan_vid, &key.eth_src, &mask.eth_src, &key.eth_dst, &mask.eth_dst,
                     entry->value.l3_interface_class_id, entry->value.l3_src_class_id, entry->value.vrf);
 
-    ind_ovs_fwd_write_lock();
     tcam_insert(vlan_acl_tcam, &entry->tcam_entry, &key, &mask, 0);
-    ind_ovs_fwd_write_unlock();
 
     *entry_priv = entry;
     ind_ovs_barrier_defer_revalidation(cxn_id);
@@ -171,9 +169,7 @@ pipeline_bvs_table_vlan_acl_entry_modify(
         return rv;
     }
 
-    ind_ovs_fwd_write_lock();
     entry->value = value;
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
@@ -186,9 +182,7 @@ pipeline_bvs_table_vlan_acl_entry_delete(
 {
     struct vlan_acl_entry *entry = entry_priv;
 
-    ind_ovs_fwd_write_lock();
     tcam_remove(vlan_acl_tcam, &entry->tcam_entry);
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     aim_free(entry);
