@@ -33,22 +33,36 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <signal.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <sys/prctl.h>
 #include "SocketManager/socketmanager.h"
 #include "murmur/murmur.h"
 
 #define DEFAULT_NUM_UPCALL_THREADS 4
 #define MAX_UPCALL_THREADS 16
 #define NUM_UPCALL_BUFFERS 64
+#define MAX_KEY_SIZE 4096
 
 #define BLOOM_BUCKETS 65536
 #define BLOOM_CAPACITY 4096
 
 struct ind_ovs_upcall_thread {
-    pthread_t pthread;
-    volatile bool finished;
+    int pid;
+    int index;
 
     /* Epoll set containing all upcall netlink sockets assigned to this thread */
     int epfd;
+
+    /*
+     * Datagram socket used to send kflow requests to the main thread
+     *
+     * The maximum number of datagrams queued is limited by the sysctl
+     * net.unix.max_dgram_qlen, which defaults to 10.
+     */
+    int kflow_sock_rd;
+    int kflow_sock_wr;
 
     /* Cached here so we don't need to reallocate it every time */
     struct xbuf stats;
@@ -90,21 +104,19 @@ static void ind_ovs_handle_port_upcalls(struct ind_ovs_upcall_thread *thread, st
 static void ind_ovs_handle_one_upcall(struct ind_ovs_upcall_thread *thread, struct ind_ovs_port *port, struct nl_msg *msg);
 static void ind_ovs_handle_packet_miss(struct ind_ovs_upcall_thread *thread, struct ind_ovs_port *port, struct nl_msg *msg, struct nlattr **attrs);
 static bool ind_ovs_upcall_seen_key(struct ind_ovs_upcall_thread *thread, struct nlattr *key);
-static void ind_ovs_upcall_rearm(struct ind_ovs_port *port);
+static void ind_ovs_upcall_request_kflow(struct ind_ovs_upcall_thread *thread, struct nlattr *key);
+static void ind_ovs_upcall_thread_init(struct ind_ovs_upcall_thread *thread);
 
 static int ind_ovs_num_upcall_threads;
 static struct ind_ovs_upcall_thread *ind_ovs_upcall_threads[MAX_UPCALL_THREADS];
 
-static void *
-ind_ovs_upcall_thread_main(void *arg)
+static void
+ind_ovs_upcall_thread_main(struct ind_ovs_upcall_thread *thread)
 {
-    struct ind_ovs_upcall_thread *thread = arg;
-
-    while (!thread->finished) {
+    while (1) {
         struct epoll_event events[128];
         thread->log_upcalls = aim_log_enabled(AIM_LOG_STRUCT_POINTER, AIM_LOG_FLAG_VERBOSE);
-        int n = epoll_wait(thread->epfd, events, AIM_ARRAYSIZE(events),
-                           1000 /* check finished flag once per second */);
+        int n = epoll_wait(thread->epfd, events, AIM_ARRAYSIZE(events), -1);
         if (n < 0 && errno != EINTR) {
             LOG_ERROR("epoll_wait failed: %s", strerror(errno));
             abort();
@@ -115,8 +127,6 @@ ind_ovs_upcall_thread_main(void *arg)
             }
         }
     }
-
-    return NULL;
 }
 
 static void
@@ -138,8 +148,6 @@ ind_ovs_handle_port_upcalls(struct ind_ovs_upcall_thread *thread,
         }
 
         thread->tx_queue_len = 0;
-
-        ind_ovs_fwd_read_lock();
 
         int i;
         for (i = 0; i < n; i++) {
@@ -166,8 +174,6 @@ ind_ovs_handle_port_upcalls(struct ind_ovs_upcall_thread *thread,
             ind_ovs_handle_one_upcall(thread, port, msg);
         }
 
-        ind_ovs_fwd_read_unlock();
-
         struct msghdr msghdr = { 0 };
         msghdr.msg_iov = thread->tx_queue;
         msghdr.msg_iovlen = thread->tx_queue_len;
@@ -179,19 +185,6 @@ ind_ovs_handle_port_upcalls(struct ind_ovs_upcall_thread *thread,
             break;
         }
     }
-
-    /* See ind_ovs_upcall_quiesce */
-    /* TODO remove locking from the fast path */
-    pthread_mutex_lock(&port->quiesce_lock);
-    if (port->quiescing) {
-        port->quiescing = false;
-        pthread_cond_signal(&port->quiesce_cvar);
-        pthread_mutex_unlock(&port->quiesce_lock);
-        return;
-    }
-    pthread_mutex_unlock(&port->quiesce_lock);
-
-    ind_ovs_upcall_rearm(port);
 }
 
 static void
@@ -206,10 +199,6 @@ ind_ovs_handle_one_upcall(struct ind_ovs_upcall_thread *thread,
         LOG_ERROR("Received error on upcall socket: %s", strerror(-err->error));
         LOG_VERBOSE("Original message:");
         ind_ovs_dump_msg(&err->msg);
-        return;
-    } else if (nlh->nlmsg_type == ovs_datapath_family) {
-        /* Spurious message used to wake up an upcall thread. */
-        /* See ind_ovs_upcall_quiesce. */
         return;
     }
 
@@ -292,7 +281,7 @@ ind_ovs_handle_packet_miss(struct ind_ovs_upcall_thread *thread,
     /* See the comment for ind_ovs_upcall_seen_key. */
     if (!ind_ovs_disable_kflows && ind_ovs_upcall_seen_key(thread, key)) {
         /* Create a kflow with the given key and actions. */
-        ind_ovs_bh_request_kflow(key);
+        ind_ovs_upcall_request_kflow(thread, key);
     }
 }
 
@@ -309,65 +298,12 @@ void
 ind_ovs_upcall_register(struct ind_ovs_port *port)
 {
     ind_ovs_upcall_assign_thread(port);
-    struct epoll_event evt = { EPOLLIN|EPOLLONESHOT, { .ptr = port } };
-    if (epoll_ctl(port->upcall_thread->epfd, EPOLL_CTL_ADD,
-                  nl_socket_get_fd(port->notify_socket), &evt) < 0) {
-        LOG_ERROR("failed to add to epoll set: %s", strerror(errno));
-        abort();
-    }
 }
 
 void
 ind_ovs_upcall_unregister(struct ind_ovs_port *port)
 {
-    if (epoll_ctl(port->upcall_thread->epfd, EPOLL_CTL_DEL,
-                  nl_socket_get_fd(port->notify_socket), NULL) < 0) {
-        LOG_ERROR("failed to remove from epoll set: %s", strerror(errno));
-        abort();
-    }
-}
-
-/*
- * Removes the notify socket from the epoll set and blocks until no upcall
- * threads are using this port. Must only be called from the main thread.
- */
-void ind_ovs_upcall_quiesce(struct ind_ovs_port *port)
-{
-    /*
-     * Set the quiescing flag on the port and wait until an upcall thread
-     * acknowledges that the port is quiesced. In this case the upcall
-     * thread will not rearm the port's notify socket in the epoll set,
-     * so we are guaranteed that no upcall threads are processing upcalls
-     * on this port unless we rearm it again.
-     *
-     * We send a netlink message that causes the kernel to send a reply
-     * to ensure that an upcall thread processes this socket. The upcall
-     * thread may acknowledge quiescing in the course of processing the
-     * usual packet misses as well. The message content is irrelevant.
-     */
-    struct nl_msg *msg = ind_ovs_create_nlmsg(ovs_datapath_family,
-                                              OVS_DP_CMD_GET);
-
-    pthread_mutex_lock(&port->quiesce_lock);
-    nl_send_auto(port->notify_socket, msg);
-    port->quiescing = true;
-    while (port->quiescing) {
-        pthread_cond_wait(&port->quiesce_cvar, &port->quiesce_lock);
-    }
-    pthread_mutex_unlock(&port->quiesce_lock);
-
-    ind_ovs_nlmsg_freelist_free(msg);
-}
-
-static void
-ind_ovs_upcall_rearm(struct ind_ovs_port *port)
-{
-    struct epoll_event evt = { EPOLLIN|EPOLLONESHOT, { .ptr = port } };
-    if (epoll_ctl(port->upcall_thread->epfd, EPOLL_CTL_MOD,
-                  nl_socket_get_fd(port->notify_socket), &evt) < 0) {
-        LOG_ERROR("failed to rearm epoll entry: %s", strerror(errno));
-        abort();
-    }
+    port->upcall_thread = NULL;
 }
 
 /*
@@ -408,6 +344,56 @@ ind_ovs_upcall_seen_key(struct ind_ovs_upcall_thread *thread,
 #undef BLOOM_SET
 }
 
+static void
+ind_ovs_upcall_request_kflow(struct ind_ovs_upcall_thread *thread,
+                             struct nlattr *key)
+{
+    if (key->nla_len > MAX_KEY_SIZE) {
+        AIM_LOG_WARN("Maximum kflow key size exceeded (is %u)", key->nla_len);
+        return;
+    }
+
+    AIM_LOG_VERBOSE("Requesting kflow");
+
+    int written = write(thread->kflow_sock_wr, key, key->nla_len);
+    if (written < 0) {
+        if (errno == EAGAIN) {
+            AIM_LOG_VERBOSE("kflow socket buffer full");
+        } else {
+            AIM_LOG_ERROR("Failed to write to kflow socket: %s", strerror(errno));
+        }
+    } else if (written != key->nla_len) {
+        AIM_LOG_ERROR("Short write to kflow socket");
+    }
+}
+
+
+static void
+kflow_sock_ready(int fd, void *cookie,
+                 int ready_ready, int write_ready, int error_seen)
+{
+    static char buf[MAX_KEY_SIZE];
+
+    int n = read(fd, buf, sizeof(buf));
+    if (n < 0) {
+        AIM_LOG_ERROR("Error on kflow socket: %s", strerror(errno));
+        return;
+    }
+
+    AIM_ASSERT(n >= NLA_HDRLEN);
+
+    struct nlattr *key = (void *)buf;
+    if (key->nla_len != n) {
+        AIM_LOG_ERROR("kflow socket length mismatch: read %u, attr len %u", n, key->nla_len);
+        return;
+    }
+
+    AIM_LOG_VERBOSE("Received kflow request");
+    if (ind_ovs_kflow_add(key) < 0) {
+        LOG_ERROR("Failed to insert kernel flow");
+    }
+}
+
 void
 ind_ovs_upcall_init(void)
 {
@@ -427,11 +413,17 @@ ind_ovs_upcall_init(void)
     int i, j;
     for (i = 0; i < ind_ovs_num_upcall_threads; i++) {
         struct ind_ovs_upcall_thread *thread = aim_zmalloc(sizeof(*thread));
+        thread->index = i;
 
-        thread->epfd = epoll_create(1);
-        if (thread->epfd < 0) {
-            LOG_ERROR("failed to create epoll set: %s", strerror(errno));
-            abort();
+        int sockfd[2];
+        if (socketpair(AF_UNIX, SOCK_DGRAM|SOCK_NONBLOCK, 0, sockfd) < 0) {
+            AIM_DIE("Failed to create kflow socket: %s", strerror(errno));
+        }
+        thread->kflow_sock_rd = sockfd[0];
+        thread->kflow_sock_wr = sockfd[1];
+        if (ind_soc_socket_register(thread->kflow_sock_rd, kflow_sock_ready,
+                                    NULL) < 0) {
+            AIM_DIE("Failed to register kflow socket with SocketManager");
         }
 
         xbuf_init(&thread->stats);
@@ -457,20 +449,7 @@ ind_ovs_upcall_init(void)
 void
 ind_ovs_upcall_enable(void)
 {
-    int i;
-    for (i = 0; i < ind_ovs_num_upcall_threads; i++) {
-        struct ind_ovs_upcall_thread *thread = ind_ovs_upcall_threads[i];
-
-        if (pthread_create(&thread->pthread, NULL,
-                        ind_ovs_upcall_thread_main, thread) < 0) {
-            LOG_ERROR("failed to start upcall thread");
-            abort();
-        }
-
-        char threadname[16];
-        snprintf(threadname, sizeof(threadname), "upcall thr %d", i);
-        pthread_setname_np(thread->pthread, threadname);
-    }
+    ind_ovs_upcall_respawn();
 }
 
 void
@@ -480,15 +459,11 @@ ind_ovs_upcall_finish(void)
 
     for (i = 0; i < ind_ovs_num_upcall_threads; i++) {
         struct ind_ovs_upcall_thread *thread = ind_ovs_upcall_threads[i];
-        thread->finished = true;
-    }
-
-    __sync_synchronize();
-
-    for (i = 0; i < ind_ovs_num_upcall_threads; i++) {
-        struct ind_ovs_upcall_thread *thread = ind_ovs_upcall_threads[i];
-        pthread_join(thread->pthread, NULL);
         close(thread->epfd);
+        close(thread->kflow_sock_rd);
+        close(thread->kflow_sock_wr);
+        kill(thread->pid, SIGKILL);
+        waitpid(thread->pid, NULL, 0);
         xbuf_cleanup(&thread->stats);
         for (j = 0; j < NUM_UPCALL_BUFFERS; j++) {
             nlmsg_free(thread->msgs[j]);
@@ -497,4 +472,93 @@ ind_ovs_upcall_finish(void)
         aim_free(thread);
         ind_ovs_upcall_threads[i] = NULL;
     }
+}
+
+void
+ind_ovs_upcall_respawn(void)
+{
+    uint64_t start_time = monotonic_us();
+    int i;
+
+    for (i = 0; i < ind_ovs_num_upcall_threads; i++) {
+        struct ind_ovs_upcall_thread *thread = ind_ovs_upcall_threads[i];
+
+        if (thread->pid != 0) {
+            AIM_LOG_VERBOSE("Killing upcall process %d pid %d", i, thread->pid);
+            kill(thread->pid, SIGKILL);
+            waitpid(thread->pid, NULL, 0);
+            thread->pid = 0;
+        }
+
+        AIM_LOG_VERBOSE("Spawning upcall process %d", i);
+
+        int child_pid = fork();
+        if (child_pid < 0) {
+            AIM_DIE("Failed to spawn upcall process: %s", strerror(errno));
+        } else if (child_pid == 0) {
+            ind_ovs_upcall_thread_init(thread);
+            ind_ovs_upcall_thread_main(thread);
+            AIM_LOG_INFO("Upcall process %d exiting", i);
+            exit(0);
+        }
+
+        thread->pid = child_pid;
+    }
+
+    uint64_t elapsed = monotonic_us() - start_time;
+    AIM_LOG_VERBOSE("Respawned upcall processes in %"PRIu64" us", elapsed);
+}
+
+static void
+ind_ovs_upcall_thread_init(struct ind_ovs_upcall_thread *thread)
+{
+    char threadname[16];
+    snprintf(threadname, sizeof(threadname), "ivs upcall %d", thread->index);
+    pthread_setname_np(pthread_self(), threadname);
+
+    /* Ask the kernel to send us a SIGKILL if the main process dies */
+    if (prctl(PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0) < 0) {
+        AIM_DIE("prctl(PR_SET_PDEATHSIG) failed: %s", strerror(errno));
+    }
+
+    thread->epfd = epoll_create(1);
+    if (thread->epfd < 0) {
+        AIM_DIE("failed to create epoll set: %s", strerror(errno));
+    }
+
+    /* Create a bitmap of file descriptors we want to keep */
+    int max_fds = sysconf(_SC_OPEN_MAX);
+    aim_bitmap_t *fds = aim_bitmap_alloc(NULL, max_fds);
+    AIM_BITMAP_SET(fds, STDIN_FILENO);
+    AIM_BITMAP_SET(fds, STDOUT_FILENO);
+    AIM_BITMAP_SET(fds, STDERR_FILENO);
+    AIM_BITMAP_SET(fds, thread->kflow_sock_wr);
+    AIM_BITMAP_SET(fds, thread->epfd);
+
+    int i;
+    for (i = 0; i < IND_OVS_MAX_PORTS; i++) {
+        struct ind_ovs_port *port = ind_ovs_ports[i];
+        if (port && port->upcall_thread == thread) {
+            AIM_LOG_VERBOSE("Adding port %s to upcall thread %d", port->ifname, thread->index);
+            struct epoll_event evt = { EPOLLIN, { .ptr = port } };
+            if (epoll_ctl(port->upcall_thread->epfd, EPOLL_CTL_ADD,
+                        nl_socket_get_fd(port->notify_socket), &evt) < 0) {
+                AIM_DIE("failed to add to epoll set: %s", strerror(errno));
+            }
+            AIM_BITMAP_SET(fds, nl_socket_get_fd(port->notify_socket));
+        }
+    }
+
+    /* Close all other file descriptors */
+    for (i = 0; i < max_fds; i++) {
+        if (!AIM_BITMAP_GET(fds, i)) {
+            close(i);
+        }
+    }
+
+    aim_bitmap_free(fds);
+
+    /* Reset signal handlers */
+    signal(SIGHUP, SIG_DFL);
+    signal(SIGTERM, SIG_DFL);
 }

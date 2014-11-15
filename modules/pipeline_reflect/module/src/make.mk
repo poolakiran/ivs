@@ -17,21 +17,6 @@
 #
 ################################################################
 
-BASEDIR := $(dir $(lastword $(MAKEFILE_LIST)))
-OVSDriver_BASEDIR := $(BASEDIR)/OVSDriver
-flowtable_BASEDIR := $(BASEDIR)/flowtable
-l2table_BASEDIR := $(BASEDIR)/l2table
-luajit_BASEDIR := $(BASEDIR)/luajit
-xbuf_BASEDIR := $(BASEDIR)/xbuf
-pipeline_BASEDIR := $(BASEDIR)/pipeline
-pipeline_bvs_BASEDIR := $(BASEDIR)/pipeline_bvs
-pipeline_lua_BASEDIR := $(BASEDIR)/pipeline_lua
-pipeline_standard_BASEDIR := $(BASEDIR)/pipeline_standard
-ivs_common_BASEDIR := $(BASEDIR)/ivs
-tcam_BASEDIR := $(BASEDIR)/tcam
-action_BASEDIR := $(BASEDIR)/action
-stats_BASEDIR := $(BASEDIR)/stats
-lpm_BASEDIR := $(BASEDIR)/lpm
-inband_BASEDIR := $(BASEDIR)/inband
-nat_BASEDIR := $(BASEDIR)/nat
-pipeline_reflect_BASEDIR := $(BASEDIR)/pipeline_reflect
+LIBRARY := pipeline_reflect
+$(LIBRARY)_SUBDIR := $(dir $(lastword $(MAKEFILE_LIST)))
+include $(BUILDER)/lib.mk

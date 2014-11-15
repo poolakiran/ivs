@@ -44,17 +44,17 @@ DEPENDMODULES := SocketManager OFConnectionManager OFStateManager OVSDriver \
                  Configuration loci indigo BigList BigHash ivs_common pipeline pipeline_standard tcam xbuf \
                  PPE IOF \
                  AIM murmur cjson OS uCli debug_counter timer_wheel bloom_filter BigRing minimatch action \
-                 stats slot_allocator
+                 stats pipeline_reflect
 
 ifdef USE_LUAJIT
-DEPENDMODULES += luajit
+DEPENDMODULES += luajit pipeline_lua
 GLOBAL_CFLAGS += -DHAVE_LUAJIT=1
 LDFLAGS += -rdynamic
 GLOBAL_LINK_LIBS += -ldl
 endif
 
 # Closed source modules
-DEPENDMODULES += pipeline_bvs lpm inband lldpa lacpa arpa router_ip_table icmpa dhcpra nat slshared
+DEPENDMODULES += pipeline_bvs lpm inband lldpa lacpa arpa router_ip_table icmpa dhcpra nat slshared slot_allocator
 
 #
 # Resolve module dependencies
