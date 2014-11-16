@@ -220,10 +220,8 @@ ind_ovs_init(const char *datapath_name)
         return INDIGO_ERROR_NOT_FOUND;
     }
 
-    ind_ovs_fwd_init();
     ind_ovs_pktin_init();
     ind_ovs_upcall_init();
-    ind_ovs_bh_init();
     ind_ovs_multicast_init();
     ind_ovs_port_init();
     ind_ovs_vlan_stats_init();
@@ -254,7 +252,6 @@ ind_ovs_init(const char *datapath_name)
 void
 ind_ovs_finish(void)
 {
-    ind_ovs_fwd_finish();
     ind_ovs_port_finish();
     ind_ovs_upcall_finish();
     (void) ind_ovs_destroy_datapath();

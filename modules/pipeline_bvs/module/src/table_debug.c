@@ -241,9 +241,7 @@ pipeline_bvs_table_debug_entry_create(
 
     stats_alloc(&entry->stats_handle);
 
-    ind_ovs_fwd_write_lock();
     tcam_insert(debug_tcam, &entry->tcam_entry, &key, &mask, priority);
-    ind_ovs_fwd_write_unlock();
 
     *entry_priv = entry;
     ind_ovs_barrier_defer_revalidation(cxn_id);
@@ -264,10 +262,8 @@ pipeline_bvs_table_debug_entry_modify(
         return rv;
     }
 
-    ind_ovs_fwd_write_lock();
     cleanup_value(&entry->value);
     entry->value = value;
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
@@ -280,9 +276,7 @@ pipeline_bvs_table_debug_entry_delete(
 {
     struct debug_entry *entry = entry_priv;
 
-    ind_ovs_fwd_write_lock();
     tcam_remove(debug_tcam, &entry->tcam_entry);
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     cleanup_value(&entry->value);

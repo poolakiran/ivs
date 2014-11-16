@@ -149,9 +149,7 @@ pipeline_bvs_table_vlan_entry_create(
     AIM_LOG_VERBOSE("Create vlan entry vlan=%u -> l3_interface_class_id=%#x vrf=%u",
                     entry->key.vlan_vid, entry->value.l3_interface_class_id, entry->value.vrf);
 
-    ind_ovs_fwd_write_lock();
     vlan_hashtable_insert(vlan_hashtable, entry);
-    ind_ovs_fwd_write_unlock();
 
     *entry_priv = entry;
     ind_ovs_barrier_defer_revalidation(cxn_id);
@@ -172,10 +170,8 @@ pipeline_bvs_table_vlan_entry_modify(
         return rv;
     }
 
-    ind_ovs_fwd_write_lock();
     cleanup_value(&entry->value);
     entry->value = value;
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
@@ -188,9 +184,7 @@ pipeline_bvs_table_vlan_entry_delete(
 {
     struct vlan_entry *entry = entry_priv;
 
-    ind_ovs_fwd_write_lock();
     bighash_remove(vlan_hashtable, &entry->hash_entry);
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     cleanup_value(&entry->value);

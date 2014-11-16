@@ -209,9 +209,7 @@ pipeline_bvs_table_l3_cidr_route_entry_create(
                     entry->key.vrf, entry->key.ipv4, entry->key.mask_len,
                     &entry->value.next_hop, entry->value.cpu);
 
-    ind_ovs_fwd_write_lock();
     rv = l3_cidr_route_insert(entry);
-    ind_ovs_fwd_write_unlock();
 
     if (rv < 0) {
         aim_free(entry);
@@ -237,10 +235,8 @@ pipeline_bvs_table_l3_cidr_route_entry_modify(
         return rv;
     }
 
-    ind_ovs_fwd_write_lock();
     cleanup_value(&entry->value);
     entry->value = value;
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
@@ -253,9 +249,7 @@ pipeline_bvs_table_l3_cidr_route_entry_delete(
 {
     struct l3_cidr_route_entry *entry = entry_priv;
 
-    ind_ovs_fwd_write_lock();
     l3_cidr_route_remove(entry);
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     cleanup_value(&entry->value);

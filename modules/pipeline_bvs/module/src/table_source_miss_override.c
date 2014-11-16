@@ -123,9 +123,7 @@ pipeline_bvs_table_source_miss_override_entry_create(
     AIM_LOG_VERBOSE("Create source_miss_override entry vlan=%u port=%u -> cpu %u",
                     entry->key.vlan_vid, entry->key.in_port, entry->value.cpu);
 
-    ind_ovs_fwd_write_lock();
     source_miss_override_hashtable_insert(source_miss_override_hashtable, entry);
-    ind_ovs_fwd_write_unlock();
 
     *entry_priv = entry;
     ind_ovs_barrier_defer_revalidation(cxn_id);
@@ -146,9 +144,7 @@ pipeline_bvs_table_source_miss_override_entry_modify(
         return rv;
     }
 
-    ind_ovs_fwd_write_lock();
     entry->value = value;
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
@@ -161,9 +157,7 @@ pipeline_bvs_table_source_miss_override_entry_delete(
 {
     struct source_miss_override_entry *entry = entry_priv;
 
-    ind_ovs_fwd_write_lock();
     bighash_remove(source_miss_override_hashtable, &entry->hash_entry);
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     aim_free(entry);

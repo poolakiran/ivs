@@ -152,9 +152,7 @@ pipeline_bvs_table_l3_host_route_entry_create(
         return rv;
     }
 
-    ind_ovs_fwd_write_lock();
     l3_host_route_hashtable_insert(l3_host_route_hashtable, entry);
-    ind_ovs_fwd_write_unlock();
 
     AIM_LOG_VERBOSE("Create l3_host_route entry vrf=%u ip=%{ipv4a} -> next_hop=%{next_hop} cpu=%d",
                     entry->key.vrf, entry->key.ipv4,
@@ -179,10 +177,8 @@ pipeline_bvs_table_l3_host_route_entry_modify(
         return rv;
     }
 
-    ind_ovs_fwd_write_lock();
     cleanup_value(&entry->value);
     entry->value = value;
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
@@ -195,9 +191,7 @@ pipeline_bvs_table_l3_host_route_entry_delete(
 {
     struct l3_host_route_entry *entry = entry_priv;
 
-    ind_ovs_fwd_write_lock();
     bighash_remove(l3_host_route_hashtable, &entry->hash_entry);
-    ind_ovs_fwd_write_unlock();
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
     cleanup_value(&entry->value);
