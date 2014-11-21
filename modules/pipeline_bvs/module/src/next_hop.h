@@ -24,6 +24,7 @@ enum next_hop_type {
     NEXT_HOP_TYPE_NULL,
     NEXT_HOP_TYPE_LAG,
     NEXT_HOP_TYPE_ECMP,
+    NEXT_HOP_TYPE_LAG_NOREWRITE,
 };
 
 struct next_hop {

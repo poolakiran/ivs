@@ -506,11 +506,15 @@ process_l3(struct ctx *ctx)
         next_hop = &ecmp_bucket->next_hop;
     }
 
-    AIM_ASSERT(next_hop->type == NEXT_HOP_TYPE_LAG);
-
-    AIM_LOG_VERBOSE("next-hop: eth_src=%{mac} eth_dst=%{mac} vlan=%u lag_id=%u",
-                    next_hop->new_eth_src.addr, next_hop->new_eth_dst.addr,
-                    next_hop->new_vlan_vid, next_hop->lag->id);
+    if (next_hop->type == NEXT_HOP_TYPE_LAG) {
+        AIM_LOG_VERBOSE("next-hop: eth_src=%{mac} eth_dst=%{mac} vlan=%u lag_id=%u",
+                        next_hop->new_eth_src.addr, next_hop->new_eth_dst.addr,
+                        next_hop->new_vlan_vid, next_hop->lag->id);
+    } else if (next_hop->type == NEXT_HOP_TYPE_LAG_NOREWRITE) {
+        AIM_LOG_VERBOSE("next-hop: lag_id=%u", next_hop->lag->id);
+    } else {
+        AIM_DIE("Unexpected next hop type");
+    }
 
     struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(next_hop->lag, ctx->hash);
     if (lag_bucket == NULL) {
@@ -520,11 +524,13 @@ process_l3(struct ctx *ctx)
 
     AIM_LOG_VERBOSE("selected LAG port %u", lag_bucket->port_no);
 
-    ctx->internal_vlan_vid = next_hop->new_vlan_vid;
-    action_set_vlan_vid(ctx->actx, ctx->internal_vlan_vid);
-    action_set_eth_src(ctx->actx, next_hop->new_eth_src);
-    action_set_eth_dst(ctx->actx, next_hop->new_eth_dst);
-    action_set_ipv4_ttl(ctx->actx, ctx->key->ipv4.ipv4_ttl - 1);
+    if (next_hop->type == NEXT_HOP_TYPE_LAG) {
+        ctx->internal_vlan_vid = next_hop->new_vlan_vid;
+        action_set_vlan_vid(ctx->actx, ctx->internal_vlan_vid);
+        action_set_eth_src(ctx->actx, next_hop->new_eth_src);
+        action_set_eth_dst(ctx->actx, next_hop->new_eth_dst);
+        action_set_ipv4_ttl(ctx->actx, ctx->key->ipv4.ipv4_ttl - 1);
+    }
 
     process_egress(ctx, lag_bucket->port_no, true);
 }
