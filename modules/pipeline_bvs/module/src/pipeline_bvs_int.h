@@ -54,6 +54,7 @@
 #include "table_vlan_acl.h"
 #include "table_source_miss_override.h"
 #include "table_floating_ip_forward.h"
+#include "table_floating_ip_reverse.h"
 #include "table_qos_weight.h"
 #include "table_breakout.h"
 #include "table_span.h"
@@ -90,6 +91,7 @@ enum table_id {
     TABLE_ID_VLAN_ACL = 19,
     TABLE_ID_SOURCE_MISS_OVERRIDE = 20,
     TABLE_ID_FLOATING_IP_FORWARD = 21,
+    TABLE_ID_FLOATING_IP_REVERSE = 22,
 };
 
 enum group_table_id {

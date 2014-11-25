@@ -122,6 +122,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_vlan_acl_register();
     pipeline_bvs_table_source_miss_override_register();
     pipeline_bvs_table_floating_ip_forward_register();
+    pipeline_bvs_table_floating_ip_reverse_register();
     pipeline_bvs_table_qos_weight_register();
     pipeline_bvs_table_breakout_register();
     pipeline_bvs_group_ecmp_register();
@@ -155,6 +156,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_vlan_acl_unregister();
     pipeline_bvs_table_source_miss_override_unregister();
     pipeline_bvs_table_floating_ip_forward_unregister();
+    pipeline_bvs_table_floating_ip_reverse_unregister();
     pipeline_bvs_table_qos_weight_unregister();
     pipeline_bvs_table_breakout_unregister();
     pipeline_bvs_group_ecmp_unregister();
@@ -441,6 +443,26 @@ process_l2(struct ctx *ctx)
         return;
     }
 
+    struct floating_ip_reverse_entry *floating_ip_reverse_entry =
+        pipeline_bvs_table_floating_ip_reverse_lookup(
+            ctx->internal_vlan_vid, ntohl(ctx->key->ipv4.ipv4_dst), ctx->key->ethernet.eth_dst);
+    if (floating_ip_reverse_entry) {
+        struct floating_ip_reverse_value *v = &floating_ip_reverse_entry->value;
+        ctx->internal_vlan_vid = v->new_vlan_vid;
+        action_set_vlan_vid(ctx->actx, v->new_vlan_vid);
+        action_set_eth_src(ctx->actx, v->new_eth_src);
+        action_set_eth_dst(ctx->actx, v->new_eth_dst);
+        action_set_ipv4_dst(ctx->actx, v->new_ipv4_dst);
+
+        ctx->key->vlan = htons(VLAN_TCI_WITH_CFI(v->new_vlan_vid | VLAN_CFI_BIT, VLAN_PCP(ntohs(ctx->key->vlan))));
+        memcpy(ctx->key->ethernet.eth_src, &v->new_eth_src, OF_MAC_ADDR_BYTES);
+        memcpy(ctx->key->ethernet.eth_dst, &v->new_eth_dst, OF_MAC_ADDR_BYTES);
+        ctx->key->ipv4.ipv4_dst = htonl(v->new_ipv4_dst);
+        ctx->key->in_port = OVSP_LOCAL;
+        process_l2(ctx);
+        return;
+    }
+
     struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(dst_l2_entry->value.lag, ctx->hash);
     if (lag_bucket == NULL) {
         AIM_LOG_VERBOSE("empty LAG");
@@ -589,6 +611,26 @@ process_l3(struct ctx *ctx)
         memcpy(ctx->key->ethernet.eth_src, &v->new_eth_src, OF_MAC_ADDR_BYTES);
         memcpy(ctx->key->ethernet.eth_dst, &v->new_eth_dst, OF_MAC_ADDR_BYTES);
         ctx->key->ipv4.ipv4_src = htonl(v->new_ipv4_src);
+        ctx->key->in_port = OVSP_LOCAL;
+        process_l2(ctx);
+        return;
+    }
+
+    struct floating_ip_reverse_entry *floating_ip_reverse_entry =
+        pipeline_bvs_table_floating_ip_reverse_lookup(
+            ctx->internal_vlan_vid, ntohl(ctx->key->ipv4.ipv4_dst), eth_dst);
+    if (floating_ip_reverse_entry) {
+        struct floating_ip_reverse_value *v = &floating_ip_reverse_entry->value;
+        ctx->internal_vlan_vid = v->new_vlan_vid;
+        action_set_vlan_vid(ctx->actx, v->new_vlan_vid);
+        action_set_eth_src(ctx->actx, v->new_eth_src);
+        action_set_eth_dst(ctx->actx, v->new_eth_dst);
+        action_set_ipv4_dst(ctx->actx, v->new_ipv4_dst);
+
+        ctx->key->vlan = htons(VLAN_TCI_WITH_CFI(v->new_vlan_vid | VLAN_CFI_BIT, VLAN_PCP(ntohs(ctx->key->vlan))));
+        memcpy(ctx->key->ethernet.eth_src, &v->new_eth_src, OF_MAC_ADDR_BYTES);
+        memcpy(ctx->key->ethernet.eth_dst, &v->new_eth_dst, OF_MAC_ADDR_BYTES);
+        ctx->key->ipv4.ipv4_dst = htonl(v->new_ipv4_dst);
         ctx->key->in_port = OVSP_LOCAL;
         process_l2(ctx);
         return;
