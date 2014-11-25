@@ -28,6 +28,7 @@ pipeline_bvs_parse_next_hop(of_list_action_t *actions, struct next_hop *next_hop
     bool seen_new_vlan_vid = false;
     bool seen_new_eth_src = false;
     bool seen_new_eth_dst = false;
+    bool seen_dec_ttl = false;
     uint32_t group_id;
 
     of_object_t act;
@@ -80,6 +81,9 @@ pipeline_bvs_parse_next_hop(of_list_action_t *actions, struct next_hop *next_hop
             }
             break;
         }
+        case OF_ACTION_DEC_NW_TTL:
+            seen_dec_ttl = true;
+            break;
         default:
             break;
         }
@@ -88,10 +92,22 @@ pipeline_bvs_parse_next_hop(of_list_action_t *actions, struct next_hop *next_hop
     if (seen_group) {
         switch (group_to_table_id(group_id)) {
         case GROUP_TABLE_ID_LAG:
-            next_hop->type = NEXT_HOP_TYPE_LAG;
-            if (!seen_new_vlan_vid || !seen_new_eth_src || !seen_new_eth_dst) {
-                AIM_LOG_WARN("Missing required next-hop action");
-                return INDIGO_ERROR_COMPAT;
+            if (seen_new_eth_dst) {
+                if (version == V1_0) {
+                    /* The TTL decrement is implicit for bvs-1.0 */
+                    seen_dec_ttl = true;
+                }
+                next_hop->type = NEXT_HOP_TYPE_LAG;
+                if (!seen_new_vlan_vid || !seen_new_eth_src || !seen_new_eth_dst || !seen_dec_ttl) {
+                    AIM_LOG_WARN("Missing required next-hop action");
+                    return INDIGO_ERROR_COMPAT;
+                }
+            } else {
+                next_hop->type = NEXT_HOP_TYPE_LAG_NOREWRITE;
+                if (seen_new_vlan_vid || seen_new_eth_src || seen_new_eth_dst || seen_dec_ttl) {
+                    AIM_LOG_WARN("Unexpected next-hop action");
+                    return INDIGO_ERROR_COMPAT;
+                }
             }
             next_hop->lag = pipeline_bvs_group_lag_acquire(group_id);
             if (next_hop->lag == NULL) {
@@ -134,6 +150,7 @@ pipeline_bvs_cleanup_next_hop(struct next_hop *next_hop)
 {
     switch (next_hop->type) {
     case NEXT_HOP_TYPE_LAG:
+    case NEXT_HOP_TYPE_LAG_NOREWRITE:
         if (next_hop->lag != NULL) {
             pipeline_bvs_group_lag_release(next_hop->lag);
         }
@@ -165,6 +182,9 @@ format_next_hop(aim_datatype_context_t* dtc, aim_va_list_t* vargs,
         aim_printf(pvs, "{ lag=%u vlan=%u eth_src=%{mac} eth_dst=%{mac} }",
                    next_hop->lag->id, next_hop->new_vlan_vid,
                    &next_hop->new_eth_src, &next_hop->new_eth_dst);
+        break;
+    case NEXT_HOP_TYPE_LAG_NOREWRITE:
+        aim_printf(pvs, "{ lag=%u }", next_hop->lag->id);
         break;
     case NEXT_HOP_TYPE_ECMP:
         aim_printf(pvs, "{ ecmp=%u }", next_hop->ecmp->id);
