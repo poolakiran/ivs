@@ -121,6 +121,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_egress_acl_register();
     pipeline_bvs_table_vlan_acl_register();
     pipeline_bvs_table_source_miss_override_register();
+    pipeline_bvs_table_floating_ip_forward_register();
     pipeline_bvs_table_qos_weight_register();
     pipeline_bvs_table_breakout_register();
     pipeline_bvs_group_ecmp_register();
@@ -153,6 +154,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_egress_acl_unregister();
     pipeline_bvs_table_vlan_acl_unregister();
     pipeline_bvs_table_source_miss_override_unregister();
+    pipeline_bvs_table_floating_ip_forward_unregister();
     pipeline_bvs_table_qos_weight_unregister();
     pipeline_bvs_table_breakout_unregister();
     pipeline_bvs_group_ecmp_unregister();
@@ -185,6 +187,12 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 static void
 process_l2(struct ctx *ctx)
 {
+    ctx->recursion_depth++;
+    if (ctx->recursion_depth > 10) {
+        AIM_LOG_INTERNAL("Exceeded max recursion depth");
+        return;
+    }
+
     ctx->original_vlan_vid = VLAN_VID(ntohs(ctx->key->vlan));
 
     /* Ingress mirror */
@@ -553,13 +561,7 @@ process_l3(struct ctx *ctx)
         AIM_DIE("Unexpected next hop type");
     }
 
-    struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(next_hop->lag, ctx->hash);
-    if (lag_bucket == NULL) {
-        AIM_LOG_VERBOSE("empty LAG");
-        return;
-    }
-
-    AIM_LOG_VERBOSE("selected LAG port %u", lag_bucket->port_no);
+    const uint8_t *eth_dst = ctx->key->ethernet.eth_dst;
 
     if (next_hop->type == NEXT_HOP_TYPE_LAG) {
         ctx->internal_vlan_vid = next_hop->new_vlan_vid;
@@ -567,7 +569,38 @@ process_l3(struct ctx *ctx)
         action_set_eth_src(ctx->actx, next_hop->new_eth_src);
         action_set_eth_dst(ctx->actx, next_hop->new_eth_dst);
         action_set_ipv4_ttl(ctx->actx, ctx->key->ipv4.ipv4_ttl - 1);
+        ctx->key->ipv4.ipv4_ttl--;
+
+        eth_dst = next_hop->new_eth_dst.addr;
     }
+
+    struct floating_ip_forward_entry *floating_ip_forward_entry =
+        pipeline_bvs_table_floating_ip_forward_lookup(
+            ctx->internal_vlan_vid, ntohl(ctx->key->ipv4.ipv4_src), eth_dst);
+    if (floating_ip_forward_entry) {
+        struct floating_ip_forward_value *v = &floating_ip_forward_entry->value;
+        ctx->internal_vlan_vid = v->new_vlan_vid;
+        action_set_vlan_vid(ctx->actx, v->new_vlan_vid);
+        action_set_eth_src(ctx->actx, v->new_eth_src);
+        action_set_eth_dst(ctx->actx, v->new_eth_dst);
+        action_set_ipv4_src(ctx->actx, v->new_ipv4_src);
+
+        ctx->key->vlan = htons(VLAN_TCI_WITH_CFI(v->new_vlan_vid | VLAN_CFI_BIT, VLAN_PCP(ntohs(ctx->key->vlan))));
+        memcpy(ctx->key->ethernet.eth_src, &v->new_eth_src, OF_MAC_ADDR_BYTES);
+        memcpy(ctx->key->ethernet.eth_dst, &v->new_eth_dst, OF_MAC_ADDR_BYTES);
+        ctx->key->ipv4.ipv4_src = htonl(v->new_ipv4_src);
+        ctx->key->in_port = OVSP_LOCAL;
+        process_l2(ctx);
+        return;
+    }
+
+    struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(next_hop->lag, ctx->hash);
+    if (lag_bucket == NULL) {
+        AIM_LOG_VERBOSE("empty LAG");
+        return;
+    }
+
+    AIM_LOG_VERBOSE("selected LAG port %u", lag_bucket->port_no);
 
     process_egress(ctx, lag_bucket->port_no, true);
 }
