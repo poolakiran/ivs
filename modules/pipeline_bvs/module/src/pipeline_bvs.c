@@ -65,6 +65,34 @@ pipeline_bvs_cxn_async_channel_selector(const of_object_t *obj, uint32_t num_aux
     }
 }
 
+/*
+ * Bundle sort order:
+ *  - group-adds in ascending table-id order (lag, ecmp, span)
+ *  - all other messages
+ *  - group-deletes in descending table-id order (span, ecmp, lag)
+ */
+static int
+sort_key(of_object_t *obj)
+{
+    if (obj->object_id == OF_GROUP_ADD) {
+        uint32_t group_id;
+        of_group_add_group_id_get(obj, &group_id);
+        return -1000 + (group_id >> 24);
+    } else if (obj->object_id == OF_GROUP_DELETE) {
+        uint32_t group_id;
+        of_group_delete_group_id_get(obj, &group_id);
+        return 1000 - (group_id >> 24);
+    } else {
+        return 0;
+    }
+}
+
+static int
+bundle_comparator(of_object_t *a, of_object_t *b)
+{
+    return sort_key(a) - sort_key(b);
+}
+
 static void
 pipeline_bvs_init(const char *name)
 {
@@ -75,6 +103,7 @@ pipeline_bvs_init(const char *name)
     }
 
     indigo_cxn_async_channel_selector_register(pipeline_bvs_cxn_async_channel_selector);
+    indigo_cxn_bundle_comparator_set(bundle_comparator);
     pipeline_bvs_register_next_hop_datatype();
     pipeline_bvs_table_port_register();
     pipeline_bvs_table_vlan_xlate_register();
@@ -103,6 +132,7 @@ static void
 pipeline_bvs_finish(void)
 {
     indigo_cxn_async_channel_selector_unregister(pipeline_bvs_cxn_async_channel_selector);
+    indigo_cxn_bundle_comparator_set(NULL);
     pipeline_bvs_unregister_next_hop_datatype();
     pipeline_bvs_table_port_unregister();
     pipeline_bvs_table_vlan_xlate_unregister();
