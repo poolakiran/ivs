@@ -142,6 +142,7 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
             value->disable_vlan_counters = true;
             break;
         case OF_INSTRUCTION_BSN_SPAN_DESTINATION:
+        case OF_INSTRUCTION_ID_BSN_AUTO_NEGOTIATION:
             break;
         default:
             AIM_LOG_ERROR("Unexpected instruction %s in port table", of_object_id_str[inst.object_id]);
