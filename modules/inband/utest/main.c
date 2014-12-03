@@ -17,6 +17,7 @@
  *
  ****************************************************************/
 
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -61,7 +62,7 @@ static const uint8_t lldp_prefix[] = {
     0xfe, 0x10, 0x00, 0x26, 0xe1, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
 };
 
-static const uint8_t expected_reply[] = {
+static uint8_t expected_reply[] = {
     // Destination MAC
     0x01, 0x80, 0xc2, 0x00, 0x00, 0x0e,
     // Source MAC
@@ -351,6 +352,29 @@ test_invalid(void)
     check_expectations();
 }
 
+static void
+test_hostname_override(void)
+{
+    fprintf(stderr, "Starting hostname override test\n");
+    reset();
+
+    /* Find the string "hostname" in expected_reply */
+    char *expected_hostname = memmem(expected_reply, sizeof(expected_reply), "hostname", 8);
+    assert(expected_hostname);
+
+    /* Set the environment variable and check that the LLDP reply changes */
+    setenv("IVS_HOSTNAME", "host1234", true);
+    memcpy(expected_hostname, "host1234", 8);
+    lldp_packet_in(1, NULL, NULL, PASS);
+    check_expectations();
+
+    /* Unset the environment variable and check that the LLDP reply is back to normal*/
+    unsetenv("IVS_HOSTNAME");
+    memcpy(expected_hostname, "hostname", 8);
+    lldp_packet_in(1, NULL, NULL, PASS);
+    check_expectations();
+}
+
 int aim_main(int argc, char* argv[])
 {
     (void) argc;
@@ -363,6 +387,7 @@ int aim_main(int argc, char* argv[])
     test_basic();
     test_corrupt();
     test_invalid();
+    test_hostname_override();
 
     return 0;
 }
