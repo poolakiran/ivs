@@ -47,7 +47,7 @@ parse_key(of_flow_add_t *obj, struct vlan_acl_key *key, struct vlan_acl_key *mas
     mask->vlan_vid = match.masks.vlan_vid;
 
     key->eth_src = match.fields.eth_src;
-    mask->eth_src = match.masks.eth_dst;
+    mask->eth_src = match.masks.eth_src;
 
     key->eth_dst = match.fields.eth_dst;
     mask->eth_dst = match.masks.eth_dst;
