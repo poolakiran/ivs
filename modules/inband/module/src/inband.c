@@ -294,7 +294,10 @@ void send_lldp_reply(of_port_no_t port_no)
         inband_lldp_append(&builder, 3, &ttl, sizeof(ttl));
     }
 
-    {
+    if (getenv("IVS_HOSTNAME") != NULL) {
+        const char *hostname = getenv("IVS_HOSTNAME");
+        inband_lldp_append(&builder, 5, hostname, strlen(hostname));
+    } else {
         char hostname[256];
         gethostname(hostname, sizeof(hostname));
         inband_lldp_append(&builder, 5, hostname, strnlen(hostname, sizeof(hostname)));
