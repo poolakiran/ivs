@@ -123,6 +123,8 @@ enum pipeline_bvs_version {
 
 extern enum pipeline_bvs_version version;
 
+extern uint16_t pipeline_bvs_table_lag_id;
+
 /* Utility functions */
 
 static inline uint32_t

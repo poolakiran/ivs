@@ -105,6 +105,9 @@ pipeline_bvs_group_lag_create(
     lag->id = group_id;
     lag->value = value;
 
+    /* Fake up a LAG name so that it's always usable */
+    snprintf(lag->key.name, sizeof(lag->key.name)-1, "%u", lag->id);
+
     if (aim_log_fid_get(AIM_LOG_STRUCT_POINTER, AIM_LOG_FLAG_VERBOSE)) {
         AIM_LOG_VERBOSE("Creating LAG group %d", lag->id);
         int i;
