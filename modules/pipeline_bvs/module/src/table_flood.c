@@ -25,6 +25,8 @@
 #define TEMPLATE_ENTRY_FIELD hash_entry
 #include <BigHash/bighash_template.h>
 
+static void cleanup_value(struct flood_value *value);
+
 static bighash_table_t *flood_hashtable;
 static struct flood_entry *miss_entry;
 static const of_match_fields_t required_mask = {
@@ -88,13 +90,32 @@ parse_value(of_flow_add_t *obj, struct flood_value *value)
                 case OF_ACTION_GROUP: {
                     uint32_t lag_id;
                     of_action_group_group_id_get(&act, &lag_id);
-                    struct lag_group *lag = pipeline_bvs_group_lag_lookup(lag_id);
+                    struct lag_group *lag = pipeline_bvs_group_lag_acquire(lag_id);
                     if (lag == NULL) {
                         AIM_LOG_ERROR("Nonexistent LAG in flood table");
                         goto error;
                     }
                     xbuf_append_ptr(&lags_xbuf, lag);
                     value->num_lags++;
+                    break;
+                }
+                case OF_ACTION_BSN_GENTABLE: {
+                    of_object_t key;
+                    uint32_t table_id;
+                    of_action_bsn_gentable_table_id_get(&act, &table_id);
+                    of_action_bsn_gentable_key_bind(&act, &key);
+                    if (table_id == pipeline_bvs_table_lag_id) {
+                        struct lag_group *lag = pipeline_bvs_table_lag_acquire(&key);
+                        if (lag == NULL) {
+                            AIM_LOG_ERROR("Nonexistent LAG in flood table");
+                            goto error;
+                        }
+                        xbuf_append_ptr(&lags_xbuf, lag);
+                        value->num_lags++;
+                    } else {
+                        AIM_LOG_ERROR("unsupported gentable reference in flood table");
+                        goto error;
+                    }
                     break;
                 }
                 default:
@@ -113,16 +134,11 @@ parse_value(of_flow_add_t *obj, struct flood_value *value)
     xbuf_compact(&lags_xbuf);
     value->lags = xbuf_steal(&lags_xbuf);
 
-    /* Second pass to actually increment the refcounts */
-    int i;
-    for (i = 0; i < value->num_lags; i++) {
-        struct lag_group *lag = value->lags[i];
-        AIM_TRUE_OR_DIE(pipeline_bvs_group_lag_acquire(lag->id) == lag);
-    }
-
     return INDIGO_ERROR_NONE;
 
 error:
+    value->lags = xbuf_steal(&lags_xbuf);
+    cleanup_value(value);
     xbuf_cleanup(&lags_xbuf);
     return INDIGO_ERROR_BAD_ACTION;
 }
@@ -132,7 +148,7 @@ cleanup_value(struct flood_value *value)
 {
     int i;
     for (i = 0; i < value->num_lags; i++) {
-        pipeline_bvs_group_lag_release(value->lags[i]);
+        pipeline_bvs_table_lag_release(value->lags[i]);
     }
     aim_free(value->lags);
 }
