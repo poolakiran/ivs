@@ -37,6 +37,7 @@ struct port_value {
     unsigned prioritize_pdus : 1;
     unsigned require_vlan_xlate : 1;
     unsigned disable_vlan_counters : 1;
+    struct lag_group *ingress_lag;
 };
 
 struct port_entry {

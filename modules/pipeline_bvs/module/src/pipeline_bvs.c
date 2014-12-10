@@ -243,6 +243,7 @@ process_l2(struct ctx *ctx)
     }
 
     ctx->ingress_lag_id = port_entry->value.lag_id;
+    ctx->ingress_lag = port_entry->value.ingress_lag;
 
     if (packet_of_death) {
         if (port_entry->value.packet_of_death) {
@@ -337,7 +338,7 @@ process_l2(struct ctx *ctx)
             AIM_LOG_VERBOSE("L2 source discard");
             mark_drop(ctx);
         } else if (!disable_src_mac_check) {
-            if (src_l2_entry->value.lag->id != ctx->ingress_lag_id) {
+            if (src_l2_entry->value.lag != ctx->ingress_lag) {
                 AIM_LOG_VERBOSE("incorrect lag_id in source l2table lookup (station move)");
                 mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_STATION_MOVE);
                 mark_drop(ctx);
@@ -624,8 +625,8 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
     }
 
     if (!l3 && dst_port_entry->value.lag_id != OF_GROUP_ANY &&
-            dst_port_entry->value.lag_id == ctx->ingress_lag_id) {
-        AIM_LOG_VERBOSE("skipping ingress LAG %u", ctx->ingress_lag_id);
+            dst_port_entry->value.ingress_lag == ctx->ingress_lag) {
+        AIM_LOG_VERBOSE("skipping ingress LAG %s", lag_name(ctx->ingress_lag));
         return;
     }
 
