@@ -170,3 +170,45 @@ pipeline_bvs_table_lag_unregister(void)
 {
     indigo_core_gentable_unregister(lag_table);
 }
+
+/* Caller must handle NULL return value in case of an empty group */
+struct lag_bucket *
+pipeline_bvs_table_lag_select(struct lag_group *lag, uint32_t hash)
+{
+    AIM_ASSERT(lag != NULL);
+
+    if (lag->value.num_buckets == 0) {
+        return NULL;
+    }
+
+    return &lag->value.buckets[hash % lag->value.num_buckets];
+}
+
+struct lag_group *
+pipeline_bvs_table_lag_acquire(of_object_t *key)
+{
+    return indigo_core_gentable_acquire(lag_table, key);
+}
+
+void
+pipeline_bvs_table_lag_release(struct lag_group *lag)
+{
+    if (lag->id != OF_GROUP_ANY) {
+        indigo_core_group_release(lag->id);
+    } else {
+        /* HACK */
+        of_object_t *key = of_bsn_tlv_name_new(OF_VERSION_1_3);
+        of_octets_t name = { .data = (uint8_t *)lag->key.name, .bytes = strlen(lag->key.name) };
+        if (of_bsn_tlv_name_value_set(key, &name) < 0) {
+            AIM_DIE("Unexpected error creating LAG key in pipeline_bvs_table_lag_release");
+        }
+        indigo_core_gentable_release(lag_table, key);
+        of_object_delete(key);
+    }
+}
+
+struct lag_group *
+pipeline_bvs_table_lag_lookup(of_object_t *key)
+{
+    return indigo_core_gentable_lookup(lag_table, key);
+}

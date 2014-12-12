@@ -428,7 +428,7 @@ process_l2(struct ctx *ctx)
         return;
     }
 
-    struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(dst_l2_entry->value.lag, ctx->hash);
+    struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(dst_l2_entry->value.lag, ctx->hash);
     if (lag_bucket == NULL) {
         AIM_LOG_VERBOSE("empty LAG");
         return;
@@ -548,7 +548,7 @@ process_l3(struct ctx *ctx)
         AIM_DIE("Unexpected next hop type");
     }
 
-    struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(next_hop->lag, ctx->hash);
+    struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(next_hop->lag, ctx->hash);
     if (lag_bucket == NULL) {
         AIM_LOG_VERBOSE("empty LAG");
         return;
@@ -744,7 +744,7 @@ flood_vlan(struct ctx *ctx)
     for (i = 0; i < entry->value.num_lags; i++) {
         struct lag_group *lag = entry->value.lags[i];
 
-        struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(lag, ctx->hash);
+        struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(lag, ctx->hash);
         if (lag_bucket == NULL) {
             AIM_LOG_VERBOSE("empty LAG %d", lag->id);
             continue;
@@ -758,7 +758,7 @@ flood_vlan(struct ctx *ctx)
 static void
 span(struct ctx *ctx, struct span_group *span)
 {
-    struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(span->value.lag, ctx->hash);
+    struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(span->value.lag, ctx->hash);
     if (lag_bucket == NULL) {
         AIM_LOG_VERBOSE("empty LAG");
         return;
