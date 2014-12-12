@@ -135,4 +135,14 @@ group_to_table_id(uint32_t group_id)
 
 bool pipeline_bvs_check_tcam_mask(const of_match_fields_t *_mask, const of_match_fields_t *_minimum, const of_match_fields_t *_maximum);
 
+static inline const char *
+lag_name(struct lag_group *lag)
+{
+    if (lag == NULL) {
+        return "(null)";
+    } else {
+        return lag->key.name;
+    }
+}
+
 #endif

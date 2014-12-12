@@ -418,7 +418,7 @@ process_l2(struct ctx *ctx)
         AIM_LOG_VERBOSE("hit in destination l2table lookup, discard");
         mark_drop(ctx);
     } else {
-        AIM_LOG_VERBOSE("hit in destination l2table lookup, lag %u", dst_l2_entry->value.lag->id);
+        AIM_LOG_VERBOSE("hit in destination l2table lookup, lag %s", lag_name(dst_l2_entry->value.lag));
     }
 
     process_debug(ctx);
@@ -539,11 +539,11 @@ process_l3(struct ctx *ctx)
     }
 
     if (next_hop->type == NEXT_HOP_TYPE_LAG) {
-        AIM_LOG_VERBOSE("next-hop: eth_src=%{mac} eth_dst=%{mac} vlan=%u lag_id=%u",
+        AIM_LOG_VERBOSE("next-hop: eth_src=%{mac} eth_dst=%{mac} vlan=%u lag=%s",
                         next_hop->new_eth_src.addr, next_hop->new_eth_dst.addr,
-                        next_hop->new_vlan_vid, next_hop->lag->id);
+                        next_hop->new_vlan_vid, lag_name(next_hop->lag));
     } else if (next_hop->type == NEXT_HOP_TYPE_LAG_NOREWRITE) {
-        AIM_LOG_VERBOSE("next-hop: lag_id=%u", next_hop->lag->id);
+        AIM_LOG_VERBOSE("next-hop: lag=%s", lag_name(next_hop->lag));
     } else {
         AIM_DIE("Unexpected next hop type");
     }
@@ -746,10 +746,10 @@ flood_vlan(struct ctx *ctx)
 
         struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(lag, ctx->hash);
         if (lag_bucket == NULL) {
-            AIM_LOG_VERBOSE("empty LAG %d", lag->id);
+            AIM_LOG_VERBOSE("empty LAG %s", lag_name(lag));
             continue;
         }
-        AIM_LOG_VERBOSE("selected LAG %u port %u", lag->id, lag_bucket->port_no);
+        AIM_LOG_VERBOSE("selected LAG %s port %u", lag_name(lag), lag_bucket->port_no);
 
         process_egress(ctx, lag_bucket->port_no, false);
     }
