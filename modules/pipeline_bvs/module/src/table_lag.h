@@ -17,16 +17,35 @@
  *
  ****************************************************************/
 
-#ifndef GROUP_LAG_H
-#define GROUP_LAG_H
+#ifndef TABLE_LAG_H
+#define TABLE_LAG_H
 
-#include "table_lag.h"
+/* These datastructures are shared with the legacy LAG group */
 
-void pipeline_bvs_group_lag_register(void);
-void pipeline_bvs_group_lag_unregister(void);
-struct lag_bucket *pipeline_bvs_group_lag_select(struct lag_group *lag, uint32_t hash);
-struct lag_group *pipeline_bvs_group_lag_acquire(uint32_t lag_id);
-void pipeline_bvs_group_lag_release(struct lag_group *lag);
-struct lag_group *pipeline_bvs_group_lag_lookup(uint32_t lag_id);
+struct lag_key {
+    char name[64];
+};
+
+struct lag_value {
+    int num_buckets;
+    struct lag_bucket *buckets;
+};
+
+struct lag_group {
+    uint32_t id;
+    struct lag_key key;
+    struct lag_value value;
+};
+
+struct lag_bucket {
+    uint32_t port_no;
+};
+
+void pipeline_bvs_table_lag_register(void);
+void pipeline_bvs_table_lag_unregister(void);
+struct lag_bucket *pipeline_bvs_table_lag_select(struct lag_group *lag, uint32_t hash);
+struct lag_group *pipeline_bvs_table_lag_acquire(of_object_t *obj);
+void pipeline_bvs_table_lag_release(struct lag_group *lag);
+struct lag_group *pipeline_bvs_table_lag_lookup(of_object_t *obj);
 
 #endif

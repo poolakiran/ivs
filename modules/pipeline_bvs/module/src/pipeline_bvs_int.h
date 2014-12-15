@@ -113,6 +113,7 @@ struct ctx {
     uint32_t l3_interface_class_id;
     uint32_t l3_src_class_id;
     uint32_t ingress_lag_id;
+    struct lag_group *ingress_lag;
     uint16_t cur_tag;
 };
 
@@ -123,6 +124,8 @@ enum pipeline_bvs_version {
 
 extern enum pipeline_bvs_version version;
 
+extern uint16_t pipeline_bvs_table_lag_id;
+
 /* Utility functions */
 
 static inline uint32_t
@@ -132,5 +135,15 @@ group_to_table_id(uint32_t group_id)
 }
 
 bool pipeline_bvs_check_tcam_mask(const of_match_fields_t *_mask, const of_match_fields_t *_minimum, const of_match_fields_t *_maximum);
+
+static inline const char *
+lag_name(struct lag_group *lag)
+{
+    if (lag == NULL) {
+        return "(null)";
+    } else {
+        return lag->key.name;
+    }
+}
 
 #endif

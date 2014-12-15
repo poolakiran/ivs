@@ -126,6 +126,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_group_ecmp_register();
     pipeline_bvs_group_lag_register();
     pipeline_bvs_group_span_register();
+    pipeline_bvs_table_lag_register();
 }
 
 static void
@@ -155,6 +156,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_group_ecmp_unregister();
     pipeline_bvs_group_span_unregister();
     pipeline_bvs_group_lag_unregister();
+    pipeline_bvs_table_lag_unregister();
 }
 
 static indigo_error_t
@@ -241,6 +243,7 @@ process_l2(struct ctx *ctx)
     }
 
     ctx->ingress_lag_id = port_entry->value.lag_id;
+    ctx->ingress_lag = port_entry->value.ingress_lag;
 
     if (packet_of_death) {
         if (port_entry->value.packet_of_death) {
@@ -335,7 +338,7 @@ process_l2(struct ctx *ctx)
             AIM_LOG_VERBOSE("L2 source discard");
             mark_drop(ctx);
         } else if (!disable_src_mac_check) {
-            if (src_l2_entry->value.lag->id != ctx->ingress_lag_id) {
+            if (src_l2_entry->value.lag != ctx->ingress_lag) {
                 AIM_LOG_VERBOSE("incorrect lag_id in source l2table lookup (station move)");
                 mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_STATION_MOVE);
                 mark_drop(ctx);
@@ -416,7 +419,7 @@ process_l2(struct ctx *ctx)
         AIM_LOG_VERBOSE("hit in destination l2table lookup, discard");
         mark_drop(ctx);
     } else {
-        AIM_LOG_VERBOSE("hit in destination l2table lookup, lag %u", dst_l2_entry->value.lag->id);
+        AIM_LOG_VERBOSE("hit in destination l2table lookup, lag %s", lag_name(dst_l2_entry->value.lag));
     }
 
     process_debug(ctx);
@@ -426,7 +429,7 @@ process_l2(struct ctx *ctx)
         return;
     }
 
-    struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(dst_l2_entry->value.lag, ctx->hash);
+    struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(dst_l2_entry->value.lag, ctx->hash);
     if (lag_bucket == NULL) {
         AIM_LOG_VERBOSE("empty LAG");
         return;
@@ -537,16 +540,16 @@ process_l3(struct ctx *ctx)
     }
 
     if (next_hop->type == NEXT_HOP_TYPE_LAG) {
-        AIM_LOG_VERBOSE("next-hop: eth_src=%{mac} eth_dst=%{mac} vlan=%u lag_id=%u",
+        AIM_LOG_VERBOSE("next-hop: eth_src=%{mac} eth_dst=%{mac} vlan=%u lag=%s",
                         next_hop->new_eth_src.addr, next_hop->new_eth_dst.addr,
-                        next_hop->new_vlan_vid, next_hop->lag->id);
+                        next_hop->new_vlan_vid, lag_name(next_hop->lag));
     } else if (next_hop->type == NEXT_HOP_TYPE_LAG_NOREWRITE) {
-        AIM_LOG_VERBOSE("next-hop: lag_id=%u", next_hop->lag->id);
+        AIM_LOG_VERBOSE("next-hop: lag=%s", lag_name(next_hop->lag));
     } else {
         AIM_DIE("Unexpected next hop type");
     }
 
-    struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(next_hop->lag, ctx->hash);
+    struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(next_hop->lag, ctx->hash);
     if (lag_bucket == NULL) {
         AIM_LOG_VERBOSE("empty LAG");
         return;
@@ -622,8 +625,8 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
     }
 
     if (!l3 && dst_port_entry->value.lag_id != OF_GROUP_ANY &&
-            dst_port_entry->value.lag_id == ctx->ingress_lag_id) {
-        AIM_LOG_VERBOSE("skipping ingress LAG %u", ctx->ingress_lag_id);
+            dst_port_entry->value.ingress_lag == ctx->ingress_lag) {
+        AIM_LOG_VERBOSE("skipping ingress LAG %s", lag_name(ctx->ingress_lag));
         return;
     }
 
@@ -742,12 +745,12 @@ flood_vlan(struct ctx *ctx)
     for (i = 0; i < entry->value.num_lags; i++) {
         struct lag_group *lag = entry->value.lags[i];
 
-        struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(lag, ctx->hash);
+        struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(lag, ctx->hash);
         if (lag_bucket == NULL) {
-            AIM_LOG_VERBOSE("empty LAG %d", lag->id);
+            AIM_LOG_VERBOSE("empty LAG %s", lag_name(lag));
             continue;
         }
-        AIM_LOG_VERBOSE("selected LAG %u port %u", lag->id, lag_bucket->port_no);
+        AIM_LOG_VERBOSE("selected LAG %s port %u", lag_name(lag), lag_bucket->port_no);
 
         process_egress(ctx, lag_bucket->port_no, false);
     }
@@ -756,7 +759,7 @@ flood_vlan(struct ctx *ctx)
 static void
 span(struct ctx *ctx, struct span_group *span)
 {
-    struct lag_bucket *lag_bucket = pipeline_bvs_group_lag_select(span->value.lag, ctx->hash);
+    struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(span->value.lag, ctx->hash);
     if (lag_bucket == NULL) {
         AIM_LOG_VERBOSE("empty LAG");
         return;

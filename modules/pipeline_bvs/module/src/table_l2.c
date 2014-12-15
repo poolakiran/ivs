@@ -88,6 +88,23 @@ parse_value(of_flow_add_t *obj, struct l2_value *value)
                     }
                     break;
                 }
+                case OF_ACTION_BSN_GENTABLE: {
+                    of_object_t key;
+                    uint32_t table_id;
+                    of_action_bsn_gentable_table_id_get(&act, &table_id);
+                    of_action_bsn_gentable_key_bind(&act, &key);
+                    if (table_id == pipeline_bvs_table_lag_id) {
+                        value->lag = pipeline_bvs_table_lag_acquire(&key);
+                        if (value->lag == NULL) {
+                            AIM_LOG_ERROR("Nonexistent LAG in L2 table");
+                            goto error;
+                        }
+                    } else {
+                        AIM_LOG_ERROR("unsupported gentable reference in L2 table");
+                        goto error;
+                    }
+                    break;
+                }
                 default:
                     AIM_LOG_ERROR("Unexpected action %s in L2 table", of_object_id_str[act.object_id]);
                     goto error;
@@ -112,7 +129,7 @@ static void
 cleanup_value(struct l2_value *value)
 {
     if (value->lag != NULL) {
-        pipeline_bvs_group_lag_release(value->lag);
+        pipeline_bvs_table_lag_release(value->lag);
     }
 }
 
@@ -136,9 +153,9 @@ pipeline_bvs_table_l2_entry_create(
         return rv;
     }
 
-    AIM_LOG_VERBOSE("Create L2 entry vlan=%u, mac=%{mac} -> lag %u",
+    AIM_LOG_VERBOSE("Create L2 entry vlan=%u, mac=%{mac} -> lag=%s",
                     entry->key.vlan_vid, &entry->key.mac,
-                    entry->value.lag ? entry->value.lag->id : OF_GROUP_ANY);
+                    lag_name(entry->value.lag));
 
     if (entry->key.vlan_vid == WILDCARD_VLAN) {
         AIM_ASSERT(miss_entry == NULL);
@@ -262,9 +279,9 @@ pipeline_bvs_table_l2_lookup(uint16_t vlan_vid, const uint8_t *mac)
 
     struct l2_entry *entry = l2_hashtable_first(l2_hashtable, &key);
     if (entry) {
-        AIM_LOG_VERBOSE("Hit L2 entry vlan=%u, mac=%{mac} -> lag %u",
+        AIM_LOG_VERBOSE("Hit L2 entry vlan=%u, mac=%{mac} -> lag=%s",
                         entry->key.vlan_vid, &entry->key.mac,
-                        entry->value.lag ? entry->value.lag->id : OF_GROUP_ANY);
+                        lag_name(entry->value.lag));
         return entry;
     } else {
         AIM_LOG_VERBOSE("Miss L2 entry vlan=%u, mac=%{mac}",

@@ -161,6 +161,7 @@ parse_value(of_flow_add_t *obj, struct ingress_acl_value *value)
             OF_LIST_ACTION_ITER(&actions, &act, rv) {
                 switch (act.object_id) {
                 case OF_ACTION_GROUP:
+                case OF_ACTION_BSN_GENTABLE:
                 case OF_ACTION_DEC_NW_TTL:
                     /* Handled by pipeline_bvs_parse_next_hop */
                     break;

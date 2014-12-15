@@ -49,6 +49,24 @@ parse_value(of_list_bucket_t *of_buckets, struct span_value *value)
                     goto error;
                 }
                 break;
+            case OF_ACTION_BSN_GENTABLE: {
+                of_object_t key;
+                uint32_t table_id;
+                of_action_bsn_gentable_table_id_get(&act, &table_id);
+                of_action_bsn_gentable_key_bind(&act, &key);
+                if (table_id == pipeline_bvs_table_lag_id) {
+                    value->lag = pipeline_bvs_table_lag_acquire(&key);
+                    if (value->lag == NULL) {
+                        AIM_LOG_ERROR("Nonexistent LAG in SPAN group");
+                        goto error;
+                    }
+                    seen_lag = true;
+                } else {
+                    AIM_LOG_ERROR("unsupported gentable reference in SPAN group");
+                    goto error;
+                }
+                break;
+            }
             default:
                 AIM_LOG_ERROR("unsupported SPAN group action %s", of_object_id_str[act.object_id]);
                 goto error;
@@ -65,7 +83,7 @@ parse_value(of_list_bucket_t *of_buckets, struct span_value *value)
 
 error:
     if (seen_lag) {
-        pipeline_bvs_group_lag_release(value->lag);
+        pipeline_bvs_table_lag_release(value->lag);
     }
     return INDIGO_ERROR_BAD_ACTION;
 }
@@ -73,7 +91,7 @@ error:
 static void
 cleanup_value(struct span_value *value)
 {
-    pipeline_bvs_group_lag_release(value->lag);
+    pipeline_bvs_table_lag_release(value->lag);
 }
 
 static indigo_error_t
@@ -99,7 +117,7 @@ pipeline_bvs_group_span_create(
     span->id = group_id;
     span->value = value;
 
-    AIM_LOG_VERBOSE("Creating span group %u lag %u", span->id, span->value.lag->id);
+    AIM_LOG_VERBOSE("Creating span group %u lag=%s", span->id, lag_name(span->value.lag));
 
     *entry_priv = span;
     return INDIGO_ERROR_NONE;

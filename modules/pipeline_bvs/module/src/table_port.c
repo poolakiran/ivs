@@ -25,6 +25,8 @@
 #define TEMPLATE_ENTRY_FIELD hash_entry
 #include <BigHash/bighash_template.h>
 
+static void cleanup_value(struct port_value *value);
+
 static bighash_table_t *port_hashtable;
 static const of_match_fields_t required_mask = {
     .in_port = 0xffffffff,
@@ -79,6 +81,7 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
     value->prioritize_pdus = false;
     value->require_vlan_xlate = false;
     value->disable_vlan_counters = false;
+    value->ingress_lag = NULL;
 
     of_flow_add_instructions_bind(obj, &insts);
     OF_LIST_INSTRUCTION_ITER(&insts, &inst, rv) {
@@ -109,6 +112,23 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
                         break;
                     default:
                         AIM_LOG_ERROR("Unexpected set-field OXM %s in port table", of_object_id_str[oxm.object_id]);
+                        goto error;
+                    }
+                    break;
+                }
+                case OF_ACTION_BSN_GENTABLE: {
+                    of_object_t key;
+                    uint32_t table_id;
+                    of_action_bsn_gentable_table_id_get(&act, &table_id);
+                    of_action_bsn_gentable_key_bind(&act, &key);
+                    if (table_id == pipeline_bvs_table_lag_id) {
+                        value->ingress_lag = pipeline_bvs_table_lag_acquire(&key);
+                        if (value->ingress_lag == NULL) {
+                            AIM_LOG_ERROR("Nonexistent LAG in port table");
+                            goto error;
+                        }
+                    } else {
+                        AIM_LOG_ERROR("unsupported gentable reference in port table");
                         goto error;
                     }
                     break;
@@ -150,10 +170,24 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
         }
     }
 
+    if (value->ingress_lag == NULL) {
+        value->ingress_lag = pipeline_bvs_group_lag_acquire(value->lag_id);
+    }
+
     return INDIGO_ERROR_NONE;
 
 error:
+    cleanup_value(value);
     return INDIGO_ERROR_BAD_ACTION;
+}
+
+static void
+cleanup_value(struct port_value *value)
+{
+    if (value->ingress_lag != NULL) {
+        pipeline_bvs_table_lag_release(value->ingress_lag);
+        value->ingress_lag = NULL;
+    }
 }
 
 static indigo_error_t
@@ -205,6 +239,7 @@ pipeline_bvs_table_port_entry_modify(
         return rv;
     }
 
+    cleanup_value(&entry->value);
     entry->value = value;
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
@@ -221,6 +256,7 @@ pipeline_bvs_table_port_entry_delete(
     bighash_remove(port_hashtable, &entry->hash_entry);
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
+    cleanup_value(&entry->value);
     aim_free(entry);
     return INDIGO_ERROR_NONE;
 }

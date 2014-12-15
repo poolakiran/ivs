@@ -47,6 +47,7 @@ parse_value(of_list_bucket_t *of_buckets, struct ecmp_value *value)
         OF_LIST_ACTION_ITER(&actions, &act, rv) {
             switch (act.object_id) {
             case OF_ACTION_GROUP:
+            case OF_ACTION_BSN_GENTABLE:
             case OF_ACTION_DEC_NW_TTL:
                 /* Handled by pipeline_bvs_parse_next_hop */
                 break;
