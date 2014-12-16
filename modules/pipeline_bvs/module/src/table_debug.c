@@ -166,6 +166,29 @@ parse_value(of_flow_add_t *obj, struct debug_value *value)
                     }
                     break;
                 }
+                case OF_ACTION_BSN_GENTABLE: {
+                    if (!seen_span) {
+                        of_object_t key;
+                        uint32_t table_id;
+                        of_action_bsn_gentable_table_id_get(&act, &table_id);
+                        of_action_bsn_gentable_key_bind(&act, &key);
+                        if (table_id == pipeline_bvs_table_span_id) {
+                            value->span = pipeline_bvs_table_span_acquire(&key);
+                            if (value->span == NULL) {
+                                AIM_LOG_ERROR("Nonexistent SPAN in debug table");
+                                goto error;
+                            }
+                            seen_span = true;
+                        } else {
+                            AIM_LOG_ERROR("unsupported gentable reference in debug table");
+                            goto error;
+                        }
+                    } else {
+                        AIM_LOG_ERROR("Duplicate SPAN action in debug table");
+                        goto error;
+                    }
+                    break;
+                }
                 case OF_ACTION_OUTPUT: {
                     of_port_no_t port_no;
                     of_action_output_port_get(&act, &port_no);
