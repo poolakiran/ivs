@@ -110,7 +110,7 @@ static void
 cleanup_value(struct egress_mirror_value *value)
 {
     if (value->span) {
-        pipeline_bvs_group_span_release(value->span);
+        pipeline_bvs_table_span_release(value->span);
     }
 }
 

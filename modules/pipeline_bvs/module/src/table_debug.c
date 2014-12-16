@@ -207,7 +207,7 @@ static void
 cleanup_value(struct debug_value *value)
 {
     if (value->span != NULL) {
-        pipeline_bvs_group_span_release(value->span);
+        pipeline_bvs_table_span_release(value->span);
     }
 }
 

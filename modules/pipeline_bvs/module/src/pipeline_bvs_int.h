@@ -55,6 +55,7 @@
 #include "table_source_miss_override.h"
 #include "table_qos_weight.h"
 #include "table_breakout.h"
+#include "table_span.h"
 #include "group_lag.h"
 #include "group_ecmp.h"
 #include "group_span.h"
@@ -125,6 +126,7 @@ enum pipeline_bvs_version {
 extern enum pipeline_bvs_version version;
 
 extern uint16_t pipeline_bvs_table_lag_id;
+extern uint16_t pipeline_bvs_table_span_id;
 
 /* Utility functions */
 
