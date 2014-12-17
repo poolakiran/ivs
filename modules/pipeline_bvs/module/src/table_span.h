@@ -17,13 +17,29 @@
  *
  ****************************************************************/
 
-#ifndef GROUP_SPAN_H
-#define GROUP_SPAN_H
+#ifndef TABLE_SPAN_H
+#define TABLE_SPAN_H
 
-#include "table_span.h"
+/* These datastructures are shared with the legacy SPAN group */
 
-void pipeline_bvs_group_span_register(void);
-void pipeline_bvs_group_span_unregister(void);
-struct span_group *pipeline_bvs_group_span_acquire(uint32_t span_id);
+struct span_key {
+    char name[64];
+};
+
+struct span_value {
+    struct lag_group *lag;
+};
+
+struct span_group {
+    uint32_t id;
+    struct span_key key;
+    struct span_value value;
+};
+
+void pipeline_bvs_table_span_register(void);
+void pipeline_bvs_table_span_unregister(void);
+struct span_group *pipeline_bvs_table_span_acquire(of_object_t *obj);
+void pipeline_bvs_table_span_release(struct span_group *span);
+struct span_group *pipeline_bvs_table_span_lookup(of_object_t *obj);
 
 #endif

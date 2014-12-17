@@ -81,6 +81,29 @@ parse_value(of_flow_add_t *obj, struct egress_mirror_value *value)
                         goto error;
                     }
                     break;
+                case OF_ACTION_BSN_GENTABLE: {
+                    if (!seen_span_id) {
+                        of_object_t key;
+                        uint32_t table_id;
+                        of_action_bsn_gentable_table_id_get(&act, &table_id);
+                        of_action_bsn_gentable_key_bind(&act, &key);
+                        if (table_id == pipeline_bvs_table_span_id) {
+                            value->span = pipeline_bvs_table_span_acquire(&key);
+                            if (value->span == NULL) {
+                                AIM_LOG_ERROR("Nonexistent SPAN in egress_mirror table");
+                                goto error;
+                            }
+                            seen_span_id = true;
+                        } else {
+                            AIM_LOG_ERROR("unsupported gentable reference in egress_mirror table");
+                            goto error;
+                        }
+                    } else {
+                        AIM_LOG_ERROR("Duplicate SPAN action in egress_mirror table");
+                        goto error;
+                    }
+                    break;
+                }
                 default:
                     AIM_LOG_ERROR("Unexpected action %s in egress_mirror table", of_object_id_str[act.object_id]);
                     goto error;
@@ -110,7 +133,7 @@ static void
 cleanup_value(struct egress_mirror_value *value)
 {
     if (value->span) {
-        pipeline_bvs_group_span_release(value->span);
+        pipeline_bvs_table_span_release(value->span);
     }
 }
 
