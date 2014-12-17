@@ -17,15 +17,35 @@
  *
  ****************************************************************/
 
-#ifndef GROUP_ECMP_H
-#define GROUP_ECMP_H
+#ifndef TABLE_ECMP_H
+#define TABLE_ECMP_H
 
-#include "table_ecmp.h"
+/* These datastructures are shared with the legacy ECMP group */
 
-void pipeline_bvs_group_ecmp_register(void);
-void pipeline_bvs_group_ecmp_unregister(void);
-struct ecmp_bucket *pipeline_bvs_group_ecmp_select(struct ecmp_group *ecmp, uint32_t hash);
-struct ecmp_group *pipeline_bvs_group_ecmp_acquire(uint32_t ecmp_id);
-void pipeline_bvs_group_ecmp_release(struct ecmp_group *ecmp);
+struct ecmp_key {
+    char name[64];
+};
+
+struct ecmp_value {
+    int num_buckets;
+    struct ecmp_bucket *buckets;
+};
+
+struct ecmp_group {
+    uint32_t id;
+    struct ecmp_key key;
+    struct ecmp_value value;
+};
+
+struct ecmp_bucket {
+    struct next_hop next_hop;
+};
+
+void pipeline_bvs_table_ecmp_register(void);
+void pipeline_bvs_table_ecmp_unregister(void);
+struct ecmp_bucket *pipeline_bvs_table_ecmp_select(struct ecmp_group *ecmp, uint32_t hash);
+struct ecmp_group *pipeline_bvs_table_ecmp_acquire(of_object_t *obj);
+void pipeline_bvs_table_ecmp_release(struct ecmp_group *ecmp);
+struct ecmp_group *pipeline_bvs_table_ecmp_lookup(of_object_t *obj);
 
 #endif

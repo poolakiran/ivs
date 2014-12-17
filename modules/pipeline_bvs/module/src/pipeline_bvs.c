@@ -128,6 +128,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_group_span_register();
     pipeline_bvs_table_lag_register();
     pipeline_bvs_table_span_register();
+    pipeline_bvs_table_ecmp_register();
 }
 
 static void
@@ -159,6 +160,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_group_lag_unregister();
     pipeline_bvs_table_lag_unregister();
     pipeline_bvs_table_span_unregister();
+    pipeline_bvs_table_ecmp_unregister();
 }
 
 static indigo_error_t
