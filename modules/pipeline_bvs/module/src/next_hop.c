@@ -75,6 +75,12 @@ pipeline_bvs_parse_next_hop(of_list_action_t *actions, struct next_hop *next_hop
                         AIM_LOG_ERROR("Nonexistent LAG in next-hop");
                         goto error;
                     }
+                } else if (table_id == pipeline_bvs_table_ecmp_id) {
+                    ecmp = pipeline_bvs_table_ecmp_acquire(&key);
+                    if (ecmp == NULL) {
+                        AIM_LOG_ERROR("Nonexistent ECMP in next-hop");
+                        goto error;
+                    }
                 } else {
                     AIM_LOG_ERROR("Unexpected gentable id in next-hop");
                     goto error;
@@ -171,7 +177,123 @@ error:
         pipeline_bvs_table_lag_release(lag);
     }
     if (ecmp) {
-        pipeline_bvs_group_ecmp_release(ecmp);
+        pipeline_bvs_table_ecmp_release(ecmp);
+    }
+    return INDIGO_ERROR_COMPAT;
+}
+
+indigo_error_t
+pipeline_bvs_parse_gentable_next_hop(of_list_bsn_tlv_t *tlvs, struct next_hop *next_hop)
+{
+    bool seen_new_vlan_vid = false;
+    bool seen_new_eth_src = false;
+    bool seen_new_eth_dst = false;
+    struct lag_group *lag = NULL;
+    struct ecmp_group *ecmp = NULL;
+
+    of_object_t tlv;
+    int rv;
+    OF_LIST_BSN_TLV_ITER(tlvs, &tlv, rv) {
+        switch (tlv.object_id) {
+        case OF_BSN_TLV_REFERENCE: {
+            if (!lag && !ecmp) {
+                uint16_t table_id;
+                of_object_t key;
+                of_bsn_tlv_reference_table_id_get(&tlv, &table_id);
+                of_bsn_tlv_reference_key_bind(&tlv, &key);
+                if (table_id == pipeline_bvs_table_lag_id) {
+                    lag = pipeline_bvs_table_lag_acquire(&key);
+                    if (lag == NULL) {
+                        AIM_LOG_ERROR("Nonexistent LAG in next-hop");
+                        goto error;
+                    }
+                } else if (table_id == pipeline_bvs_table_ecmp_id) {
+                    ecmp = pipeline_bvs_table_ecmp_acquire(&key);
+                    if (ecmp == NULL) {
+                        AIM_LOG_ERROR("Nonexistent ECMP in next-hop");
+                        goto error;
+                    }
+                } else {
+                    AIM_LOG_ERROR("Unexpected gentable id in next-hop");
+                    goto error;
+                }
+            } else {
+                AIM_LOG_ERROR("duplicate reference tlv in next-hop");
+                goto error;
+            }
+            break;
+        }
+        case OF_BSN_TLV_VLAN_VID:
+            if (!seen_new_vlan_vid) {
+                of_bsn_tlv_vlan_vid_value_get(&tlv, &next_hop->new_vlan_vid);
+                next_hop->new_vlan_vid &= ~VLAN_CFI_BIT;
+                seen_new_vlan_vid = true;
+            } else {
+                AIM_LOG_ERROR("duplicate vlan_vid tlv in next-hop");
+                goto error;
+            }
+            break;
+        case OF_BSN_TLV_ETH_SRC:
+            if (!seen_new_eth_src) {
+                of_bsn_tlv_eth_src_value_get(&tlv, &next_hop->new_eth_src);
+                seen_new_eth_src = true;
+            } else {
+                AIM_LOG_ERROR("duplicate eth_src tlv in next-hop");
+                goto error;
+            }
+            break;
+        case OF_BSN_TLV_ETH_DST:
+            if (!seen_new_eth_dst) {
+                of_bsn_tlv_eth_dst_value_get(&tlv, &next_hop->new_eth_dst);
+                seen_new_eth_dst = true;
+            } else {
+                AIM_LOG_ERROR("duplicate eth_dst tlv in next-hop");
+                goto error;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    if (lag) {
+        if (seen_new_eth_dst) {
+            next_hop->type = NEXT_HOP_TYPE_LAG;
+            if (!seen_new_vlan_vid || !seen_new_eth_src || !seen_new_eth_dst) {
+                AIM_LOG_WARN("Missing required next-hop action");
+                goto error;
+            }
+        } else {
+            next_hop->type = NEXT_HOP_TYPE_LAG_NOREWRITE;
+            if (seen_new_vlan_vid || seen_new_eth_src || seen_new_eth_dst) {
+                AIM_LOG_WARN("Unexpected next-hop action");
+                goto error;
+            }
+        }
+        next_hop->lag = lag;
+    } else if (ecmp) {
+        next_hop->type = NEXT_HOP_TYPE_ECMP;
+        next_hop->ecmp = ecmp;
+        if (seen_new_vlan_vid || seen_new_eth_src || seen_new_eth_dst) {
+            AIM_LOG_WARN("Unexpected action in ECMP next-hop");
+        }
+    } else {
+        /* No group action, null route */
+        next_hop->type = NEXT_HOP_TYPE_NULL;
+
+        if (seen_new_vlan_vid || seen_new_eth_src || seen_new_eth_dst) {
+            AIM_LOG_WARN("Unexpected action in null next-hop");
+        }
+    }
+
+    return INDIGO_ERROR_NONE;
+
+error:
+    if (lag) {
+        pipeline_bvs_table_lag_release(lag);
+    }
+    if (ecmp) {
+        pipeline_bvs_table_ecmp_release(ecmp);
     }
     return INDIGO_ERROR_COMPAT;
 }
@@ -189,7 +311,7 @@ pipeline_bvs_cleanup_next_hop(struct next_hop *next_hop)
         break;
     case NEXT_HOP_TYPE_ECMP:
         if (next_hop->ecmp != NULL) {
-            pipeline_bvs_group_ecmp_release(next_hop->ecmp);
+            pipeline_bvs_table_ecmp_release(next_hop->ecmp);
             next_hop->ecmp = NULL;
         }
         break;

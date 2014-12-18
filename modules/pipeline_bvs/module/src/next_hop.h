@@ -42,6 +42,7 @@ struct next_hop {
 };
 
 indigo_error_t pipeline_bvs_parse_next_hop(of_list_action_t *actions, struct next_hop *next_hop);
+indigo_error_t pipeline_bvs_parse_gentable_next_hop(of_list_bsn_tlv_t *tlvs, struct next_hop *next_hop);
 void pipeline_bvs_cleanup_next_hop(struct next_hop *next_hop);
 void pipeline_bvs_register_next_hop_datatype(void);
 void pipeline_bvs_unregister_next_hop_datatype(void);
