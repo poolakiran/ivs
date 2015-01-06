@@ -396,7 +396,8 @@ process_l2(struct ctx *ctx)
         return;
     }
 
-    if (pipeline_bvs_table_my_station_lookup(ctx->key->ethernet.eth_dst)) {
+    if (ctx->key->ethertype == htons(ETH_P_IP) &&
+            pipeline_bvs_table_my_station_lookup(ctx->key->ethernet.eth_dst)) {
         process_l3(ctx);
         return;
     }
