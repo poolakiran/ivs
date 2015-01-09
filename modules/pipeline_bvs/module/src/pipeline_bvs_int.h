@@ -35,6 +35,8 @@
 #include <AIM/aim_list.h>
 #include <tcam/tcam.h>
 #include <action/action.h>
+#include <sflowa/sflowa.h>
+#include <slshared/slshared_config.h>
 
 #include "next_hop.h"
 #include "table_port.h"
