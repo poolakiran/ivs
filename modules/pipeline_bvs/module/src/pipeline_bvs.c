@@ -45,6 +45,8 @@ static void process_pktin(struct ctx *ctx);
 
 enum pipeline_bvs_version version;
 
+static uint32_t port_sampling_rate[SLSHARED_CONFIG_OF_PORT_MAX+1];
+
 /*
  * Switch -> Controller async msg channel selector.
  *
@@ -93,6 +95,24 @@ bundle_comparator(of_object_t *a, of_object_t *b)
     return sort_key(a) - sort_key(b);
 }
 
+/*
+ * Set the port ingress sampling rate.
+ * Sampling rate is set as a probability which is a fraction of UINT32_MAX.
+ *
+ * Todo: Revalidate kflows after setting the sampling rate
+ */
+static indigo_error_t
+port_sampling_rate_set(of_port_no_t port_no, uint32_t sampling_rate)
+{
+    AIM_ASSERT(port_no <= SLSHARED_CONFIG_OF_PORT_MAX,
+               "Port (%u) out of range", port_no);
+
+    sampling_rate = sampling_rate? UINT32_MAX/sampling_rate : 0;
+    AIM_LOG_VERBOSE("port %u sampling rate set to %u", port_no, sampling_rate);
+    port_sampling_rate[port_no] = sampling_rate;
+    return INDIGO_ERROR_NONE;
+}
+
 static void
 pipeline_bvs_init(const char *name)
 {
@@ -104,6 +124,7 @@ pipeline_bvs_init(const char *name)
 
     indigo_cxn_async_channel_selector_register(pipeline_bvs_cxn_async_channel_selector);
     indigo_cxn_bundle_comparator_set(bundle_comparator);
+    sflowa_sampling_rate_handler_register(port_sampling_rate_set);
     pipeline_bvs_register_next_hop_datatype();
     pipeline_bvs_table_port_register();
     pipeline_bvs_table_vlan_xlate_register();
@@ -202,6 +223,11 @@ process_l2(struct ctx *ctx)
         pipeline_bvs_table_ingress_mirror_lookup(ctx->key->in_port);
     if (ingress_mirror_entry) {
         span(ctx, ingress_mirror_entry->value.span);
+    }
+
+    if (ctx->key->in_port <= SLSHARED_CONFIG_OF_PORT_MAX) {
+        action_sample_to_controller(ctx->actx, IVS_PKTIN_USERDATA(0, OFP_BSN_PKTIN_FLAG_SFLOW),
+                                    port_sampling_rate[ctx->key->in_port]);
     }
 
     struct ind_ovs_port_counters *port_counters = ind_ovs_port_stats_select(ctx->key->in_port);

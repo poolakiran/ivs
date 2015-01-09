@@ -6,6 +6,7 @@
 #include <pipeline/pipeline.h>
 #include <dhcpra/dhcpra.h>
 #include <nat/nat.h>
+#include <sflowa/sflowa.h>
 
 void
 ivs_agent_init(void)
@@ -35,4 +36,8 @@ ivs_agent_init(void)
     }
 
     nat_init();
+
+    if (sflowa_init() < 0) {
+        AIM_DIE("Failed to initialize SFLOW agent module");
+    }
 }
