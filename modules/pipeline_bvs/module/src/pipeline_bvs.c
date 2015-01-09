@@ -225,8 +225,10 @@ process_l2(struct ctx *ctx)
         span(ctx, ingress_mirror_entry->value.span);
     }
 
-    action_sample_to_controller(ctx->actx, IVS_PKTIN_USERDATA(0, OFP_BSN_PKTIN_FLAG_SFLOW),
-                                port_sampling_rate[ctx->key->in_port]);
+    if (ctx->key->in_port <= SLSHARED_CONFIG_OF_PORT_MAX) {
+        action_sample_to_controller(ctx->actx, IVS_PKTIN_USERDATA(0, OFP_BSN_PKTIN_FLAG_SFLOW),
+                                    port_sampling_rate[ctx->key->in_port]);
+    }
 
     struct ind_ovs_port_counters *port_counters = ind_ovs_port_stats_select(ctx->key->in_port);
     AIM_ASSERT(port_counters != NULL);
