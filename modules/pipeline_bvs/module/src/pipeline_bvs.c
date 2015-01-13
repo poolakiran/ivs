@@ -99,10 +99,11 @@ bundle_comparator(of_object_t *a, of_object_t *b)
  * Set the port ingress sampling rate.
  * Sampling rate is set as a probability which is a fraction of UINT32_MAX.
  *
- * Todo: Revalidate kflows after setting the sampling rate
+ * Revalidate kflows after setting the sampling rate
  */
 static indigo_error_t
-port_sampling_rate_set(of_port_no_t port_no, uint32_t sampling_rate)
+port_sampling_rate_set(of_port_no_t port_no, uint32_t sampling_rate,
+                       indigo_cxn_id_t cxn_id)
 {
     AIM_ASSERT(port_no <= SLSHARED_CONFIG_OF_PORT_MAX,
                "Port (%u) out of range", port_no);
@@ -110,6 +111,8 @@ port_sampling_rate_set(of_port_no_t port_no, uint32_t sampling_rate)
     sampling_rate = sampling_rate? UINT32_MAX/sampling_rate : 0;
     AIM_LOG_VERBOSE("port %u sampling rate set to %u", port_no, sampling_rate);
     port_sampling_rate[port_no] = sampling_rate;
+
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
