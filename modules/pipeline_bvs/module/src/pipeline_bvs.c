@@ -228,7 +228,8 @@ process_l2(struct ctx *ctx)
         span(ctx, ingress_mirror_entry->value.span);
     }
 
-    if (ctx->key->in_port <= SLSHARED_CONFIG_OF_PORT_MAX) {
+    if (ctx->key->in_port <= SLSHARED_CONFIG_OF_PORT_MAX &&
+        port_sampling_rate[ctx->key->in_port]) {
         action_sample_to_controller(ctx->actx, IVS_PKTIN_USERDATA(0, OFP_BSN_PKTIN_FLAG_SFLOW),
                                     port_sampling_rate[ctx->key->in_port]);
     }
