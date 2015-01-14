@@ -399,8 +399,15 @@ process_l2(struct ctx *ctx)
     }
 
     /* ARP offload */
-    if (port_entry->value.arp_offload) {
-        if (ctx->key->ethertype == htons(0x0806)) {
+    if (ctx->key->ethertype == htons(0x0806)) {
+        if (pipeline_bvs_table_arp_offload_lookup(
+                ctx->internal_vlan_vid, ntohl(ctx->key->arp.arp_tip))) {
+            AIM_LOG_VERBOSE("trapping ARP packet to VLAN %u IP %{ipv4a}", ctx->internal_vlan_vid, ntohl(ctx->key->arp.arp_tip));
+            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_ARP);
+            mark_drop(ctx);
+            process_pktin(ctx);
+            return;
+        } else if (port_entry->value.arp_offload) {
             AIM_LOG_VERBOSE("sending ARP packet to agent");
             mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_ARP);
             /* Continue forwarding packet */
