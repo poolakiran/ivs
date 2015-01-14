@@ -47,6 +47,9 @@ void
 action_controller(struct action_context *ctx, uint64_t userdata)
 {
     uint32_t netlink_port = ind_ovs_port_lookup_netlink(ctx->current_key.in_port);
+    if (netlink_port == 0) {
+        return;
+    }
 
     commit_set_field_actions(ctx);
 
