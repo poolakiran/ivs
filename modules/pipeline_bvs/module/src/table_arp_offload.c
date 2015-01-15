@@ -33,7 +33,7 @@ void
 pipeline_bvs_table_arp_offload_register(void)
 {
     arp_offload_hashtable = bighash_table_create(1024);
-    indigo_core_gentable_register("arp_offload", &arp_offload_ops, NULL, 4, 4,
+    indigo_core_gentable_register("arp_offload", &arp_offload_ops, NULL, 1024, 256,
                                   &arp_offload_table);
 }
 
