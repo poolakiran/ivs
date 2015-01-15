@@ -149,6 +149,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_floating_ip_reverse_register();
     pipeline_bvs_table_qos_weight_register();
     pipeline_bvs_table_breakout_register();
+    pipeline_bvs_table_arp_offload_register();
     pipeline_bvs_group_ecmp_register();
     pipeline_bvs_group_lag_register();
     pipeline_bvs_group_span_register();
@@ -183,6 +184,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_floating_ip_reverse_unregister();
     pipeline_bvs_table_qos_weight_unregister();
     pipeline_bvs_table_breakout_unregister();
+    pipeline_bvs_table_arp_offload_unregister();
     pipeline_bvs_group_ecmp_unregister();
     pipeline_bvs_group_span_unregister();
     pipeline_bvs_group_lag_unregister();
@@ -397,8 +399,15 @@ process_l2(struct ctx *ctx)
     }
 
     /* ARP offload */
-    if (port_entry->value.arp_offload) {
-        if (ctx->key->ethertype == htons(0x0806)) {
+    if (ctx->key->ethertype == htons(0x0806)) {
+        if (pipeline_bvs_table_arp_offload_lookup(
+                ctx->internal_vlan_vid, ntohl(ctx->key->arp.arp_tip))) {
+            AIM_LOG_VERBOSE("trapping ARP packet to VLAN %u IP %{ipv4a}", ctx->internal_vlan_vid, ntohl(ctx->key->arp.arp_tip));
+            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_ARP);
+            mark_drop(ctx);
+            process_pktin(ctx);
+            return;
+        } else if (port_entry->value.arp_offload) {
             AIM_LOG_VERBOSE("sending ARP packet to agent");
             mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_ARP);
             /* Continue forwarding packet */
