@@ -750,9 +750,31 @@ handle_nat_stats_request(indigo_cxn_id_t cxn_id, of_object_t *msg)
     of_str64_t stats_name;
     of_bsn_generic_stats_request_xid_get(msg, &xid);
     of_bsn_generic_stats_request_name_get(msg, &stats_name);
+    of_octets_t nat_name;
 
     if (strcmp(stats_name, "nat")) {
         return INDIGO_CORE_LISTENER_RESULT_PASS;
+    }
+
+    {
+        of_list_bsn_tlv_t tlvs;
+        of_object_t tlv;
+
+        of_bsn_generic_stats_request_tlvs_bind(msg, &tlvs);
+
+        if (of_list_bsn_tlv_first(&tlvs, &tlv) < 0) {
+            AIM_LOG_ERROR("empty NAT stats request TLV list");
+            /* TODO send error */
+            return INDIGO_CORE_LISTENER_RESULT_DROP;
+        }
+
+        if (tlv.object_id == OF_BSN_TLV_NAME) {
+            of_bsn_tlv_name_value_get(&tlv, &nat_name);
+        } else {
+            AIM_LOG_ERROR("expected name TLV, instead got %s", of_object_id_str[tlv.object_id]);
+            /* TODO send error */
+            return INDIGO_CORE_LISTENER_RESULT_DROP;
+        }
     }
 
     of_object_t *reply = of_bsn_generic_stats_reply_new(msg->version);
@@ -769,6 +791,11 @@ handle_nat_stats_request(indigo_cxn_id_t cxn_id, of_object_t *msg)
     list_links_t *cur;
     LIST_FOREACH(&nat_entries, cur) {
         struct nat_entry *nat_entry = container_of(cur, links, struct nat_entry);
+
+        if (strncmp(nat_entry->key.name, (char *)nat_name.data, nat_name.bytes)) {
+            continue;
+        }
+
         enter_netns(nat_entry->netns);
 
         struct nl_sock *sk = nl_socket_alloc();
