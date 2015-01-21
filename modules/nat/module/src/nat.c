@@ -563,6 +563,8 @@ move_link(const char *name, int netns)
 
 struct nat_stats_state {
     of_bsn_generic_stats_reply_t *reply;
+    indigo_cxn_id_t cxn_id;
+    uint32_t xid;
 };
 
 static void
@@ -661,6 +663,16 @@ nat_stats_iterator(struct nl_msg *msg, void *arg)
     struct nat_stats_state *state = arg;
 
     of_bsn_generic_stats_reply_t *reply = state->reply;
+
+    /* Ensure we have at least 4K for a stats entry (currently using at most 132 bytes) */
+    if (reply->length > 60*1024) {
+        of_version_t version = state->reply->version;
+        of_bsn_generic_stats_reply_flags_set(state->reply, OF_STATS_REPLY_FLAG_REPLY_MORE);
+        indigo_cxn_send_controller_message(state->cxn_id, state->reply);
+        state->reply = of_bsn_generic_stats_reply_new(version);
+        of_bsn_generic_stats_reply_xid_set(state->reply, state->xid);
+    }
+
     of_list_bsn_tlv_t entries;
     of_bsn_generic_stats_reply_entries_bind(reply, &entries);
 
@@ -793,6 +805,8 @@ handle_nat_stats_request(indigo_cxn_id_t cxn_id, of_object_t *msg)
 
     struct nat_stats_state state;
     state.reply = reply;
+    state.cxn_id = cxn_id;
+    state.xid = xid;
 
     list_links_t *cur;
     LIST_FOREACH(&nat_entries, cur) {
