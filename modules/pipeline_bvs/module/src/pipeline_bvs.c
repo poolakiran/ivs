@@ -73,6 +73,21 @@ pipeline_bvs_cxn_async_channel_selector(const of_object_t *obj, uint32_t num_aux
  *  - all other messages
  *  - group-deletes in descending table-id order (span, ecmp, lag)
  */
+
+static int
+gentable_sort_key(uint16_t table_id)
+{
+    if (table_id == pipeline_bvs_table_lag_id) {
+        return -1000;
+    } else if (table_id == pipeline_bvs_table_ecmp_id) {
+        return -999;
+    } else if (table_id == pipeline_bvs_table_span_id) {
+        return -998;
+    } else {
+        return 0;
+    }
+}
+
 static int
 sort_key(of_object_t *obj)
 {
@@ -84,6 +99,14 @@ sort_key(of_object_t *obj)
         uint32_t group_id;
         of_group_delete_group_id_get(obj, &group_id);
         return 1000 - (group_id >> 24);
+    } else if (obj->object_id == OF_BSN_GENTABLE_ENTRY_ADD) {
+        uint16_t table_id;
+        of_bsn_gentable_entry_add_table_id_get(obj, &table_id);
+        return gentable_sort_key(table_id);
+    } else if (obj->object_id == OF_BSN_GENTABLE_ENTRY_DELETE) {
+        uint16_t table_id;
+        of_bsn_gentable_entry_delete_table_id_get(obj, &table_id);
+        return -gentable_sort_key(table_id);
     } else {
         return 0;
     }
