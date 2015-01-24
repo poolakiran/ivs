@@ -22,6 +22,7 @@
 #include <indigo/indigo.h>
 #include <indigo/of_state_manager.h>
 #include <indigo/port_manager.h>
+#include <SocketManager/socketmanager.h>
 #include <debug_counter/debug_counter.h>
 #include <fcntl.h>
 #include <sys/syscall.h>
@@ -65,6 +66,7 @@ static int open_current_netns(void);
 static bool run(const char *fmt, ...);
 static indigo_error_t move_link(const char *name, int netns);
 static indigo_core_listener_result_t message_listener(indigo_cxn_id_t cxn_id, of_object_t *msg);
+static struct nat_entry *find_nat_entry(const char *name, int name_len);
 
 static indigo_core_gentable_t *nat_table;
 
@@ -565,6 +567,7 @@ struct nat_stats_state {
     of_bsn_generic_stats_reply_t *reply;
     indigo_cxn_id_t cxn_id;
     uint32_t xid;
+    struct nl_sock *sk;
 };
 
 static void
@@ -657,11 +660,9 @@ nat_tuple_to_tlvs(struct nlattr *attr, of_list_bsn_tlv_t *tlvs)
     }
 }
 
-static int
-nat_stats_iterator(struct nl_msg *msg, void *arg)
+static void
+nat_stats_iterator(struct nat_stats_state *state, struct nlmsghdr *nlh)
 {
-    struct nat_stats_state *state = arg;
-
     of_bsn_generic_stats_reply_t *reply = state->reply;
 
     /* Ensure we have at least 4K for a stats entry (currently using at most 132 bytes) */
@@ -687,7 +688,7 @@ nat_stats_iterator(struct nl_msg *msg, void *arg)
     of_bsn_tlv_t tlv;
 
     struct nlattr *cta_attrs[CTA_MAX+1];
-    if (nlmsg_parse(nlmsg_hdr(msg), sizeof(struct nfgenmsg), cta_attrs, CTA_MAX, NULL) < 0) {
+    if (nlmsg_parse(nlh, sizeof(struct nfgenmsg), cta_attrs, CTA_MAX, NULL) < 0) {
         abort();
     }
 
@@ -757,8 +758,45 @@ nat_stats_iterator(struct nl_msg *msg, void *arg)
         }
         of_bsn_tlv_idle_timeout_value_set(&tlv, timeout * 1000);
     }
+}
 
-    return NL_OK;
+static ind_soc_task_status_t
+nat_stats_task_callback(void *cookie)
+{
+    struct nat_stats_state *state = cookie;
+
+    while (!ind_soc_should_yield()) {
+        struct sockaddr_nl nla = {0};
+        uint8_t *buf = NULL;
+        int n = nl_recv(state->sk, &nla, &buf, NULL);
+        if (n <= 0) {
+            AIM_LOG_ERROR("Error %d reading NAT stats");
+            free(buf);
+            goto finished;
+        }
+
+        struct nlmsghdr *nlh = (struct nlmsghdr *) buf;
+        while (nlmsg_ok(nlh, n)) {
+            if (nlh->nlmsg_type == NLMSG_DONE) {
+                free(buf);
+                goto finished;
+            }
+
+            nat_stats_iterator(state, nlh);
+            nlh = nlmsg_next(nlh, &n);
+        }
+
+        free(buf);
+    }
+
+    return IND_SOC_TASK_CONTINUE;
+
+finished:
+    indigo_cxn_send_controller_message(state->cxn_id, state->reply);
+    indigo_cxn_resume(state->cxn_id);
+    nl_socket_free(state->sk);
+    aim_free(state);
+    return IND_SOC_TASK_FINISHED;
 }
 
 static indigo_core_listener_result_t
@@ -803,59 +841,74 @@ handle_nat_stats_request(indigo_cxn_id_t cxn_id, of_object_t *msg)
      *       tcp_src, tx_packets, tx_bytes, rx_packets, rx_bytes, idle_time
      */
 
-    struct nat_stats_state state;
-    state.reply = reply;
-    state.cxn_id = cxn_id;
-    state.xid = xid;
+    struct nat_entry *nat_entry = find_nat_entry((char *)nat_name.data, nat_name.bytes);
+    if (nat_entry == NULL) {
+        AIM_LOG_VERBOSE("Received NAT stats request for nonexistent container");
+        indigo_cxn_send_controller_message(cxn_id, reply);
+        return INDIGO_CORE_LISTENER_RESULT_DROP;
+    }
 
+    struct nat_stats_state *state = aim_zmalloc(sizeof(*state));
+    state->reply = reply;
+    state->cxn_id = cxn_id;
+    state->xid = xid;
+
+    enter_netns(nat_entry->netns);
+
+    state->sk = nl_socket_alloc();
+    if (state->sk == NULL) {
+        AIM_DIE("failed to allocate netlink socket");
+    }
+
+    int rv;
+    if ((rv = nl_connect(state->sk, NETLINK_NETFILTER) < 0)) {
+        AIM_DIE("Failed to connect netlink socket: %s", nl_geterror(rv));
+    }
+
+    enter_netns(root_netns);
+
+    struct nl_msg *nlmsg = nlmsg_alloc();
+    AIM_TRUE_OR_DIE(nlmsg != NULL);
+    struct nlmsghdr *hdr = nlmsg_put(
+        nlmsg, NL_AUTO_PORT, NL_AUTO_SEQ,
+        (NFNL_SUBSYS_CTNETLINK << 8) | IPCTNL_MSG_CT_GET,
+        sizeof(struct nfgenmsg), NLM_F_DUMP);
+
+    struct nfgenmsg *nfmsg = nlmsg_data(hdr);
+    nfmsg->nfgen_family = 0;
+    nfmsg->version = NFNETLINK_V0;
+    nfmsg->res_id = 0;
+
+    if (nl_send_auto(state->sk, nlmsg) < 0) {
+        AIM_DIE("Failed to send NAT stats request to kernel");
+    }
+
+    indigo_cxn_pause(state->cxn_id);
+
+    rv = ind_soc_task_register(nat_stats_task_callback, state, IND_SOC_NORMAL_PRIORITY);
+    if (rv != INDIGO_ERROR_NONE) {
+        indigo_cxn_resume(state->cxn_id);
+        nl_socket_free(state->sk);
+        aim_free(state);
+        return INDIGO_CORE_LISTENER_RESULT_DROP;
+    }
+
+    return INDIGO_CORE_LISTENER_RESULT_DROP;
+}
+
+static struct nat_entry *
+find_nat_entry(const char *name, int name_len)
+{
     list_links_t *cur;
     LIST_FOREACH(&nat_entries, cur) {
         struct nat_entry *nat_entry = container_of(cur, links, struct nat_entry);
 
-        if (strncmp(nat_entry->key.name, (char *)nat_name.data, nat_name.bytes)) {
-            continue;
+        if (!strncmp(nat_entry->key.name, name, name_len)) {
+            return nat_entry;
         }
-
-        enter_netns(nat_entry->netns);
-
-        struct nl_sock *sk = nl_socket_alloc();
-        if (sk == NULL) {
-            AIM_DIE("failed to allocate netlink socket");
-        }
-
-        int rv;
-        if ((rv = nl_connect(sk, NETLINK_NETFILTER) < 0)) {
-            AIM_DIE("Failed to connect netlink socket: %s", nl_geterror(rv));
-        }
-
-        nl_socket_modify_cb(sk, NL_CB_VALID, NL_CB_CUSTOM, nat_stats_iterator, &state);
-
-        struct nl_msg *msg = nlmsg_alloc();
-        AIM_TRUE_OR_DIE(msg != NULL);
-        struct nlmsghdr *hdr = nlmsg_put(
-            msg, NL_AUTO_PORT, NL_AUTO_SEQ,
-            (NFNL_SUBSYS_CTNETLINK << 8) | IPCTNL_MSG_CT_GET,
-            sizeof(struct nfgenmsg), NLM_F_DUMP);
-
-        struct nfgenmsg *nfmsg = nlmsg_data(hdr);
-        nfmsg->nfgen_family = 0;
-        nfmsg->version = NFNETLINK_V0;
-        nfmsg->res_id = 0;
-
-        if (nl_send_auto(sk, msg) < 0) {
-            abort();
-        }
-
-        nl_recvmsgs_default(sk);
-
-        nl_socket_free(sk);
     }
 
-    indigo_cxn_send_controller_message(cxn_id, state.reply);
-
-    enter_netns(root_netns);
-
-    return INDIGO_CORE_LISTENER_RESULT_DROP;
+    return NULL;
 }
 
 static indigo_core_listener_result_t
