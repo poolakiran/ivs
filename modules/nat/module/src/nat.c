@@ -22,6 +22,7 @@
 #include <indigo/indigo.h>
 #include <indigo/of_state_manager.h>
 #include <indigo/port_manager.h>
+#include <SocketManager/socketmanager.h>
 #include <debug_counter/debug_counter.h>
 #include <fcntl.h>
 #include <sys/syscall.h>
@@ -32,6 +33,9 @@
 #include <signal.h>
 #include <netlink/genl/ctrl.h>
 #include <linux/rtnetlink.h>
+#include <linux/netfilter/nfnetlink.h>
+#include <linux/netfilter/nfnetlink_conntrack.h>
+#include <endian.h>
 #include "nat_int.h"
 #include "nat_log.h"
 
@@ -49,6 +53,7 @@ struct nat_entry_value {
 };
 
 struct nat_entry {
+    list_links_t links;
     struct nat_entry_key key;
     struct nat_entry_value value;
     int netns;
@@ -60,12 +65,16 @@ static void enter_netns(int fd);
 static int open_current_netns(void);
 static bool run(const char *fmt, ...);
 static indigo_error_t move_link(const char *name, int netns);
+static indigo_core_listener_result_t message_listener(indigo_cxn_id_t cxn_id, of_object_t *msg);
+static struct nat_entry *find_nat_entry(const char *name, int name_len);
 
 static indigo_core_gentable_t *nat_table;
 
 static const indigo_core_gentable_ops_t nat_ops;
 
 static int root_netns = -1;
+
+static list_head_t nat_entries; /* struct nat_entry through links */
 
 /* Debug counters */
 static debug_counter_t add_success_counter;
@@ -103,6 +112,10 @@ nat_init(void)
     debug_counter_register(
         &delete_success_counter, "nat.table_delete",
         "NAT table entry deleted by the controller");
+
+    indigo_core_message_listener_register(message_listener);
+
+    list_init(&nat_entries);
 }
 
 void
@@ -153,6 +166,12 @@ nat_container_setup(struct nat_entry *entry)
 
     /* Enable IPv4 forwarding */
     ok = ok && run("echo 1 > /proc/sys/net/ipv4/ip_forward");
+
+    /* Enable conntrack counters */
+    ok = ok && run("echo 1 > /proc/sys/net/netfilter/nf_conntrack_acct");
+
+    /* Enable conntrack timestamp */
+    ok = ok && run("echo 1 > /proc/sys/net/netfilter/nf_conntrack_timestamp");
 
     /* Create two veth pairs */
     ok = ok && run("ip link add ext type veth peer name %s", ext_ifname);
@@ -368,6 +387,8 @@ nat_add(void *table_priv, of_list_bsn_tlv_t *key_tlvs, of_list_bsn_tlv_t *value_
         return rv;
     }
 
+    list_push(&nat_entries, &entry->links);
+
     *entry_priv = entry;
     debug_counter_inc(&add_success_counter);
     return INDIGO_ERROR_NONE;
@@ -409,6 +430,7 @@ static indigo_error_t
 nat_delete(void *table_priv, void *entry_priv, of_list_bsn_tlv_t *key_tlvs)
 {
     struct nat_entry *entry = entry_priv;
+    list_remove(&entry->links);
     nat_container_teardown(entry);
     aim_free(entry);
     debug_counter_inc(&delete_success_counter);
@@ -539,4 +561,363 @@ move_link(const char *name, int netns)
 
     nl_socket_free(sk);
     return INDIGO_ERROR_NONE;
+}
+
+struct nat_stats_state {
+    of_bsn_generic_stats_reply_t *reply;
+    indigo_cxn_id_t cxn_id;
+    uint32_t xid;
+    struct nl_sock *sk;
+};
+
+static void
+nat_tuple_to_tlvs(struct nlattr *attr, of_list_bsn_tlv_t *tlvs)
+{
+    of_bsn_tlv_t bucket;
+    of_bsn_tlv_t tlv;
+    uint8_t version = tlvs->version;
+
+    of_bsn_tlv_bucket_init(&bucket, version, -1, 1);
+    if (of_list_bsn_tlv_append_bind(tlvs, &bucket)) {
+        AIM_DIE("Unexpected failure to append NAT stats entry");
+    }
+
+    of_list_bsn_tlv_t bucket_tlvs;
+    of_bsn_tlv_bucket_value_bind(&bucket, &bucket_tlvs);
+    tlvs = &bucket_tlvs;
+
+    struct nlattr *cta_tuple_attrs[CTA_TUPLE_MAX+1];
+    if (nla_parse_nested(cta_tuple_attrs, CTA_TUPLE_MAX, attr, NULL) < 0) {
+        abort();
+    }
+
+    if (cta_tuple_attrs[CTA_TUPLE_IP]) {
+        struct nlattr *cta_ip_attrs[CTA_IP_MAX+1];
+        if (nla_parse_nested(cta_ip_attrs, CTA_IP_MAX, cta_tuple_attrs[CTA_TUPLE_IP], NULL) < 0) {
+            abort();
+        }
+
+        if (cta_ip_attrs[CTA_IP_V4_SRC]) {
+            uint32_t ip = nla_get_u32(cta_ip_attrs[CTA_IP_V4_SRC]);
+            of_bsn_tlv_ipv4_src_init(&tlv, version, -1, 1);
+            if (of_list_bsn_tlv_append_bind(tlvs, &tlv)) {
+                AIM_DIE("Unexpected failure to append NAT stats entry");
+            }
+            of_bsn_tlv_ipv4_src_value_set(&tlv, ntohl(ip));
+        }
+
+        if (cta_ip_attrs[CTA_IP_V4_DST]) {
+            uint32_t ip = nla_get_u32(cta_ip_attrs[CTA_IP_V4_DST]);
+            of_bsn_tlv_ipv4_dst_init(&tlv, version, -1, 1);
+            if (of_list_bsn_tlv_append_bind(tlvs, &tlv)) {
+                AIM_DIE("Unexpected failure to append NAT stats entry");
+            }
+            of_bsn_tlv_ipv4_dst_value_set(&tlv, ntohl(ip));
+        }
+    }
+
+    if (cta_tuple_attrs[CTA_TUPLE_PROTO]) {
+        struct nlattr *cta_proto_attrs[CTA_PROTO_MAX+1];
+        if (nla_parse_nested(cta_proto_attrs, CTA_PROTO_MAX, cta_tuple_attrs[CTA_TUPLE_PROTO], NULL) < 0) {
+            abort();
+        }
+
+        if (cta_proto_attrs[CTA_PROTO_NUM]) {
+            uint8_t proto = nla_get_u8(cta_proto_attrs[CTA_PROTO_NUM]);
+            of_bsn_tlv_ip_proto_init(&tlv, version, -1, 1);
+            if (of_list_bsn_tlv_append_bind(tlvs, &tlv)) {
+                AIM_DIE("Unexpected failure to append NAT stats entry");
+            }
+            of_bsn_tlv_ip_proto_value_set(&tlv, proto);
+        }
+
+        if (cta_proto_attrs[CTA_PROTO_SRC_PORT]) {
+            uint16_t port = ntohs(nla_get_u16(cta_proto_attrs[CTA_PROTO_SRC_PORT]));
+            of_bsn_tlv_tcp_src_init(&tlv, version, -1, 1);
+            if (of_list_bsn_tlv_append_bind(tlvs, &tlv)) {
+                AIM_DIE("Unexpected failure to append NAT stats entry");
+            }
+            of_bsn_tlv_tcp_src_value_set(&tlv, port);
+        }
+
+        if (cta_proto_attrs[CTA_PROTO_DST_PORT]) {
+            uint16_t port = ntohs(nla_get_u16(cta_proto_attrs[CTA_PROTO_DST_PORT]));
+            of_bsn_tlv_tcp_dst_init(&tlv, version, -1, 1);
+            if (of_list_bsn_tlv_append_bind(tlvs, &tlv)) {
+                AIM_DIE("Unexpected failure to append NAT stats entry");
+            }
+            of_bsn_tlv_tcp_dst_value_set(&tlv, port);
+        }
+
+        if (cta_proto_attrs[CTA_PROTO_ICMP_ID]) {
+            uint16_t id = ntohs(nla_get_u16(cta_proto_attrs[CTA_PROTO_ICMP_ID]));
+            of_bsn_tlv_icmp_id_init(&tlv, version, -1, 1);
+            if (of_list_bsn_tlv_append_bind(tlvs, &tlv)) {
+                AIM_DIE("Unexpected failure to append NAT stats entry");
+            }
+            of_bsn_tlv_icmp_id_value_set(&tlv, id);
+        }
+    }
+}
+
+static void
+nat_stats_iterator(struct nat_stats_state *state, struct nlmsghdr *nlh)
+{
+    of_bsn_generic_stats_reply_t *reply = state->reply;
+
+    /* Ensure we have at least 4K for a stats entry (currently using at most 132 bytes) */
+    if (reply->length > 60*1024) {
+        of_version_t version = state->reply->version;
+        of_bsn_generic_stats_reply_flags_set(state->reply, OF_STATS_REPLY_FLAG_REPLY_MORE);
+        indigo_cxn_send_controller_message(state->cxn_id, state->reply);
+        state->reply = of_bsn_generic_stats_reply_new(version);
+        of_bsn_generic_stats_reply_xid_set(state->reply, state->xid);
+    }
+
+    of_list_bsn_tlv_t entries;
+    of_bsn_generic_stats_reply_entries_bind(reply, &entries);
+
+    of_bsn_generic_stats_entry_t entry;
+    of_bsn_generic_stats_entry_init(&entry, reply->version, -1, 1);
+    if (of_list_bsn_generic_stats_entry_append_bind(&entries, &entry)) {
+        AIM_DIE("Unexpected failure to append NAT stats entry");
+    }
+
+    of_list_bsn_tlv_t tlvs;
+    of_bsn_generic_stats_entry_tlvs_bind(&entry, &tlvs);
+    of_bsn_tlv_t tlv;
+
+    struct nlattr *cta_attrs[CTA_MAX+1];
+    if (nlmsg_parse(nlh, sizeof(struct nfgenmsg), cta_attrs, CTA_MAX, NULL) < 0) {
+        abort();
+    }
+
+    if (cta_attrs[CTA_TUPLE_ORIG]) {
+        nat_tuple_to_tlvs(cta_attrs[CTA_TUPLE_ORIG], &tlvs);
+    }
+
+    if (cta_attrs[CTA_TUPLE_REPLY]) {
+        nat_tuple_to_tlvs(cta_attrs[CTA_TUPLE_REPLY], &tlvs);
+    }
+
+    if (cta_attrs[CTA_COUNTERS_ORIG]) {
+        struct nlattr *cta_counters_attrs[CTA_COUNTERS_MAX+1];
+        if (nla_parse_nested(cta_counters_attrs, CTA_COUNTERS_MAX, cta_attrs[CTA_COUNTERS_ORIG], NULL) < 0) {
+            abort();
+        }
+
+        if (cta_counters_attrs[CTA_COUNTERS_PACKETS]) {
+            uint64_t value = be64toh(nla_get_u64(cta_counters_attrs[CTA_COUNTERS_PACKETS]));
+            of_bsn_tlv_tx_packets_init(&tlv, reply->version, -1, 1);
+            if (of_list_bsn_tlv_append_bind(&tlvs, &tlv)) {
+                AIM_DIE("Unexpected failure to append NAT stats entry");
+            }
+            of_bsn_tlv_tx_packets_value_set(&tlv, value);
+        }
+
+        if (cta_counters_attrs[CTA_COUNTERS_BYTES]) {
+            uint64_t value = be64toh(nla_get_u64(cta_counters_attrs[CTA_COUNTERS_BYTES]));
+            of_bsn_tlv_tx_bytes_init(&tlv, reply->version, -1, 1);
+            if (of_list_bsn_tlv_append_bind(&tlvs, &tlv)) {
+                AIM_DIE("Unexpected failure to append NAT stats entry");
+            }
+            of_bsn_tlv_tx_bytes_value_set(&tlv, value);
+        }
+    }
+
+    if (cta_attrs[CTA_COUNTERS_REPLY]) {
+        struct nlattr *cta_counters_attrs[CTA_COUNTERS_MAX+1];
+        if (nla_parse_nested(cta_counters_attrs, CTA_COUNTERS_MAX, cta_attrs[CTA_COUNTERS_REPLY], NULL) < 0) {
+            abort();
+        }
+
+        if (cta_counters_attrs[CTA_COUNTERS_PACKETS]) {
+            uint64_t value = be64toh(nla_get_u64(cta_counters_attrs[CTA_COUNTERS_PACKETS]));
+            of_bsn_tlv_rx_packets_init(&tlv, reply->version, -1, 1);
+            if (of_list_bsn_tlv_append_bind(&tlvs, &tlv)) {
+                AIM_DIE("Unexpected failure to append NAT stats entry");
+            }
+            of_bsn_tlv_rx_packets_value_set(&tlv, value);
+        }
+
+        if (cta_counters_attrs[CTA_COUNTERS_BYTES]) {
+            uint64_t value = be64toh(nla_get_u64(cta_counters_attrs[CTA_COUNTERS_BYTES]));
+            of_bsn_tlv_rx_bytes_init(&tlv, reply->version, -1, 1);
+            if (of_list_bsn_tlv_append_bind(&tlvs, &tlv)) {
+                AIM_DIE("Unexpected failure to append NAT stats entry");
+            }
+            of_bsn_tlv_rx_bytes_value_set(&tlv, value);
+        }
+    }
+
+    if (cta_attrs[CTA_TIMEOUT]) {
+        uint32_t timeout = ntohl(nla_get_u32(cta_attrs[CTA_TIMEOUT]));
+        of_bsn_tlv_idle_timeout_init(&tlv, reply->version, -1, 1);
+        if (of_list_bsn_tlv_append_bind(&tlvs, &tlv)) {
+            AIM_DIE("Unexpected failure to append NAT stats entry");
+        }
+        of_bsn_tlv_idle_timeout_value_set(&tlv, timeout * 1000);
+    }
+}
+
+static ind_soc_task_status_t
+nat_stats_task_callback(void *cookie)
+{
+    struct nat_stats_state *state = cookie;
+
+    while (!ind_soc_should_yield()) {
+        struct sockaddr_nl nla = {0};
+        uint8_t *buf = NULL;
+        int n = nl_recv(state->sk, &nla, &buf, NULL);
+        if (n <= 0) {
+            AIM_LOG_ERROR("Error %d reading NAT stats");
+            free(buf);
+            goto finished;
+        }
+
+        struct nlmsghdr *nlh = (struct nlmsghdr *) buf;
+        while (nlmsg_ok(nlh, n)) {
+            if (nlh->nlmsg_type == NLMSG_DONE) {
+                free(buf);
+                goto finished;
+            }
+
+            nat_stats_iterator(state, nlh);
+            nlh = nlmsg_next(nlh, &n);
+        }
+
+        free(buf);
+    }
+
+    return IND_SOC_TASK_CONTINUE;
+
+finished:
+    indigo_cxn_send_controller_message(state->cxn_id, state->reply);
+    indigo_cxn_resume(state->cxn_id);
+    nl_socket_free(state->sk);
+    aim_free(state);
+    return IND_SOC_TASK_FINISHED;
+}
+
+static indigo_core_listener_result_t
+handle_nat_stats_request(indigo_cxn_id_t cxn_id, of_object_t *msg)
+{
+    uint32_t xid;
+    of_str64_t stats_name;
+    of_bsn_generic_stats_request_xid_get(msg, &xid);
+    of_bsn_generic_stats_request_name_get(msg, &stats_name);
+    of_octets_t nat_name;
+
+    if (strcmp(stats_name, "nat")) {
+        return INDIGO_CORE_LISTENER_RESULT_PASS;
+    }
+
+    {
+        of_list_bsn_tlv_t tlvs;
+        of_object_t tlv;
+
+        of_bsn_generic_stats_request_tlvs_bind(msg, &tlvs);
+
+        if (of_list_bsn_tlv_first(&tlvs, &tlv) < 0) {
+            AIM_LOG_ERROR("empty NAT stats request TLV list");
+            /* TODO send error */
+            return INDIGO_CORE_LISTENER_RESULT_DROP;
+        }
+
+        if (tlv.object_id == OF_BSN_TLV_NAME) {
+            of_bsn_tlv_name_value_get(&tlv, &nat_name);
+        } else {
+            AIM_LOG_ERROR("expected name TLV, instead got %s", of_object_id_str[tlv.object_id]);
+            /* TODO send error */
+            return INDIGO_CORE_LISTENER_RESULT_DROP;
+        }
+    }
+
+    of_object_t *reply = of_bsn_generic_stats_reply_new(msg->version);
+    of_bsn_generic_stats_reply_xid_set(reply, xid);
+
+    /*
+     * tlvs: ipv4_src, ipv4_dst, ipv4_proto, tcp_src, tcp_dst, ipv4_src,
+     *       tcp_src, tx_packets, tx_bytes, rx_packets, rx_bytes, idle_time
+     */
+
+    struct nat_entry *nat_entry = find_nat_entry((char *)nat_name.data, nat_name.bytes);
+    if (nat_entry == NULL) {
+        AIM_LOG_VERBOSE("Received NAT stats request for nonexistent container");
+        indigo_cxn_send_controller_message(cxn_id, reply);
+        return INDIGO_CORE_LISTENER_RESULT_DROP;
+    }
+
+    struct nat_stats_state *state = aim_zmalloc(sizeof(*state));
+    state->reply = reply;
+    state->cxn_id = cxn_id;
+    state->xid = xid;
+
+    enter_netns(nat_entry->netns);
+
+    state->sk = nl_socket_alloc();
+    if (state->sk == NULL) {
+        AIM_DIE("failed to allocate netlink socket");
+    }
+
+    int rv;
+    if ((rv = nl_connect(state->sk, NETLINK_NETFILTER) < 0)) {
+        AIM_DIE("Failed to connect netlink socket: %s", nl_geterror(rv));
+    }
+
+    enter_netns(root_netns);
+
+    struct nl_msg *nlmsg = nlmsg_alloc();
+    AIM_TRUE_OR_DIE(nlmsg != NULL);
+    struct nlmsghdr *hdr = nlmsg_put(
+        nlmsg, NL_AUTO_PORT, NL_AUTO_SEQ,
+        (NFNL_SUBSYS_CTNETLINK << 8) | IPCTNL_MSG_CT_GET,
+        sizeof(struct nfgenmsg), NLM_F_DUMP);
+
+    struct nfgenmsg *nfmsg = nlmsg_data(hdr);
+    nfmsg->nfgen_family = 0;
+    nfmsg->version = NFNETLINK_V0;
+    nfmsg->res_id = 0;
+
+    if (nl_send_auto(state->sk, nlmsg) < 0) {
+        AIM_DIE("Failed to send NAT stats request to kernel");
+    }
+
+    indigo_cxn_pause(state->cxn_id);
+
+    rv = ind_soc_task_register(nat_stats_task_callback, state, IND_SOC_NORMAL_PRIORITY);
+    if (rv != INDIGO_ERROR_NONE) {
+        indigo_cxn_resume(state->cxn_id);
+        nl_socket_free(state->sk);
+        aim_free(state);
+        return INDIGO_CORE_LISTENER_RESULT_DROP;
+    }
+
+    return INDIGO_CORE_LISTENER_RESULT_DROP;
+}
+
+static struct nat_entry *
+find_nat_entry(const char *name, int name_len)
+{
+    list_links_t *cur;
+    LIST_FOREACH(&nat_entries, cur) {
+        struct nat_entry *nat_entry = container_of(cur, links, struct nat_entry);
+
+        if (!strncmp(nat_entry->key.name, name, name_len)) {
+            return nat_entry;
+        }
+    }
+
+    return NULL;
+}
+
+static indigo_core_listener_result_t
+message_listener(indigo_cxn_id_t cxn_id, of_object_t *msg)
+{
+    switch (msg->object_id) {
+    case OF_BSN_GENERIC_STATS_REQUEST:
+        return handle_nat_stats_request(cxn_id, msg);
+    default:
+        return INDIGO_CORE_LISTENER_RESULT_PASS;
+    }
 }
