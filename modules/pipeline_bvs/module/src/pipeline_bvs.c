@@ -173,6 +173,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_qos_weight_register();
     pipeline_bvs_table_breakout_register();
     pipeline_bvs_table_arp_offload_register();
+    pipeline_bvs_table_arp_cache_register();
     pipeline_bvs_group_ecmp_register();
     pipeline_bvs_group_lag_register();
     pipeline_bvs_group_span_register();
@@ -208,6 +209,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_qos_weight_unregister();
     pipeline_bvs_table_breakout_unregister();
     pipeline_bvs_table_arp_offload_unregister();
+    pipeline_bvs_table_arp_cache_unregister();
     pipeline_bvs_group_ecmp_unregister();
     pipeline_bvs_group_span_unregister();
     pipeline_bvs_group_lag_unregister();

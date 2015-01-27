@@ -60,6 +60,7 @@
 #include "table_qos_weight.h"
 #include "table_breakout.h"
 #include "table_arp_offload.h"
+#include "table_arp_cache.h"
 #include "table_span.h"
 #include "table_ecmp.h"
 #include "group_lag.h"
