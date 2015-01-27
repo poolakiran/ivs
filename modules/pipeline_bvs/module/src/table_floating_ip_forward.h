@@ -32,6 +32,7 @@ struct floating_ip_forward_value {
     uint16_t new_vlan_vid;
     of_mac_addr_t new_eth_src;
     of_mac_addr_t new_eth_dst;
+    uint32_t ipv4_netmask;
 };
 
 struct floating_ip_forward_entry {

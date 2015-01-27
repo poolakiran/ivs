@@ -89,6 +89,17 @@ parse_value(of_flow_add_t *obj, struct floating_ip_forward_value *value)
                     case OF_OXM_IPV4_SRC:
                         if (!seen_new_ipv4_src) {
                             of_oxm_ipv4_src_value_get(&oxm, &value->new_ipv4_src);
+                            value->ipv4_netmask = -1;
+                            seen_new_ipv4_src = true;
+                        } else {
+                            AIM_LOG_ERROR("duplicate set-field ipv4_src action in floating_ip_forward table");
+                            goto error;
+                        }
+                        break;
+                    case OF_OXM_IPV4_SRC_MASKED:
+                        if (!seen_new_ipv4_src) {
+                            of_oxm_ipv4_src_masked_value_get(&oxm, &value->new_ipv4_src);
+                            of_oxm_ipv4_src_masked_value_mask_get(&oxm, &value->ipv4_netmask);
                             seen_new_ipv4_src = true;
                         } else {
                             AIM_LOG_ERROR("duplicate set-field ipv4_src action in floating_ip_forward table");
@@ -163,9 +174,10 @@ pipeline_bvs_table_floating_ip_forward_entry_create(
     }
 
     AIM_LOG_VERBOSE("Create floating_ip_forward entry vlan=%u ipv4_src=%{ipv4a} eth_dst=%{mac} -> "
-                    "new_vlan=%u new_ipv4_src=%{ipv4a} new_eth_src=%{mac} new_eth_dst=%{mac}",
+                    "new_vlan=%u new_ipv4_src=%{ipv4a} new_eth_src=%{mac} new_eth_dst=%{mac} ipv4_netmask=%{ipv4a}",
                     entry->key.vlan_vid, entry->key.ipv4_src, &entry->key.eth_dst,
-                    entry->value.new_vlan_vid, entry->value.new_ipv4_src, &entry->value.new_eth_src, &entry->value.new_eth_dst);
+                    entry->value.new_vlan_vid, entry->value.new_ipv4_src, &entry->value.new_eth_src, &entry->value.new_eth_dst,
+                    entry->value.ipv4_netmask);
 
     floating_ip_forward_hashtable_insert(floating_ip_forward_hashtable, entry);
 
@@ -257,9 +269,9 @@ pipeline_bvs_table_floating_ip_forward_lookup(uint16_t vlan_vid, uint32_t ipv4_s
     struct floating_ip_forward_entry *entry = floating_ip_forward_hashtable_first(floating_ip_forward_hashtable, &key);
     if (entry) {
         AIM_LOG_VERBOSE("Hit floating_ip_forward entry vlan=%u ipv4_src=%{ipv4a} eth_dst=%{mac} -> "
-                        "new_vlan=%u new_ipv4_src=%{ipv4a} new_eth_src=%{mac} new_eth_dst=%{mac}",
+                        "new_vlan=%u new_ipv4_src=%{ipv4a} new_eth_src=%{mac} new_eth_dst=%{mac} ipv4_netmask=%{ipv4a}",
                         entry->key.vlan_vid, entry->key.ipv4_src, &entry->key.eth_dst,
-                        entry->value.new_vlan_vid, entry->value.new_ipv4_src, &entry->value.new_eth_src, &entry->value.new_eth_dst);
+                        entry->value.new_vlan_vid, entry->value.new_ipv4_src, &entry->value.new_eth_src, &entry->value.new_eth_dst, entry->value.ipv4_netmask);
     } else {
         AIM_LOG_VERBOSE("Miss floating_ip_forward entry vlan=%u ipv4_src=%{ipv4a} eth_dst=%{mac}",
                         key.vlan_vid, key.ipv4_src, &key.eth_dst);
