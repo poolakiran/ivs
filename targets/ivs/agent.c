@@ -7,6 +7,7 @@
 #include <dhcpra/dhcpra.h>
 #include <nat/nat.h>
 #include <sflowa/sflowa.h>
+#include <host_stats/host_stats.h>
 
 void
 ivs_agent_init(void)
@@ -40,4 +41,6 @@ ivs_agent_init(void)
     if (sflowa_init() < 0) {
         AIM_DIE("Failed to initialize SFLOW agent module");
     }
+
+    host_stats_init();
 }
