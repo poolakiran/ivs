@@ -513,16 +513,33 @@ process_l2(struct ctx *ctx)
             ctx->internal_vlan_vid, ntohl(ctx->key->ipv4.ipv4_src), ctx->key->ethernet.eth_dst);
     if (floating_ip_forward_entry) {
         struct floating_ip_forward_value *v = &floating_ip_forward_entry->value;
+        of_mac_addr_t new_eth_dst = v->new_eth_dst;
+
+        if (((v->new_ipv4_src ^ ntohl(ctx->key->ipv4.ipv4_dst)) & v->ipv4_netmask) == 0) {
+            AIM_LOG_VERBOSE("Checking arp_cache table");
+            struct arp_cache_entry *arp_cache_entry =
+                pipeline_bvs_table_arp_cache_lookup(v->new_vlan_vid,
+                                                    ntohl(ctx->key->ipv4.ipv4_dst));
+            if (!arp_cache_entry) {
+                mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_ARP_CACHE);
+                process_pktin(ctx);
+                return;
+            }
+
+            new_eth_dst = arp_cache_entry->value.mac;
+        }
+
         ctx->internal_vlan_vid = v->new_vlan_vid;
         action_set_vlan_vid(ctx->actx, v->new_vlan_vid);
         action_set_eth_src(ctx->actx, v->new_eth_src);
-        action_set_eth_dst(ctx->actx, v->new_eth_dst);
+        action_set_eth_dst(ctx->actx, new_eth_dst);
         action_set_ipv4_src(ctx->actx, v->new_ipv4_src);
 
         ctx->key->vlan = htons(VLAN_TCI_WITH_CFI(v->new_vlan_vid | VLAN_CFI_BIT, VLAN_PCP(ntohs(ctx->key->vlan))));
         memcpy(ctx->key->ethernet.eth_src, &v->new_eth_src, OF_MAC_ADDR_BYTES);
-        memcpy(ctx->key->ethernet.eth_dst, &v->new_eth_dst, OF_MAC_ADDR_BYTES);
+        memcpy(ctx->key->ethernet.eth_dst, &new_eth_dst, OF_MAC_ADDR_BYTES);
         ctx->key->ipv4.ipv4_src = htonl(v->new_ipv4_src);
+
         ctx->key->in_port = OVSP_LOCAL;
         process_l2(ctx);
         return;
@@ -686,16 +703,33 @@ process_l3(struct ctx *ctx)
             ctx->internal_vlan_vid, ntohl(ctx->key->ipv4.ipv4_src), eth_dst);
     if (floating_ip_forward_entry) {
         struct floating_ip_forward_value *v = &floating_ip_forward_entry->value;
+        of_mac_addr_t new_eth_dst = v->new_eth_dst;
+
+        if (((v->new_ipv4_src ^ ntohl(ctx->key->ipv4.ipv4_dst)) & v->ipv4_netmask) == 0) {
+            AIM_LOG_VERBOSE("Checking arp_cache table");
+            struct arp_cache_entry *arp_cache_entry =
+                pipeline_bvs_table_arp_cache_lookup(v->new_vlan_vid,
+                                                    ntohl(ctx->key->ipv4.ipv4_dst));
+            if (!arp_cache_entry) {
+                mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_ARP_CACHE);
+                process_pktin(ctx);
+                return;
+            }
+
+            new_eth_dst = arp_cache_entry->value.mac;
+        }
+
         ctx->internal_vlan_vid = v->new_vlan_vid;
         action_set_vlan_vid(ctx->actx, v->new_vlan_vid);
         action_set_eth_src(ctx->actx, v->new_eth_src);
-        action_set_eth_dst(ctx->actx, v->new_eth_dst);
+        action_set_eth_dst(ctx->actx, new_eth_dst);
         action_set_ipv4_src(ctx->actx, v->new_ipv4_src);
 
         ctx->key->vlan = htons(VLAN_TCI_WITH_CFI(v->new_vlan_vid | VLAN_CFI_BIT, VLAN_PCP(ntohs(ctx->key->vlan))));
         memcpy(ctx->key->ethernet.eth_src, &v->new_eth_src, OF_MAC_ADDR_BYTES);
-        memcpy(ctx->key->ethernet.eth_dst, &v->new_eth_dst, OF_MAC_ADDR_BYTES);
+        memcpy(ctx->key->ethernet.eth_dst, &new_eth_dst, OF_MAC_ADDR_BYTES);
         ctx->key->ipv4.ipv4_src = htonl(v->new_ipv4_src);
+
         ctx->key->in_port = OVSP_LOCAL;
         process_l2(ctx);
         return;
