@@ -17,6 +17,7 @@
  *
  ****************************************************************/
 
+#include <sys/errno.h>
 #include <AIM/aim.h>
 #include <loci/loci.h>
 #include <indigo/indigo.h>
@@ -90,9 +91,121 @@ error:
 }
 
 static void
+add_file_entry(of_object_t *entries, const char *name, const char *path)
+{
+    char buf[2048];
+
+    FILE *f = fopen(path, "r");
+    if (f == NULL) {
+        AIM_LOG_ERROR("Failed to open %s: %s", path, strerror(errno));
+        goto error;
+    }
+
+    int count = fread(buf, 1, sizeof(buf), f);
+
+    fclose(f);
+
+    if (count < 0) {
+        AIM_LOG_ERROR("Failed to read %s: %s", path, strerror(errno));
+        goto error;
+    }
+
+    of_bsn_generic_stats_entry_t entry;
+    of_bsn_generic_stats_entry_init(&entry, entries->version, -1, 1);
+    if (of_list_bsn_generic_stats_entry_append_bind(entries, &entry)) {
+        goto error;
+    }
+
+    of_list_bsn_tlv_t tlvs;
+    of_bsn_generic_stats_entry_tlvs_bind(&entry, &tlvs);
+    of_bsn_tlv_t tlv;
+
+    {
+        of_bsn_tlv_name_init(&tlv, tlvs.version, -1, 1);
+        if (of_list_bsn_tlv_append_bind(&tlvs, &tlv)) {
+            goto error;
+        }
+        of_octets_t octets = { .data=(uint8_t *)name, .bytes=strlen(name) };
+        if (of_bsn_tlv_name_value_set(&tlv, &octets) < 0) {
+            goto error;
+        }
+    }
+
+    {
+        of_bsn_tlv_data_init(&tlv, tlvs.version, -1, 1);
+        if (of_list_bsn_tlv_append_bind(&tlvs, &tlv)) {
+            goto error;
+        }
+        of_octets_t octets = { .data=(uint8_t *)buf, .bytes=count };
+        if (of_bsn_tlv_data_value_set(&tlv, &octets) < 0) {
+            goto error;
+        }
+    }
+
+    return;
+
+error:
+    AIM_LOG_WARN("Failed to append host stats entry '%s'", name);
+}
+
+static bool
+scanfile(const char *path, int expected, const char *fmt, ...)
+{
+    FILE *f = fopen(path, "r");
+    if (f == NULL) {
+        AIM_LOG_ERROR("Failed to open %s: %s", path, strerror(errno));
+        return false;
+    }
+
+    va_list ap;
+    va_start(ap, fmt);
+    int count = vfscanf(f, fmt, ap);
+    va_end(ap);
+
+    fclose(f);
+
+    if (count != expected) {
+        AIM_LOG_ERROR("Failed to parse %s", path);
+    }
+
+    return count == expected;
+}
+
+static void
 populate_host_stats_entries(of_object_t *entries)
 {
-    add_entry(entries, "test", "%d", 1234);
+    /* Uptime */
+    {
+        double uptime;
+        if (scanfile("/proc/uptime", 1, "%lf", &uptime)) {
+            add_entry(entries, "uptime", "%f", uptime);
+        }
+    }
+
+    /* Load average */
+    {
+        double avg1, avg5, avg15;
+        if (scanfile("/proc/loadavg", 3, "%lf %lf %lf", &avg1, &avg5, &avg15)) {
+            add_entry(entries, "load average (1 minute)", "%f", avg1);
+            add_entry(entries, "load average (5 minutes)", "%f", avg5);
+            add_entry(entries, "load average (15 minutes)", "%f", avg15);
+        }
+    }
+
+    /* Memory */
+    {
+        long unsigned int total, free;
+        if (scanfile("/proc/meminfo", 2, "MemTotal: %lu kB\nMemFree: %lu kB\n", &total, &free)) {
+            add_entry(entries, "memory total", "%lu", total);
+            add_entry(entries, "memory free", "%lu", free);
+        }
+    }
+
+    /* Kernel version */
+    add_file_entry(entries, "kernel version", "/proc/version");
+
+    /* Distribution version */
+    add_file_entry(entries, "distribution version", "/etc/lsb-release");
 }
 
 static indigo_core_listener_result_t
