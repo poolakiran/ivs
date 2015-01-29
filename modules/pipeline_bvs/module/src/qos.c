@@ -74,7 +74,8 @@ setup_tc(char *ifname)
         nlmsg_append(msg, &tcmsg, sizeof(tcmsg), NLMSG_ALIGNTO);
         nla_put_string(msg, TCA_KIND, "drr");
         if (nl_send_sync(sk, msg) < 0) {
-            AIM_DIE("nl_send_sync failed for %s", ifname);
+            AIM_LOG_ERROR("nl_send_sync failed during adding root qdisc for %s", ifname);
+            goto error;
         }
     }
 
@@ -94,7 +95,8 @@ setup_tc(char *ifname)
         nla_put_u32(msg, TCA_FLOW_KEYS, 1 << FLOW_KEY_PRIORITY);
         nla_nest_end(msg, flow_offset);
         if (nl_send_sync(sk, msg) < 0) {
-            AIM_DIE("nl_send_sync failed for %s", ifname);
+            AIM_LOG_ERROR("nl_send_sync failed during adding filter for %s", ifname);
+            goto error;
         }
     }
 
@@ -112,7 +114,8 @@ setup_tc(char *ifname)
             nla_put_string(msg, TCA_KIND, "drr");
             nla_put(msg, TCA_OPTIONS, 0, NULL);
             if (nl_send_sync(sk, msg) < 0) {
-                AIM_DIE("nl_send_sync failed for %s", ifname);
+                AIM_LOG_ERROR("nl_send_sync failed during adding class %d for %s", i+1, ifname);
+                goto error;
             }
         }
 
@@ -132,11 +135,13 @@ setup_tc(char *ifname)
                 nla_put_string(msg, TCA_KIND, "sfq");
             }
             if (nl_send_sync(sk, msg) < 0) {
-                AIM_DIE("nl_send_sync failed for %s", ifname);
+                AIM_LOG_ERROR("nl_send_sync failed during adding qdisc to class %d for %s", i+1, ifname);
+                goto error;
             }
         }
     }
 
+error:
     nl_socket_free(sk);
 }
 
@@ -147,12 +152,11 @@ qos_port_status_handler(of_port_status_t *port_status)
 
     of_port_status_reason_get(port_status, &reason);
     if (reason == OF_PORT_CHANGE_REASON_ADD) {
-        of_port_desc_t *port_desc = of_port_status_desc_get(port_status);
-        AIM_ASSERT(port_desc != NULL, "of_port_status_desc_get() failed");
+        of_port_desc_t port_desc;
+        of_port_status_desc_bind(port_status, &port_desc);
         of_port_name_t if_name;
-        of_port_desc_name_get(port_desc, &if_name);
+        of_port_desc_name_get(&port_desc, &if_name);
         setup_tc(if_name);
-        of_port_desc_delete(port_desc);
     }
 
     return INDIGO_CORE_LISTENER_RESULT_PASS;
@@ -164,8 +168,7 @@ pipeline_bvs_qos_register(void)
     /*
      * Register listener for port_status msg
      */
-    if (indigo_core_port_status_listener_register(
-        (indigo_core_port_status_listener_f) qos_port_status_handler) < 0) {
+    if (indigo_core_port_status_listener_register(qos_port_status_handler) < 0) {
         AIM_LOG_ERROR("Failed to register for port_status in QOS");
     }
 }
