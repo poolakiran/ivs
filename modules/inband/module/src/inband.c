@@ -149,19 +149,7 @@ pktin_listener(of_packet_in_t *packet_in)
             memset(new_controller, 0, sizeof(*new_controller));
 
             if (addr_type == LLDP_ADDRESS_FAMILY_IPV4) {
-                if (addr_len != sizeof(of_ipv4_t) + 1) {
-                    AIM_LOG_WARN("Invalid IPv4 address length in management address TLV");
-                    debug_counter_inc(&invalid_management_tlv);
-                    continue;
-                }
-
-                struct in_addr in = { *(uint32_t *)&tlv.payload[2] };
-                AIM_LOG_VERBOSE("Controller address: %{ipv4a}", ntohl(in.s_addr));
-
-                indigo_cxn_params_tcp_over_ipv4_t *proto = &new_controller->protocol_params.tcp_over_ipv4;
-                proto->protocol = INDIGO_CXN_PROTO_TCP_OVER_IPV4;
-                strcpy(proto->controller_ip, inet_ntoa(in));
-                proto->controller_port = 6653;
+                /* Ignore */
             } else if (addr_type == LLDP_ADDRESS_FAMILY_IPV6) {
                 if (addr_len != sizeof(of_ipv6_t) + 1) {
                     AIM_LOG_WARN("Invalid IPv6 address length in management address TLV");
