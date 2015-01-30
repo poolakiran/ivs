@@ -127,12 +127,11 @@ setup_tc(char *ifname)
             tcmsg.tcm_parent = TC_H_MAKE(1<<16, i+1);
             tcmsg.tcm_handle = TC_H_MAKE((10+i) << 16, 0);
             nlmsg_append(msg, &tcmsg, sizeof(tcmsg), NLMSG_ALIGNTO);
-            if (i == 0) {
-                AIM_LOG_VERBOSE("Adding pfifo_fast qdisc to class %d", i+1);
-                nla_put_string(msg, TCA_KIND, "pfifo_fast");
-            } else if (i == 1) {
+            if (i == 0 || i == 1) {
                 AIM_LOG_VERBOSE("Adding pfifo qdisc to class %d", i+1);
                 nla_put_string(msg, TCA_KIND, "pfifo");
+                struct tc_fifo_qopt opt = { .limit=100 };
+                nla_put(msg, TCA_OPTIONS, sizeof(opt), &opt);
             } else {
                 AIM_LOG_VERBOSE("Adding sfq qdisc to class %d", i+1);
                 nla_put_string(msg, TCA_KIND, "sfq");
