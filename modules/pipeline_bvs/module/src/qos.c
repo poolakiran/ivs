@@ -28,7 +28,7 @@
 #include <linux/pkt_cls.h>
 #include <linux/if_ether.h>
 
-#define NUM_OF_QUEUES 6
+#define NUM_OF_QUEUES 8
 
 static void
 setup_tc(char *ifname)
@@ -128,6 +128,9 @@ setup_tc(char *ifname)
             tcmsg.tcm_handle = TC_H_MAKE((10+i) << 16, 0);
             nlmsg_append(msg, &tcmsg, sizeof(tcmsg), NLMSG_ALIGNTO);
             if (i == 0) {
+                AIM_LOG_VERBOSE("Adding pfifo_fast qdisc to class %d", i+1);
+                nla_put_string(msg, TCA_KIND, "pfifo_fast");
+            } else if (i == 1) {
                 AIM_LOG_VERBOSE("Adding pfifo qdisc to class %d", i+1);
                 nla_put_string(msg, TCA_KIND, "pfifo");
             } else {
