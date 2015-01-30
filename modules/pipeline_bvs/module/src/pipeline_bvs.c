@@ -859,7 +859,16 @@ span(struct ctx *ctx, struct span_group *span)
 
     AIM_LOG_VERBOSE("Selected LAG port %u", lag_bucket->port_no);
 
+    if (span->value.vlan_vid != VLAN_INVALID) {
+        AIM_LOG_VERBOSE("Pushing tag vlan_vid=%u", span->value.vlan_vid);
+        action_push_vlan_raw(ctx->actx, span->value.vlan_vid|VLAN_CFI_BIT);
+    }
+
     action_output(ctx->actx, lag_bucket->port_no);
+
+    if (span->value.vlan_vid != VLAN_INVALID) {
+        action_pop_vlan_raw(ctx->actx);
+    }
 }
 
 static struct debug_key

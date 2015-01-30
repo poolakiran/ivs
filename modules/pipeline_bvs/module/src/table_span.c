@@ -65,6 +65,7 @@ static indigo_error_t
 parse_value(of_list_bsn_tlv_t *tlvs, struct span_value *value)
 {
     value->lag = NULL;
+    value->vlan_vid = VLAN_INVALID;
     of_object_t tlv;
 
     if (of_list_bsn_tlv_first(tlvs, &tlv) < 0) {
@@ -92,9 +93,15 @@ parse_value(of_list_bsn_tlv_t *tlvs, struct span_value *value)
         goto error;
     }
 
-    if (of_list_bsn_tlv_next(tlvs, &tlv) == 0) {
-        AIM_LOG_ERROR("expected end of key TLV list, instead got %s", of_class_name(&tlv));
-        goto error;
+    while (of_list_bsn_tlv_next(tlvs, &tlv) == 0) {
+        switch (tlv.object_id) {
+        case OF_BSN_TLV_VLAN_VID:
+            of_bsn_tlv_vlan_vid_value_get(&tlv, &value->vlan_vid);
+            break;
+        default:
+            AIM_LOG_ERROR("unexpected SPAN value TLV %s", of_class_name(&tlv));
+            goto error;
+        }
     }
 
     return INDIGO_ERROR_NONE;

@@ -28,6 +28,7 @@ struct span_key {
 
 struct span_value {
     struct lag_group *lag;
+    uint16_t vlan_vid;
 };
 
 struct span_group {
