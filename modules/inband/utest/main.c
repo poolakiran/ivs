@@ -135,9 +135,9 @@ append_management_address_tlv(uint8_t *dest, const char *ip)
     int i = 0;
     dest[i++] = 0x10; /* type */
     dest[i++] = 0x00; /* length placeholder */
-    if (!strcmp(ip, "invalid-ipv4-length")) {
+    if (!strcmp(ip, "invalid-ipv6-length")) {
         dest[i++] = 0x03; /* address length */
-        dest[i++] = 0x01; /* address type */
+        dest[i++] = 0x02; /* address type */
         dest[i++] = 0x55; /* address */
         dest[i++] = 0x55; /* address */
     } else if (!strcmp(ip, "unsupported-address-type")) {
@@ -145,9 +145,9 @@ append_management_address_tlv(uint8_t *dest, const char *ip)
         dest[i++] = 0x88; /* address type */
         *(uint32_t *)&dest[i] = htonl(0x12345678); i+=4; /* address */
     } else {
-        dest[i++] = 0x05; /* address length */
-        dest[i++] = 0x01; /* address type */
-        *(uint32_t *)&dest[i] = inet_addr(ip); i+=4; /* address */
+        dest[i++] = 0x11; /* address length */
+        dest[i++] = 0x02; /* address type */
+        inet_pton(AF_INET6, ip, &dest[i]); i+=16; /* address */
     }
     dest[i++] = 1; /* interface number subtype */
     *(uint32_t *)&dest[i] = htonl(0); i+=4; /* interface number */
@@ -234,36 +234,36 @@ test_basic(void)
     fprintf(stderr, "Starting basic test\n");
 
     /* Add two controllers */
-    expect_add("1.2.3.4");
-    expect_add("5.6.7.8");
-    lldp_packet_in(1, "1.2.3.4", "5.6.7.8", PASS);
+    expect_add("fe80::1");
+    expect_add("fe80::2");
+    lldp_packet_in(1, "fe80::1", "fe80::2", PASS);
     check_expectations();
 
     /* Same controllers, different order */
-    lldp_packet_in(1, "5.6.7.8", "1.2.3.4", PASS);
+    lldp_packet_in(1, "fe80::2", "fe80::1", PASS);
     check_expectations();
 
     /* Replace one controller */
-    expect_remove("5.6.7.8");
-    expect_add("9.9.9.9");
-    lldp_packet_in(1, "1.2.3.4", "9.9.9.9", PASS);
+    expect_remove("fe80::2");
+    expect_add("fe80::3");
+    lldp_packet_in(1, "fe80::1", "fe80::3", PASS);
     check_expectations();
 
     /* Replace both controllers */
-    expect_remove("1.2.3.4");
-    expect_remove("9.9.9.9");
-    expect_add("10.10.10.10");
-    expect_add("11.11.11.11");
-    lldp_packet_in(1, "10.10.10.10", "11.11.11.11", PASS);
+    expect_remove("fe80::1");
+    expect_remove("fe80::3");
+    expect_add("fe80::4");
+    expect_add("fe80::5");
+    lldp_packet_in(1, "fe80::4", "fe80::5", PASS);
     check_expectations();
 
     /* Remove a controller */
-    expect_remove("10.10.10.10");
-    lldp_packet_in(1, "11.11.11.11", NULL, PASS);
+    expect_remove("fe80::4");
+    lldp_packet_in(1, "fe80::5", NULL, PASS);
     check_expectations();
 
     /* Remove the last controller */
-    expect_remove("11.11.11.11");
+    expect_remove("fe80::5");
     lldp_packet_in(1, NULL, NULL, PASS);
     check_expectations();
 }
@@ -280,8 +280,8 @@ test_corrupt(void)
     memcpy(data, lldp_prefix, sizeof(lldp_prefix));
     offset += sizeof(lldp_prefix);
 
-    offset += append_management_address_tlv(data + offset, "1.2.3.4");
-    offset += append_management_address_tlv(data + offset, "5.6.7.8");
+    offset += append_management_address_tlv(data + offset, "fe80::1");
+    offset += append_management_address_tlv(data + offset, "fe80::2");
 
     /* End of LLDPDU */
     data[offset++] = 0;
@@ -321,34 +321,34 @@ test_invalid(void)
     reset();
 
     /* Duplicate addresses */
-    expect_add("1.2.3.4");
-    lldp_packet_in(1, "1.2.3.4", "1.2.3.4", PASS);
+    expect_add("fe80::1");
+    lldp_packet_in(1, "fe80::1", "fe80::1", PASS);
     check_expectations();
 
     /* Same duplicate addresses */
-    lldp_packet_in(1, "1.2.3.4", "1.2.3.4", PASS);
+    lldp_packet_in(1, "fe80::1", "fe80::1", PASS);
     check_expectations();
 
     /* Different duplicate addresses */
-    expect_remove("1.2.3.4");
-    expect_add("5.6.7.8");
-    lldp_packet_in(1, "5.6.7.8", "5.6.7.8", PASS);
+    expect_remove("fe80::1");
+    expect_add("fe80::2");
+    lldp_packet_in(1, "fe80::2", "fe80::2", PASS);
     check_expectations();
 
     /* Fail indigo_cxn_controller_add */
-    lldp_packet_in(1, "0.0.0.0", "5.6.7.8", PASS);
+    lldp_packet_in(1, "::", "fe80::2", PASS);
     check_expectations();
 
     /* Invalid IP address length */
-    lldp_packet_in(1, "invalid-ipv4-length", "5.6.7.8", PASS);
+    lldp_packet_in(1, "invalid-ipv6-length", "fe80::2", PASS);
     check_expectations();
 
     /* Unsupported address type */
-    lldp_packet_in(1, "unsupported-address-type", "5.6.7.8", PASS);
+    lldp_packet_in(1, "unsupported-address-type", "fe80::2", PASS);
     check_expectations();
 
     /* Not from an uplink port */
-    lldp_packet_in(2, "1.2.3.4", "5.6.7.8", PASS);
+    lldp_packet_in(2, "fe80::1", "fe80::2", PASS);
     check_expectations();
 }
 
@@ -422,10 +422,15 @@ indigo_controller_add(
         return INDIGO_ERROR_NONE;
     }
 
-    AIM_ASSERT(protocol_params->header.protocol == INDIGO_CXN_PROTO_TCP_OVER_IPV4);
-    const char *ip = protocol_params->tcp_over_ipv4.controller_ip;
+    AIM_ASSERT(protocol_params->header.protocol == INDIGO_CXN_PROTO_TCP_OVER_IPV6);
+    char ip[64];
+    strncpy(ip, protocol_params->tcp_over_ipv6.controller_ip, sizeof(ip));
 
-    if (!strcmp(ip, "0.0.0.0")) {
+    if (strchr(ip, '%')) {
+        *strchr(ip, '%') = '\0';
+    }
+
+    if (!strcmp(ip, "::")) {
         return INDIGO_ERROR_UNKNOWN;
     }
 
