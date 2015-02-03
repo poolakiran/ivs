@@ -869,6 +869,10 @@ span(struct ctx *ctx, struct span_group *span)
     action_set_priority(ctx->actx, QUEUE_PRIORITY_SPAN);
     action_output(ctx->actx, lag_bucket->port_no);
 
+    /* FIXME: Reset the priority for the normal forwarding.
+       This will be removed later when we set the priority for forwarded traffic */
+    action_set_priority(ctx->actx, 0);
+
     if (span->value.vlan_vid != VLAN_INVALID) {
         action_pop_vlan_raw(ctx->actx);
     }
