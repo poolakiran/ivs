@@ -38,6 +38,7 @@
 #include <indigo/port_manager.h>
 #include <PPE/ppe.h>
 #include <debug_counter/debug_counter.h>
+#include <slshared/slshared_config.h>
 #include "inband_int.h"
 #include "inband_log.h"
 #include "lldp.h"
@@ -303,6 +304,12 @@ void send_lldp_reply(of_port_no_t port_no)
     of_packet_out_in_port_set(obj, OF_PORT_DEST_CONTROLLER);
 
     of_list_action_t *list = of_list_action_new(obj->version);
+    of_action_set_queue_t *queue_action = of_action_set_queue_new(obj->version);
+    of_action_set_queue_queue_id_set(queue_action,
+                                     SLSHARED_CONFIG_PDU_QUEUE_PRIORITY);
+    of_list_append(list, queue_action);
+    of_object_delete(queue_action);
+
     of_action_output_t *action = of_action_output_new(list->version);
     of_action_output_port_set(action, port_no);
     of_list_append(list, action);
