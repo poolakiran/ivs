@@ -105,6 +105,23 @@ enum group_table_id {
     GROUP_TABLE_ID_SPAN = 2,
 };
 
+/*
+ * QUEUE_PRIORITY distinguishes the class into which the
+ * outgoing packet will be enqueued.
+ * QUEUE_PRIORITY 0 maps to class 1,
+ * QUEUE_PRIORITY 1 maps to class 2 and so on.
+ */
+enum queue_priority {
+    QUEUE_PRIORITY_INVALID = -1,
+    QUEUE_PRIORITY_PDU = 1,
+    QUEUE_PRIORITY_INBAND = 2,
+    QUEUE_PRIORITY_VLAN_PRIO_6_7 = 3,
+    QUEUE_PRIORITY_VLAN_PRIO_4_5 = 4,
+    QUEUE_PRIORITY_VLAN_PRIO_2_3 = 5,
+    QUEUE_PRIORITY_VLAN_PRIO_0_1 = 6,
+    QUEUE_PRIORITY_SPAN = 7,
+};
+
 struct ctx {
     struct ind_ovs_parsed_key *key;
     struct xbuf *stats;

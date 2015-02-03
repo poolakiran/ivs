@@ -182,6 +182,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_span_register();
     pipeline_bvs_table_ecmp_register();
     pipeline_bvs_qos_register();
+    pipeline_inband_queue_priority_set(QUEUE_PRIORITY_INBAND);
 }
 
 static void
@@ -219,6 +220,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_span_unregister();
     pipeline_bvs_table_ecmp_unregister();
     pipeline_bvs_qos_unregister();
+    pipeline_inband_queue_priority_set(QUEUE_PRIORITY_INVALID);
 }
 
 static indigo_error_t
@@ -864,7 +866,12 @@ span(struct ctx *ctx, struct span_group *span)
         action_push_vlan_raw(ctx->actx, span->value.vlan_vid|VLAN_CFI_BIT);
     }
 
+    action_set_priority(ctx->actx, QUEUE_PRIORITY_SPAN);
     action_output(ctx->actx, lag_bucket->port_no);
+
+    /* FIXME: Reset the priority for the normal forwarding.
+       This will be removed later when we set the priority for forwarded traffic */
+    action_set_priority(ctx->actx, 0);
 
     if (span->value.vlan_vid != VLAN_INVALID) {
         action_pop_vlan_raw(ctx->actx);
