@@ -151,6 +151,7 @@ pktin_listener(of_packet_in_t *packet_in)
 
             if (addr_type == LLDP_ADDRESS_FAMILY_IPV4) {
                 /* Ignore */
+                continue;
             } else if (addr_type == LLDP_ADDRESS_FAMILY_IPV6) {
                 if (addr_len != sizeof(of_ipv6_t) + 1) {
                     AIM_LOG_WARN("Invalid IPv6 address length in management address TLV");
