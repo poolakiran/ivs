@@ -561,4 +561,8 @@ ind_ovs_upcall_thread_init(struct ind_ovs_upcall_thread *thread)
     /* Reset signal handlers */
     signal(SIGHUP, SIG_DFL);
     signal(SIGTERM, SIG_DFL);
+
+    /* HACK */
+    void inband_logger_post_fork(void);
+    inband_logger_post_fork();
 }

@@ -39,6 +39,7 @@
 #include <PPE/ppe.h>
 #include <debug_counter/debug_counter.h>
 #include <slshared/slshared_config.h>
+#include <net/if.h>
 #include "inband_int.h"
 #include "inband_log.h"
 #include "lldp.h"
@@ -58,6 +59,7 @@ static void synchronize_controllers(
 bool ind_ovs_uplink_check(of_port_no_t port);
 
 static void send_lldp_reply(of_port_no_t port_no);
+static void retarget_logger(void);
 static void get_port_name(of_port_no_t port, indigo_port_name_t port_name);
 
 static struct inband_controller controllers[MAX_INBAND_CONTROLLERS];
@@ -182,6 +184,8 @@ pktin_listener(of_packet_in_t *packet_in)
     synchronize_controllers(new_controllers, num_new_controllers);
 
     send_lldp_reply(match.fields.in_port);
+
+    retarget_logger();
 
     return INDIGO_CORE_LISTENER_RESULT_PASS;
 }
@@ -332,6 +336,34 @@ void send_lldp_reply(of_port_no_t port_no)
     of_packet_out_delete(obj);
 }
 
+static void
+retarget_logger(void)
+{
+    inband_logger_reset();
+
+    struct sockaddr_storage saddr = { 0 };
+    struct sockaddr_in6 *saddr6 = (struct sockaddr_in6 *)&saddr;
+    saddr6->sin6_family = AF_INET6;
+    saddr6->sin6_port = htons(514);
+    saddr6->sin6_scope_id = if_nametoindex(inband_interface_name);
+
+    int i;
+    for (i = 0; i < num_controllers; i++) {
+        struct inband_controller *controller = &controllers[i];
+        indigo_cxn_params_tcp_over_ipv6_t *proto = &controller->protocol_params.tcp_over_ipv6;
+        if (proto->protocol == INDIGO_CXN_PROTO_TCP_OVER_IPV6) {
+            char ip[64];
+            strncpy(ip, proto->controller_ip, sizeof(ip));
+            *strchr(ip, '%') = '\0';
+            if (inet_pton(AF_INET6, ip, &saddr6->sin6_addr) < 1) {
+                AIM_LOG_ERROR("Failed to parse IPv6 address '%s'", ip);
+                continue;
+            }
+            inband_logger_add_target(&saddr);
+        }
+    }
+}
+
 /*
  * Get a port name by number
  *
@@ -377,6 +409,8 @@ inband_init(void)
                            "Failed to add a controller specified in a LLDP");
 
     inband_lldp_init();
+
+    inband_logger_init();
 }
 
 void
