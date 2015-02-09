@@ -43,6 +43,8 @@
 #include <time.h>
 #include <AIM/aim_log.h>
 #include <AIM/aim_error.h>
+#include <AIM/aim_rl.h>
+#include <OS/os_time.h>
 
 #define MAX_TARGETS 8
 #define REMOTE_LOG_LEVELS AIM_LOG_BITS_DEFAULT
@@ -50,6 +52,7 @@
 static struct sockaddr_storage targets[MAX_TARGETS];
 static int num_targets;
 static int sock = -1;
+static aim_ratelimiter_t ratelimiter;
 
 static int
 syslog_severity(aim_log_flag_t flag)
@@ -86,6 +89,10 @@ logger(void *cookie, aim_log_flag_t flag, const char *str)
 
     /* Don't send trace and verbose logs to the controller */
     if (((1 << flag) & REMOTE_LOG_LEVELS) == 0) {
+        return;
+    }
+
+    if (aim_ratelimiter_limit(&ratelimiter, os_time_monotonic()) < 0) {
         return;
     }
 
@@ -149,4 +156,7 @@ void
 inband_logger_init(void)
 {
     aim_logf_set_all("logger", logger, NULL);
+
+    /* Ratelimit to 10 log/s, burst size 10 */
+    aim_ratelimiter_init(&ratelimiter, 100*1000, 10, NULL);
 }
