@@ -22,4 +22,10 @@
 
 #include <inband/inband.h>
 
+struct sockaddr_storage;
+
+void inband_logger_init(void);
+void inband_logger_reset(void);
+void inband_logger_add_target(const struct sockaddr_storage *saddr);
+
 #endif /* __INBAND_INT_H__ */
