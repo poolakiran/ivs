@@ -891,6 +891,7 @@ make_debug_key(struct ctx *ctx)
         .ip_proto = ctx->key->ipv4.ipv4_proto,
         .ip_tos = ctx->key->ipv4.ipv4_tos,
         .tcp_flags = 0,
+        .ingress_port_group_id = ctx->ingress_port_group_id,
     };
 
     memcpy(&key.eth_src, ctx->key->ethernet.eth_src, OF_MAC_ADDR_BYTES);

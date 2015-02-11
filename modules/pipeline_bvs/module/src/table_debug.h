@@ -22,6 +22,7 @@
 
 struct debug_key {
     uint32_t in_port;
+    uint32_t ingress_port_group_id;
     of_mac_addr_t eth_src;
     of_mac_addr_t eth_dst;
     uint16_t eth_type;
@@ -34,7 +35,7 @@ struct debug_key {
     uint16_t tp_dst;
     uint16_t tcp_flags;
 };
-AIM_STATIC_ASSERT(DEBUG_KEY_SIZE, sizeof(struct debug_key) == 36);
+AIM_STATIC_ASSERT(DEBUG_KEY_SIZE, sizeof(struct debug_key) == 40);
 
 struct debug_value {
     struct span_group *span; /* NULL if unused */

@@ -25,6 +25,7 @@ static void cleanup_value(struct debug_value *value);
 static struct tcam *debug_tcam;
 static const of_match_fields_t maximum_mask = {
     .in_port = 0xffffffff,
+    .bsn_ingress_port_group_id = 0xffffffff,
     .eth_src = { { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff } },
     .eth_dst = { { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff } },
     .eth_type = 0xffff,
@@ -82,6 +83,9 @@ parse_key(of_flow_add_t *obj, struct debug_key *key,
 
     key->in_port = match.fields.in_port;
     mask->in_port = match.masks.in_port;
+
+    key->ingress_port_group_id = match.fields.bsn_ingress_port_group_id;
+    mask->ingress_port_group_id = match.masks.bsn_ingress_port_group_id;
 
     key->eth_src = match.fields.eth_src;
     mask->eth_src = match.masks.eth_src;
@@ -257,9 +261,9 @@ pipeline_bvs_table_debug_entry_create(
         return rv;
     }
 
-    AIM_LOG_VERBOSE("Create debug entry prio=%u in_port=%u/%#x eth_src=%{mac}/%{mac} eth_dst=%{mac}/%{mac} eth_type=%#x/%#x vlan_vid=%u/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} ip_proto=%u/%#x ip_tos=%#x/%#x tp_src=%u/%#x tp_dst=%u/%#x tcp_flags=%#x/%#x"
+    AIM_LOG_VERBOSE("Create debug entry prio=%u in_port=%u/%#x ingress_port_group_id=%u/%#x eth_src=%{mac}/%{mac} eth_dst=%{mac}/%{mac} eth_type=%#x/%#x vlan_vid=%u/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} ip_proto=%u/%#x ip_tos=%#x/%#x tp_src=%u/%#x tp_dst=%u/%#x tcp_flags=%#x/%#x"
                     " -> span_id=%u cpu=%d drop=%d",
-                    priority, key.in_port, mask.in_port, &key.eth_src, &mask.eth_src, &key.eth_dst, &mask.eth_dst, key.eth_type, mask.eth_type, key.vlan_vid, mask.vlan_vid, key.ipv4_src, mask.ipv4_src, key.ipv4_dst, mask.ipv4_dst, key.ip_proto, mask.ip_proto, key.ip_tos, mask.ip_tos, key.tp_src, mask.tp_src, key.tp_dst, mask.tp_dst, key.tcp_flags, mask.tcp_flags,
+                    priority, key.in_port, mask.in_port, key.ingress_port_group_id, mask.ingress_port_group_id, &key.eth_src, &mask.eth_src, &key.eth_dst, &mask.eth_dst, key.eth_type, mask.eth_type, key.vlan_vid, mask.vlan_vid, key.ipv4_src, mask.ipv4_src, key.ipv4_dst, mask.ipv4_dst, key.ip_proto, mask.ip_proto, key.ip_tos, mask.ip_tos, key.tp_src, mask.tp_src, key.tp_dst, mask.tp_dst, key.tcp_flags, mask.tcp_flags,
                     entry->value.span ? entry->value.span->id : OF_GROUP_ANY, entry->value.cpu, entry->value.drop);
 
     stats_alloc(&entry->stats_handle);
