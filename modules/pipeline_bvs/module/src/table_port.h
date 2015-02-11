@@ -27,6 +27,7 @@ AIM_STATIC_ASSERT(PORT_KEY_SIZE, sizeof(struct port_key) == 4);
 
 struct port_value {
     uint32_t lag_id;
+    uint32_t ingress_port_group_id;
     uint32_t egr_port_group_id;
     uint32_t vlan_xlate_port_group_id;
     uint16_t default_vlan_vid;

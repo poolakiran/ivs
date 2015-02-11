@@ -320,6 +320,7 @@ process_l2(struct ctx *ctx)
 
     ctx->ingress_lag_id = port_entry->value.lag_id;
     ctx->ingress_lag = port_entry->value.ingress_lag;
+    ctx->ingress_port_group_id = port_entry->value.ingress_port_group_id;
 
     if (packet_of_death) {
         if (port_entry->value.packet_of_death) {

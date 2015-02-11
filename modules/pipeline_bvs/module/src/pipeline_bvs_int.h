@@ -144,6 +144,7 @@ struct ctx {
     uint32_t ingress_lag_id;
     struct lag_group *ingress_lag;
     uint16_t cur_tag;
+    uint32_t ingress_port_group_id;
 };
 
 enum pipeline_bvs_version {
