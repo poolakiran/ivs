@@ -23,6 +23,7 @@ static indigo_error_t
 parse_value(of_list_bucket_t *of_buckets, struct span_value *value)
 {
     bool seen_lag = false;
+    value->vlan_vid = VLAN_INVALID;
 
     int rv;
     of_bucket_t of_bucket;
