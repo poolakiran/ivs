@@ -178,4 +178,14 @@ lag_name(struct lag_group *lag)
     }
 }
 
+static inline const char *
+span_name(struct span_group *span)
+{
+    if (span == NULL) {
+        return "(null)";
+    } else {
+        return span->key.name;
+    }
+}
+
 #endif

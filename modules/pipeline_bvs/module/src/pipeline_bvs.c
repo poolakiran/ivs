@@ -685,6 +685,22 @@ process_debug(struct ctx *ctx)
         action_set_vlan_vid(ctx->actx, ctx->internal_vlan_vid);
     }
 
+    if (debug_entry->value.lag != NULL) {
+        AIM_LOG_VERBOSE("using LAG %s from the debug table", debug_entry->value.lag->key.name);
+
+        struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(debug_entry->value.lag, ctx->hash);
+        if (lag_bucket == NULL) {
+            AIM_LOG_VERBOSE("empty LAG");
+            return;
+        }
+
+        AIM_LOG_VERBOSE("selected LAG port %u", lag_bucket->port_no);
+
+        process_egress(ctx, lag_bucket->port_no, false);
+
+        mark_drop(ctx);
+    }
+
     if (debug_entry->value.cpu) {
         if (!(ctx->pktin_metadata & (OFP_BSN_PKTIN_FLAG_ARP|
                                      OFP_BSN_PKTIN_FLAG_DHCP|

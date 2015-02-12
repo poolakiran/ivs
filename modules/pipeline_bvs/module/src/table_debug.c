@@ -138,9 +138,9 @@ parse_value(of_flow_add_t *obj, struct debug_value *value)
     int rv;
     of_list_instruction_t insts;
     of_object_t inst;
-    bool seen_span = false;
 
     value->span = NULL;
+    value->lag = NULL;
     value->drop = false;
     value->cpu = false;
 
@@ -155,7 +155,7 @@ parse_value(of_flow_add_t *obj, struct debug_value *value)
             OF_LIST_ACTION_ITER(&actions, &act, rv) {
                 switch (act.object_id) {
                 case OF_ACTION_GROUP: {
-                    if (!seen_span) {
+                    if (value->span == NULL) {
                         uint32_t span_id;
                         of_action_group_group_id_get(&act, &span_id);
                         value->span = pipeline_bvs_group_span_acquire(span_id);
@@ -163,7 +163,6 @@ parse_value(of_flow_add_t *obj, struct debug_value *value)
                             AIM_LOG_ERROR("Nonexistent SPAN in debug table");
                             goto error;
                         }
-                        seen_span = true;
                     } else {
                         AIM_LOG_ERROR("Duplicate SPAN action in debug table");
                         goto error;
@@ -171,24 +170,32 @@ parse_value(of_flow_add_t *obj, struct debug_value *value)
                     break;
                 }
                 case OF_ACTION_BSN_GENTABLE: {
-                    if (!seen_span) {
-                        of_object_t key;
-                        uint32_t table_id;
-                        of_action_bsn_gentable_table_id_get(&act, &table_id);
-                        of_action_bsn_gentable_key_bind(&act, &key);
-                        if (table_id == pipeline_bvs_table_span_id) {
-                            value->span = pipeline_bvs_table_span_acquire(&key);
-                            if (value->span == NULL) {
-                                AIM_LOG_ERROR("Nonexistent SPAN in debug table");
-                                goto error;
-                            }
-                            seen_span = true;
-                        } else {
-                            AIM_LOG_ERROR("unsupported gentable reference in debug table");
+                    of_object_t key;
+                    uint32_t table_id;
+                    of_action_bsn_gentable_table_id_get(&act, &table_id);
+                    of_action_bsn_gentable_key_bind(&act, &key);
+                    if (table_id == pipeline_bvs_table_span_id) {
+                        if (value->span != NULL) {
+                            AIM_LOG_ERROR("Duplicate SPAN action in debug table");
+                            goto error;
+                        }
+                        value->span = pipeline_bvs_table_span_acquire(&key);
+                        if (value->span == NULL) {
+                            AIM_LOG_ERROR("Nonexistent SPAN in debug table");
+                            goto error;
+                        }
+                    } else if (table_id == pipeline_bvs_table_lag_id) {
+                        if (value->lag != NULL) {
+                            AIM_LOG_ERROR("Duplicate LAG action in debug table");
+                            goto error;
+                        }
+                        value->lag = pipeline_bvs_table_lag_acquire(&key);
+                        if (value->lag == NULL) {
+                            AIM_LOG_ERROR("Nonexistent LAG in debug table");
                             goto error;
                         }
                     } else {
-                        AIM_LOG_ERROR("Duplicate SPAN action in debug table");
+                        AIM_LOG_ERROR("unsupported gentable reference in debug table");
                         goto error;
                     }
                     break;
@@ -262,9 +269,9 @@ pipeline_bvs_table_debug_entry_create(
     }
 
     AIM_LOG_VERBOSE("Create debug entry prio=%u in_port=%u/%#x ingress_port_group_id=%u/%#x eth_src=%{mac}/%{mac} eth_dst=%{mac}/%{mac} eth_type=%#x/%#x vlan_vid=%u/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} ip_proto=%u/%#x ip_tos=%#x/%#x tp_src=%u/%#x tp_dst=%u/%#x tcp_flags=%#x/%#x"
-                    " -> span_id=%u cpu=%d drop=%d",
+                    " -> span=%s lag=%s cpu=%d drop=%d",
                     priority, key.in_port, mask.in_port, key.ingress_port_group_id, mask.ingress_port_group_id, &key.eth_src, &mask.eth_src, &key.eth_dst, &mask.eth_dst, key.eth_type, mask.eth_type, key.vlan_vid, mask.vlan_vid, key.ipv4_src, mask.ipv4_src, key.ipv4_dst, mask.ipv4_dst, key.ip_proto, mask.ip_proto, key.ip_tos, mask.ip_tos, key.tp_src, mask.tp_src, key.tp_dst, mask.tp_dst, key.tcp_flags, mask.tcp_flags,
-                    entry->value.span ? entry->value.span->id : OF_GROUP_ANY, entry->value.cpu, entry->value.drop);
+                    span_name(entry->value.span), lag_name(entry->value.lag), entry->value.cpu, entry->value.drop);
 
     stats_alloc(&entry->stats_handle);
 

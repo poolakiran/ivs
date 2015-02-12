@@ -39,6 +39,7 @@ AIM_STATIC_ASSERT(DEBUG_KEY_SIZE, sizeof(struct debug_key) == 40);
 
 struct debug_value {
     struct span_group *span; /* NULL if unused */
+    struct lag_group *lag; /* NULL if unused */
     bool cpu;
     bool drop;
 };
