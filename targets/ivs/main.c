@@ -501,8 +501,15 @@ aim_main(int argc, char* argv[])
                 return 1;
             }
 
+            /* HACK - old BCF controllers will reject switches advertising
+             * newer OpenFlow versions in their HELLO messages */
+            int version = OF_VERSION_1_4;
+            if (getenv("IVS_OPENFLOW_VERSION")) {
+                version = atoi(getenv("IVS_OPENFLOW_VERSION"));
+            }
+
             indigo_cxn_config_params_t config = {
-                .version = OF_VERSION_1_4,
+                .version = version,
                 .cxn_priority = 0,
                 .local = 0,
                 .listen = 0,
