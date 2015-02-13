@@ -37,6 +37,7 @@ static struct port_entry local_entry = {
     .key = { .port = OF_PORT_DEST_LOCAL },
     .value = {
         .lag_id = OF_GROUP_ANY,
+        .ingress_port_group_id = 0,
         .egr_port_group_id = 0,
         .vlan_xlate_port_group_id = 0,
         .disable_src_mac_check = true,
@@ -71,6 +72,7 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
     of_object_t inst;
 
     value->lag_id = OF_GROUP_ANY;
+    value->ingress_port_group_id = 0;
     value->egr_port_group_id = 0;
     value->vlan_xlate_port_group_id = 0;
     value->default_vlan_vid = 0;
@@ -103,6 +105,9 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
                         break;
                     case OF_OXM_BSN_LAG_ID:
                         of_oxm_bsn_lag_id_value_get(&oxm, &value->lag_id);
+                        break;
+                    case OF_OXM_BSN_INGRESS_PORT_GROUP_ID:
+                        of_oxm_bsn_ingress_port_group_id_value_get(&oxm, &value->ingress_port_group_id);
                         break;
                     case OF_OXM_BSN_EGR_PORT_GROUP_ID:
                         of_oxm_bsn_egr_port_group_id_value_get(&oxm, &value->egr_port_group_id);
@@ -210,8 +215,8 @@ pipeline_bvs_table_port_entry_create(
         return rv;
     }
 
-    AIM_LOG_VERBOSE("Create port entry port=%u -> lag_id=%u egr_port_group_id=%u vlan_xlate_port_group_id=%u default_vlan_vid=%u %s%s%s%s%s",
-                    entry->key.port, entry->value.lag_id, entry->value.egr_port_group_id, entry->value.vlan_xlate_port_group_id, entry->value.default_vlan_vid,
+    AIM_LOG_VERBOSE("Create port entry port=%u -> lag_id=%u egr_port_group_id=%u vlan_xlate_port_group_id=%u default_vlan_vid=%u ingress_port_group_id=%u %s%s%s%s%s",
+                    entry->key.port, entry->value.lag_id, entry->value.egr_port_group_id, entry->value.vlan_xlate_port_group_id, entry->value.default_vlan_vid, entry->value.ingress_port_group_id,
                     entry->value.disable_src_mac_check ? "disable_src_mac_check " : "",
                     entry->value.arp_offload ? "arp_offload " : "",
                     entry->value.dhcp_offload ? "dhcp_offload " : "",
@@ -306,8 +311,8 @@ pipeline_bvs_table_port_lookup(uint32_t port_no)
 
     struct port_entry *entry = port_hashtable_first(port_hashtable, &key);
     if (entry) {
-        AIM_LOG_VERBOSE("Hit port entry port=%u -> lag_id=%u egr_port_group_id=%u vlan_xlate_port_group_id=%u default_vlan_vid=%u %s%s%s%s%s",
-                        entry->key.port, entry->value.lag_id, entry->value.egr_port_group_id, entry->value.vlan_xlate_port_group_id, entry->value.default_vlan_vid,
+        AIM_LOG_VERBOSE("Hit port entry port=%u -> lag_id=%u egr_port_group_id=%u vlan_xlate_port_group_id=%u default_vlan_vid=%u ingress_port_group_id=%u %s%s%s%s%s",
+                        entry->key.port, entry->value.lag_id, entry->value.egr_port_group_id, entry->value.vlan_xlate_port_group_id, entry->value.default_vlan_vid, entry->value.ingress_port_group_id,
                         entry->value.disable_src_mac_check ? "disable_src_mac_check " : "",
                         entry->value.arp_offload ? "arp_offload " : "",
                         entry->value.dhcp_offload ? "dhcp_offload " : "",

@@ -146,6 +146,7 @@ struct ctx {
     uint32_t ingress_lag_id;
     struct lag_group *ingress_lag;
     uint16_t cur_tag;
+    uint32_t ingress_port_group_id;
 };
 
 enum pipeline_bvs_version {
@@ -176,6 +177,16 @@ lag_name(struct lag_group *lag)
         return "(null)";
     } else {
         return lag->key.name;
+    }
+}
+
+static inline const char *
+span_name(struct span_group *span)
+{
+    if (span == NULL) {
+        return "(null)";
+    } else {
+        return span->key.name;
     }
 }
 
