@@ -127,7 +127,8 @@ setup_tc(char *ifname)
             tcmsg.tcm_parent = TC_H_MAKE(1<<16, i+1);
             tcmsg.tcm_handle = TC_H_MAKE((10+i) << 16, 0);
             nlmsg_append(msg, &tcmsg, sizeof(tcmsg), NLMSG_ALIGNTO);
-            if (i == 0 || i == 1 || i == 8) {
+            if (i == QUEUE_PRIORITY_UNCLASSIFIED || i == QUEUE_PRIORITY_UNUSED ||
+                i == QUEUE_PRIORITY_PDU) {
                 AIM_LOG_VERBOSE("Adding pfifo qdisc to class %d", i+1);
                 nla_put_string(msg, TCA_KIND, "pfifo");
                 struct tc_fifo_qopt opt = { .limit=100 };

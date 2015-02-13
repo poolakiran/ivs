@@ -113,6 +113,8 @@ enum group_table_id {
  */
 enum queue_priority {
     QUEUE_PRIORITY_INVALID = -1,
+    QUEUE_PRIORITY_UNCLASSIFIED = 0,
+    QUEUE_PRIORITY_UNUSED = 1,
     QUEUE_PRIORITY_INBAND = 2,
     QUEUE_PRIORITY_VLAN_PRIO_6_7 = 3,
     QUEUE_PRIORITY_SPAN = 4,
