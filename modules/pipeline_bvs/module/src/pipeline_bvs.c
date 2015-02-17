@@ -252,6 +252,7 @@ process_l2(struct ctx *ctx)
     }
 
     ctx->original_vlan_vid = VLAN_VID(ntohs(ctx->key->vlan));
+    ctx->skb_priority = ctx->key->priority;
 
     /* Ingress mirror */
     struct ingress_mirror_entry *ingress_mirror_entry =
@@ -817,6 +818,7 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
         span(ctx, egress_mirror_entry->value.span);
     }
 
+    action_set_priority(ctx->actx, ctx->skb_priority);
     action_output(ctx->actx, out_port);
 }
 
@@ -885,10 +887,6 @@ span(struct ctx *ctx, struct span_group *span)
 
     action_set_priority(ctx->actx, QUEUE_PRIORITY_SPAN);
     action_output(ctx->actx, lag_bucket->port_no);
-
-    /* FIXME: Reset the priority for the normal forwarding.
-       This will be removed later when we set the priority for forwarded traffic */
-    action_set_priority(ctx->actx, 0);
 
     if (span->value.vlan_vid != VLAN_INVALID) {
         action_pop_vlan_raw(ctx->actx);
