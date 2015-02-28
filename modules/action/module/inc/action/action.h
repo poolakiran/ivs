@@ -35,6 +35,7 @@
  */
 struct action_context {
     struct ind_ovs_parsed_key current_key; /* see ind_ovs_commit_set_field_actions */
+    struct ind_ovs_parsed_key *mask;
     uint64_t modified_attrs; /* bitmap of OVS_KEY_ATTR_* */
     struct nl_msg *msg; /* netlink message to add action attributes to */
 };
@@ -44,9 +45,13 @@ struct action_context {
  *
  * 'msg' will have OVS_ACTION_ATTR_* attributes appended to it as a side
  * effect of calling the action functions below.
+ *
+ * 'mask', if not NULL, will be ORed with the mask of the portions of the key
+ * used during action translation.
  */
 void action_context_init(struct action_context *ctx,
                          const struct ind_ovs_parsed_key *key,
+                         struct ind_ovs_parsed_key *mask,
                          struct nl_msg *msg);
 
 /* Output */
@@ -56,6 +61,14 @@ void action_output(struct action_context *ctx, uint32_t port_no);
 void action_output_local(struct action_context *ctx);
 void action_output_in_port(struct action_context *ctx);
 void action_sample_to_controller(struct action_context *ctx, uint64_t userdata, uint32_t probability);
+
+/* Userspace Output */
+
+void action_userspace(struct action_context *ctx, void *userdata, int datalen,
+                      uint32_t netlink_port);
+void action_sample_to_userspace(struct action_context *ctx, void *userdata,
+                                int datalen, uint32_t netlink_port,
+                                uint32_t probability);
 
 /* Ethernet */
 
