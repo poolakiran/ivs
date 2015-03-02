@@ -231,6 +231,8 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 {
     uint64_t populated = mask->populated;
     memset(mask, 0xff, sizeof(*mask));
+    key->tcp_flags = 0;
+    mask->tcp_flags = 0;
     mask->populated = populated;
 
     struct ctx ctx;
@@ -239,7 +241,6 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
     ctx.stats = stats;
     ctx.actx = actx;
 
-    /* TODO revise when TCP flags are added to the parsed key */
     ctx.hash = murmur_hash(key, sizeof(*key), 0);
 
     process_l2(&ctx);
