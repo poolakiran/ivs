@@ -87,7 +87,8 @@ parse_value(of_list_bsn_tlv_t *tlvs, struct ecmp_value *value)
 
         value->num_buckets++;
 
-        if (bucket->next_hop.type != NEXT_HOP_TYPE_LAG) {
+        if (bucket->next_hop.type != NEXT_HOP_TYPE_LAG &&
+                bucket->next_hop.type != NEXT_HOP_TYPE_LAG_NOREWRITE) {
             AIM_LOG_ERROR("Invalid ECMP group next-hop type");
             goto error;
         }
