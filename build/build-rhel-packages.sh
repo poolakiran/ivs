@@ -22,24 +22,22 @@ ROOTDIR=$(dirname $(readlink -f $0))/..
 cd "$ROOTDIR"
 
 : Build ID: ${BUILD_ID:=devel}
-SUITE=trusty
-ARCH=amd64
-DOCKER_IMAGE=bigswitch/ivs-builder:ubuntu14.04
 
 BUILDDIR=$(mktemp -d)
 
-mkdir -p $BUILDDIR/ivs
+mkdir -p $BUILDDIR/SOURCES $BUILDDIR/RPMS
 
 # Copy source code to a volume that will be mounted in the container
-#cp build/build-debian-packages-inner.sh $BUILDDIR/build-debian-packages-inner.sh
-rsync --files-from <(./build/files.sh) . "$BUILDDIR/ivs"
+cp build/build-rhel-packages-inner.sh $BUILDDIR/build-rhel-packages-inner.sh
+cp rhel/ivs-7.0.spec $BUILDDIR/SOURCES
+tar -T <(./build/files.sh) -c -z -f $BUILDDIR/SOURCES/ivs.tar.gz --transform 's,^,ivs/,'
 
-docker.io run -v $BUILDDIR:/work -w /work/ivs $DOCKER_IMAGE ./build/build-debian-packages-inner.sh
+docker.io run -v $BUILDDIR:/rpmbuild bigswitch/ivs-builder:centos7 /rpmbuild/build-rhel-packages-inner.sh
 
-# Copy built packages to pkg/
-OUTDIR=$(readlink -m "pkg/$SUITE-$ARCH/$BUILD_ID")
+# Copy built RPMs to pkg/
+OUTDIR=$(readlink -m "pkg/centos7-x86_64/$BUILD_ID")
 rm -rf "$OUTDIR" && mkdir -p "$OUTDIR"
-mv $BUILDDIR/*.deb "$OUTDIR"
+mv $BUILDDIR/RPMS/x86_64/*.rpm "$OUTDIR"
 git log > "$OUTDIR/gitlog.txt"
 touch "$OUTDIR/build-$BUILD_ID"
 ln -snf $(basename $OUTDIR) $OUTDIR/../latest
