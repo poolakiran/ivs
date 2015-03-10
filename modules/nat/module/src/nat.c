@@ -170,9 +170,6 @@ nat_container_setup(struct nat_entry *entry)
     /* Enable conntrack counters */
     ok = ok && run("echo 1 > /proc/sys/net/netfilter/nf_conntrack_acct");
 
-    /* Enable conntrack timestamp */
-    ok = ok && run("echo 1 > /proc/sys/net/netfilter/nf_conntrack_timestamp");
-
     /* Create two veth pairs */
     ok = ok && run("ip link add ext type veth peer name %s", ext_ifname);
     ok = ok && run("ip link add int type veth peer name %s", int_ifname);
