@@ -459,7 +459,6 @@ process_l2(struct ctx *ctx)
                 !memcmp(ctx->key->ethernet.eth_dst, &broadcast_mac, OF_MAC_ADDR_BYTES)) {
             AIM_LOG_VERBOSE("sending DHCP packet to agent");
             mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_DHCP);
-            mark_drop(ctx);
         }
     }
 
