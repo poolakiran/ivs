@@ -50,7 +50,6 @@ setup_tc(char *ifname)
     }
 
     {
-        AIM_LOG_VERBOSE("Deleting root qdisc for %s", ifname);
         struct nl_msg *msg = nlmsg_alloc_simple(RTM_DELQDISC, 0);
         struct tcmsg tcmsg = { 0 };
         tcmsg.tcm_family = AF_UNSPEC;
@@ -64,7 +63,6 @@ setup_tc(char *ifname)
     }
 
     {
-        AIM_LOG_VERBOSE("Adding root DRR qdisc for %s", ifname);
         struct nl_msg *msg = nlmsg_alloc_simple(RTM_NEWQDISC, NLM_F_CREATE);
         struct tcmsg tcmsg = { 0 };
         tcmsg.tcm_family = AF_UNSPEC;
@@ -80,7 +78,6 @@ setup_tc(char *ifname)
     }
 
     {
-        AIM_LOG_VERBOSE("Adding filter for %s", ifname);
         struct nl_msg *msg = nlmsg_alloc_simple(RTM_NEWTFILTER, NLM_F_CREATE);
         struct tcmsg tcmsg = { 0 };
         tcmsg.tcm_family = AF_UNSPEC;
@@ -103,7 +100,6 @@ setup_tc(char *ifname)
     int i;
     for (i = 0; i < NUM_OF_QUEUES; i++) {
         {
-            AIM_LOG_VERBOSE("Adding class %d for %s", i+1, ifname);
             struct nl_msg *msg = nlmsg_alloc_simple(RTM_NEWTCLASS, NLM_F_CREATE);
             struct tcmsg tcmsg = { 0 };
             tcmsg.tcm_family = AF_UNSPEC;
@@ -129,12 +125,10 @@ setup_tc(char *ifname)
             nlmsg_append(msg, &tcmsg, sizeof(tcmsg), NLMSG_ALIGNTO);
             if (i == QUEUE_PRIORITY_UNCLASSIFIED || i == QUEUE_PRIORITY_UNUSED ||
                 i == QUEUE_PRIORITY_PDU) {
-                AIM_LOG_VERBOSE("Adding pfifo qdisc to class %d", i+1);
                 nla_put_string(msg, TCA_KIND, "pfifo");
                 struct tc_fifo_qopt opt = { .limit=100 };
                 nla_put(msg, TCA_OPTIONS, sizeof(opt), &opt);
             } else {
-                AIM_LOG_VERBOSE("Adding sfq qdisc to class %d", i+1);
                 nla_put_string(msg, TCA_KIND, "sfq");
             }
             if (nl_send_sync(sk, msg) < 0) {
