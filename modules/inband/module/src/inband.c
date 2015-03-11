@@ -39,6 +39,7 @@
 #include <PPE/ppe.h>
 #include <debug_counter/debug_counter.h>
 #include <slshared/slshared_config.h>
+#include <slshared/slshared.h>
 #include <net/if.h>
 #include "inband_int.h"
 #include "inband_log.h"
@@ -303,37 +304,14 @@ void send_lldp_reply(of_port_no_t port_no)
     }
 
     of_octets_t octets = inband_lldp_finish(&builder);
-
-    of_packet_out_t *obj = of_packet_out_new(OF_VERSION_1_3);
-    of_packet_out_buffer_id_set(obj, -1);
-    of_packet_out_in_port_set(obj, OF_PORT_DEST_CONTROLLER);
-
-    of_list_action_t *list = of_list_action_new(obj->version);
-    of_action_set_queue_t *queue_action = of_action_set_queue_new(obj->version);
-    of_action_set_queue_queue_id_set(queue_action,
-                                     SLSHARED_CONFIG_PDU_QUEUE_PRIORITY);
-    of_list_append(list, queue_action);
-    of_object_delete(queue_action);
-
-    of_action_output_t *action = of_action_output_new(list->version);
-    of_action_output_port_set(action, port_no);
-    of_list_append(list, action);
-    of_object_delete(action);
-    AIM_TRUE_OR_DIE(of_packet_out_actions_set(obj, list) == 0);
-    of_object_delete(list);
-
-    if (of_packet_out_data_set(obj, &octets) < 0) {
-        AIM_DIE("Failed to set data on LLDP reply");
-    }
-
-    indigo_error_t rv = indigo_fwd_packet_out(obj);
+    indigo_error_t rv = slshared_fwd_packet_out(&octets, OF_PORT_DEST_CONTROLLER,
+                                                port_no,
+                                                SLSHARED_CONFIG_PDU_QUEUE_PRIORITY);
     if (rv < 0) {
         AIM_LOG_ERROR("Failed to inject LLDP reply: %s", indigo_strerror(rv));
     } else {
         debug_counter_inc(&sent_lldp_reply);
     }
-
-    of_packet_out_delete(obj);
 }
 
 static void
