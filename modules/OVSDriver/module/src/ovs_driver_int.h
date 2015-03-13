@@ -38,6 +38,8 @@
 #include "tcam/tcam.h"
 #include "BigHash/bighash.h"
 #include <stats/stats.h>
+#include <debug_counter/debug_counter.h>
+#include <shared_debug_counter/shared_debug_counter.h>
 
 #define IND_OVS_MAX_PORTS 1024
 

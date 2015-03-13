@@ -107,6 +107,15 @@ static void ind_ovs_upcall_thread_init(struct ind_ovs_upcall_thread *thread);
 static int ind_ovs_num_upcall_threads;
 static struct ind_ovs_upcall_thread *ind_ovs_upcall_threads[MAX_UPCALL_THREADS];
 
+DEBUG_COUNTER(kflow_request, "ovsdriver.upcall.kflow_request", "Kernel flow requested by upcall process");
+DEBUG_COUNTER(kflow_request_error, "ovsdriver.upcall.kflow_request_error", "Error on kernel flow request socket");
+DEBUG_COUNTER(respawn, "ovsdriver.upcall.respawn", "Respawned upcall processes");
+DEBUG_COUNTER(respawn_time, "ovsdriver.upcall.respawn_time", "Total time in microseconds spent respawning upcall processes");
+
+SHARED_DEBUG_COUNTER(upcall, "ovsdriver.upcall", "Upcall from the kernel");
+SHARED_DEBUG_COUNTER(wakeup, "ovsdriver.upcall.wakeup", "Upcall process woken up");
+SHARED_DEBUG_COUNTER(upcall_time, "ovsdriver.upcall.time", "Total time in microseconds spent handling upcalls");
+
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC optimize (4)
 #endif
@@ -122,10 +131,14 @@ ind_ovs_upcall_thread_main(struct ind_ovs_upcall_thread *thread)
             LOG_ERROR("epoll_wait failed: %s", strerror(errno));
             abort();
         } else if (n > 0) {
+            debug_counter_inc(&wakeup);
+            uint64_t start_time = monotonic_us();
             int j;
             for (j = 0; j < n; j++) {
                 ind_ovs_handle_port_upcalls(thread, events[j].data.ptr);
             }
+            uint64_t elapsed = monotonic_us() - start_time;
+            debug_counter_add(&upcall_time, elapsed);
         }
     }
 }
@@ -186,6 +199,8 @@ ind_ovs_handle_port_upcalls(struct ind_ovs_upcall_thread *thread,
             break;
         }
     }
+
+    debug_counter_add(&upcall, count);
 }
 
 static void
@@ -377,9 +392,12 @@ kflow_sock_ready(int fd, void *cookie,
 {
     static char buf[MAX_KEY_SIZE];
 
+    debug_counter_inc(&kflow_request);
+
     int n = read(fd, buf, sizeof(buf));
     if (n < 0) {
         AIM_LOG_ERROR("Error on kflow socket: %s", strerror(errno));
+        debug_counter_inc(&kflow_request_error);
         return;
     }
 
@@ -388,6 +406,7 @@ kflow_sock_ready(int fd, void *cookie,
     struct nlattr *key = (void *)buf;
     if (key->nla_len != n) {
         AIM_LOG_ERROR("kflow socket length mismatch: read %u, attr len %u", n, key->nla_len);
+        debug_counter_inc(&kflow_request_error);
         return;
     }
 
@@ -483,6 +502,8 @@ ind_ovs_upcall_respawn(void)
     uint64_t start_time = monotonic_us();
     int i;
 
+    debug_counter_inc(&respawn);
+
     for (i = 0; i < ind_ovs_num_upcall_threads; i++) {
         struct ind_ovs_upcall_thread *thread = ind_ovs_upcall_threads[i];
 
@@ -510,6 +531,7 @@ ind_ovs_upcall_respawn(void)
 
     uint64_t elapsed = monotonic_us() - start_time;
     AIM_LOG_VERBOSE("Respawned upcall processes in %"PRIu64" us", elapsed);
+    debug_counter_add(&respawn_time, elapsed);
 }
 
 static void
