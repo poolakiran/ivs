@@ -183,6 +183,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_ecmp_register();
     pipeline_bvs_qos_register();
     pipeline_inband_queue_priority_set(QUEUE_PRIORITY_INBAND);
+    pipeline_bvs_stats_init();
 }
 
 static void
@@ -221,6 +222,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_ecmp_unregister();
     pipeline_bvs_qos_unregister();
     pipeline_inband_queue_priority_set(QUEUE_PRIORITY_INVALID);
+    pipeline_bvs_stats_finish();
 }
 
 static indigo_error_t
@@ -229,6 +231,8 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
                      struct xbuf *stats,
                      struct action_context *actx)
 {
+    pipeline_add_stats(stats, &pipeline_bvs_stats[PIPELINE_BVS_STATS_INGRESS]);
+
     uint64_t populated = mask->populated;
     memset(mask, 0xff, sizeof(*mask));
     key->tcp_flags = 0;
@@ -300,9 +304,11 @@ process_l2(struct ctx *ctx)
                 AIM_LOG_VERBOSE("sending CDP packet directly to controller");
                 mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_PDU);
             }
+            PIPELINE_STAT(PDU);
             mark_drop(ctx);
         } else {
             AIM_LOG_VERBOSE("sending ethertype %#x directly to controller", ntohs(ctx->key->ethertype));
+            PIPELINE_STAT(PDU);
             mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_PDU);
             mark_drop(ctx);
         }
@@ -310,6 +316,7 @@ process_l2(struct ctx *ctx)
 
     if (!memcmp(ctx->key->ethernet.eth_dst, slow_protocols_mac.addr, OF_MAC_ADDR_BYTES)) {
         AIM_LOG_VERBOSE("sending slow protocols packet directly to controller");
+        PIPELINE_STAT(PDU);
         mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_PDU);
         mark_drop(ctx);
     }
@@ -322,6 +329,7 @@ process_l2(struct ctx *ctx)
 
     struct port_entry *port_entry = pipeline_bvs_table_port_lookup(ctx->key->in_port);
     if (!port_entry) {
+        PIPELINE_STAT(BAD_PORT);
         return;
     }
 
@@ -330,6 +338,7 @@ process_l2(struct ctx *ctx)
     ctx->ingress_port_group_id = port_entry->value.ingress_port_group_id;
 
     if (packet_of_death) {
+        PIPELINE_STAT(PACKET_OF_DEATH);
         if (port_entry->value.packet_of_death) {
             AIM_LOG_VERBOSE("sending packet of death to cpu");
             action_controller(ctx->actx, IVS_PKTIN_USERDATA(OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH, 0));
@@ -356,6 +365,7 @@ process_l2(struct ctx *ctx)
             action_set_vlan_vid(ctx->actx, vlan_vid);
         } else if (port_entry->value.require_vlan_xlate) {
             AIM_LOG_VERBOSE("vlan_xlate required and missed, dropping");
+            PIPELINE_STAT(VLAN_XLATE_MISS);
             mark_drop(ctx);
             process_debug(ctx);
             process_pktin(ctx);
@@ -381,12 +391,14 @@ process_l2(struct ctx *ctx)
     struct vlan_entry *vlan_entry = pipeline_bvs_table_vlan_lookup(vlan_vid);
     if (!vlan_entry) {
         AIM_LOG_VERBOSE("Packet received on unconfigured vlan %u (bad VLAN)", vlan_vid);
+        PIPELINE_STAT(BAD_VLAN);
         mark_drop(ctx);
         return;
     }
 
     if (!check_vlan_membership(vlan_entry, ctx->key->in_port, NULL)) {
         AIM_LOG_VERBOSE("port %u not allowed on vlan %u", ctx->key->in_port, vlan_vid);
+        PIPELINE_STAT(WRONG_VLAN);
         mark_drop(ctx);
         return;
     }
@@ -403,6 +415,7 @@ process_l2(struct ctx *ctx)
 
     if (!memcmp(ctx->key->ethernet.eth_src, &zero_mac, OF_MAC_ADDR_BYTES)) {
         AIM_LOG_VERBOSE("L2 source zero, discarding");
+        PIPELINE_STAT(ZERO_SRC_MAC);
         mark_drop(ctx);
         return;
     }
@@ -420,10 +433,12 @@ process_l2(struct ctx *ctx)
 
         if (src_l2_entry->value.lag == NULL) {
             AIM_LOG_VERBOSE("L2 source discard");
+            PIPELINE_STAT(SRC_DISCARD);
             mark_drop(ctx);
         } else if (!disable_src_mac_check) {
             if (src_l2_entry->value.lag != ctx->ingress_lag) {
                 AIM_LOG_VERBOSE("incorrect lag_id in source l2table lookup (station move)");
+                PIPELINE_STAT(STATION_MOVE);
                 mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_STATION_MOVE);
                 mark_drop(ctx);
             }
@@ -431,6 +446,7 @@ process_l2(struct ctx *ctx)
     } else {
         if (!disable_src_mac_check) {
             AIM_LOG_VERBOSE("miss in source l2table lookup (new host)");
+            PIPELINE_STAT(NEW_HOST);
             mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_NEW_HOST);
             mark_drop(ctx);
         }
@@ -441,12 +457,14 @@ process_l2(struct ctx *ctx)
         if (pipeline_bvs_table_arp_offload_lookup(
                 ctx->internal_vlan_vid, ntohl(ctx->key->arp.arp_tip))) {
             AIM_LOG_VERBOSE("trapping ARP packet to VLAN %u IP %{ipv4a}", ctx->internal_vlan_vid, ntohl(ctx->key->arp.arp_tip));
+            PIPELINE_STAT(ARP_OFFLOAD_TRAP);
             mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_ARP);
             mark_drop(ctx);
             process_pktin(ctx);
             return;
         } else if (port_entry->value.arp_offload) {
             AIM_LOG_VERBOSE("sending ARP packet to agent");
+            PIPELINE_STAT(ARP_OFFLOAD);
             mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_ARP);
             /* Continue forwarding packet */
         }
@@ -458,6 +476,7 @@ process_l2(struct ctx *ctx)
                 (ctx->key->tcp.tcp_dst == htons(67) || ctx->key->tcp.tcp_dst == htons(68)) &&
                 !memcmp(ctx->key->ethernet.eth_dst, &broadcast_mac, OF_MAC_ADDR_BYTES)) {
             AIM_LOG_VERBOSE("sending DHCP packet to agent");
+            PIPELINE_STAT(DHCP_OFFLOAD);
             mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_DHCP);
         }
     }
@@ -493,6 +512,7 @@ process_l2(struct ctx *ctx)
         pipeline_bvs_table_l2_lookup(vlan_vid, ctx->key->ethernet.eth_dst);
     if (!dst_l2_entry) {
         AIM_LOG_VERBOSE("miss in destination l2table lookup (destination lookup failure)");
+        PIPELINE_STAT(DESTINATION_LOOKUP_FAILURE);
 
         process_debug(ctx);
         process_pktin(ctx);
@@ -508,6 +528,7 @@ process_l2(struct ctx *ctx)
 
     if (dst_l2_entry->value.lag == NULL) {
         AIM_LOG_VERBOSE("hit in destination l2table lookup, discard");
+        PIPELINE_STAT(DST_DISCARD);
         mark_drop(ctx);
     } else {
         AIM_LOG_VERBOSE("hit in destination l2table lookup, lag %s", lag_name(dst_l2_entry->value.lag));
@@ -527,6 +548,7 @@ process_l2(struct ctx *ctx)
     struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(dst_l2_entry->value.lag, ctx->hash);
     if (lag_bucket == NULL) {
         AIM_LOG_VERBOSE("empty LAG");
+        PIPELINE_STAT(EMPTY_LAG);
         return;
     }
 
@@ -544,8 +566,11 @@ process_l3(struct ctx *ctx)
     bool drop = false;
     bool bad_ttl = ctx->key->ipv4.ipv4_ttl <= 1;
 
+    PIPELINE_STAT(L3);
+
     if (bad_ttl) {
         AIM_LOG_VERBOSE("sending TTL expired packet to agent");
+        PIPELINE_STAT(BAD_TTL);
         mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_TTL_EXPIRED);
         mark_drop(ctx);
         process_debug(ctx);
@@ -597,21 +622,26 @@ process_l3(struct ctx *ctx)
     if (l3_cpu || acl_cpu) {
         if (drop) {
             AIM_LOG_VERBOSE("L3 drop");
+            PIPELINE_STAT(L3_DROP);
             mark_drop(ctx);
         } else if (!valid_next_hop) {
             AIM_LOG_VERBOSE("L3 null route");
+            PIPELINE_STAT(L3_NULL_ROUTE);
             mark_drop(ctx);
         }
     } else {
         if (drop) {
             AIM_LOG_VERBOSE("L3 drop");
+            PIPELINE_STAT(L3_DROP);
             mark_drop(ctx);
         } else if (!hit) {
             AIM_LOG_VERBOSE("L3 miss");
+            PIPELINE_STAT(L3_MISS);
             mark_drop(ctx);
             mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_L3_MISS);
         } else if (!valid_next_hop) {
             AIM_LOG_VERBOSE("L3 null route");
+            PIPELINE_STAT(L3_NULL_ROUTE);
             mark_drop(ctx);
         }
     }
@@ -628,6 +658,7 @@ process_l3(struct ctx *ctx)
         struct ecmp_bucket *ecmp_bucket = pipeline_bvs_group_ecmp_select(next_hop->ecmp, ctx->hash);
         if (ecmp_bucket == NULL) {
             AIM_LOG_VERBOSE("empty ecmp group %d", next_hop->ecmp->id);
+            PIPELINE_STAT(EMPTY_ECMP);
             return;
         }
 
@@ -661,6 +692,7 @@ process_l3(struct ctx *ctx)
     struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(next_hop->lag, ctx->hash);
     if (lag_bucket == NULL) {
         AIM_LOG_VERBOSE("empty LAG");
+        PIPELINE_STAT(EMPTY_LAG);
         return;
     }
 
@@ -693,10 +725,12 @@ process_debug(struct ctx *ctx)
 
     if (debug_entry->value.lag != NULL) {
         AIM_LOG_VERBOSE("using LAG %s from the debug table", debug_entry->value.lag->key.name);
+        PIPELINE_STAT(DEBUG_REDIRECT);
 
         struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(debug_entry->value.lag, ctx->hash);
         if (lag_bucket == NULL) {
             AIM_LOG_VERBOSE("empty LAG");
+            PIPELINE_STAT(EMPTY_LAG);
             return;
         }
 
@@ -716,6 +750,7 @@ process_debug(struct ctx *ctx)
     }
 
     if (debug_entry->value.drop) {
+        PIPELINE_STAT(DEBUG_DROP);
         mark_drop(ctx);
     }
 }
@@ -727,6 +762,7 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
         pipeline_bvs_table_vlan_lookup(ctx->internal_vlan_vid);
     if (!vlan_entry) {
         AIM_LOG_VERBOSE("Packet routed to unconfigured vlan %u", ctx->internal_vlan_vid);
+        PIPELINE_STAT(EGRESS_BAD_VLAN);
         return;
     }
 
@@ -866,6 +902,7 @@ flood_vlan(struct ctx *ctx)
         struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(lag, ctx->hash);
         if (lag_bucket == NULL) {
             AIM_LOG_VERBOSE("empty LAG %s", lag_name(lag));
+            PIPELINE_STAT(EMPTY_LAG);
             continue;
         }
         AIM_LOG_VERBOSE("selected LAG %s port %u", lag_name(lag), lag_bucket->port_no);
@@ -880,6 +917,7 @@ span(struct ctx *ctx, struct span_group *span)
     struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(span->value.lag, ctx->hash);
     if (lag_bucket == NULL) {
         AIM_LOG_VERBOSE("empty LAG");
+        PIPELINE_STAT(EMPTY_LAG);
         return;
     }
 
@@ -1013,6 +1051,7 @@ process_floating_ip(struct ctx *ctx)
         pipeline_bvs_table_floating_ip_forward_lookup(
             ctx->internal_vlan_vid, ntohl(ctx->key->ipv4.ipv4_src), ctx->key->ethernet.eth_dst);
     if (floating_ip_forward_entry) {
+        PIPELINE_STAT(FLOATING_IP_FORWARD);
         struct floating_ip_forward_value *v = &floating_ip_forward_entry->value;
         of_mac_addr_t new_eth_dst = v->new_eth_dst;
 
@@ -1050,6 +1089,7 @@ process_floating_ip(struct ctx *ctx)
         pipeline_bvs_table_floating_ip_reverse_lookup(
             ctx->internal_vlan_vid, ntohl(ctx->key->ipv4.ipv4_dst), ctx->key->ethernet.eth_dst);
     if (floating_ip_reverse_entry) {
+        PIPELINE_STAT(FLOATING_IP_REVERSE);
         struct floating_ip_reverse_value *v = &floating_ip_reverse_entry->value;
         ctx->internal_vlan_vid = v->new_vlan_vid;
         action_set_vlan_vid(ctx->actx, v->new_vlan_vid);
