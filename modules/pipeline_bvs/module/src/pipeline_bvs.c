@@ -338,6 +338,7 @@ process_l2(struct ctx *ctx)
     ctx->ingress_port_group_id = port_entry->value.ingress_port_group_id;
 
     if (packet_of_death) {
+        PIPELINE_STAT(PACKET_OF_DEATH);
         if (port_entry->value.packet_of_death) {
             AIM_LOG_VERBOSE("sending packet of death to cpu");
             action_controller(ctx->actx, IVS_PKTIN_USERDATA(OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH, 0));
