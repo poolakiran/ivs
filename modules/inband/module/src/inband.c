@@ -85,7 +85,7 @@ static debug_counter_t controller_add_failed;
 static indigo_core_listener_result_t
 pktin_listener(of_packet_in_t *packet_in)
 {
-    if (packet_in->version != OF_VERSION_1_3) {
+    if (packet_in->version < OF_VERSION_1_3) {
         return INDIGO_CORE_LISTENER_RESULT_PASS;
     }
 
