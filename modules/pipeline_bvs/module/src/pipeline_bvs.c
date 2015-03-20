@@ -48,6 +48,13 @@ enum pipeline_bvs_version version;
 
 static uint32_t port_sampling_rate[SLSHARED_CONFIG_OF_PORT_MAX+1];
 
+struct pipeline_bvs_port_pktin_socket {
+    struct ind_ovs_pktin_socket pktin_soc;
+    bool in_use;
+};
+
+static struct pipeline_bvs_port_pktin_socket port_pktin_soc[SLSHARED_CONFIG_OF_PORT_MAX+1];
+
 static struct ind_ovs_pktin_socket sflow_pktin_soc;
 static struct ind_ovs_pktin_socket debug_acl_pktin_soc;
 
@@ -148,15 +155,32 @@ pipeline_bvs_port_status_handler(of_port_status_t *port_status)
 {
     uint8_t reason;
 
+    of_port_status_reason_get(port_status, &reason);
+    of_port_desc_t port_desc;
+    of_port_status_desc_bind(port_status, &port_desc);
+
+    of_port_no_t port_no;
+    of_port_desc_port_no_get(&port_desc, &port_no);
+
     if (reason == OF_PORT_CHANGE_REASON_ADD) {
-        of_port_status_reason_get(port_status, &reason);
-        of_port_desc_t port_desc;
-        of_port_status_desc_bind(port_status, &port_desc);
+
+        /* Create pktin socket for this port */
+        if (port_no <= SLSHARED_CONFIG_OF_PORT_MAX) {
+            ind_ovs_pktin_socket_register(&port_pktin_soc[port_no].pktin_soc,
+                                          process_port_pktin,
+                                          PORT_PKTIN_INTERVAL,
+                                          PORT_PKTIN_BURST);
+            port_pktin_soc[port_no].in_use = true;
+        }
 
         /* Use tc to set up queues for this port */
         of_port_name_t if_name;
         of_port_desc_name_get(&port_desc, &if_name);
         setup_tc(if_name);
+    } else if (reason == OF_PORT_CHANGE_REASON_DELETE &&
+        port_pktin_soc[port_no].in_use == true) {
+        ind_ovs_pktin_socket_unregister(&port_pktin_soc[port_no].pktin_soc);
+        port_pktin_soc[port_no].in_use = false;
     }
 
     return INDIGO_CORE_LISTENER_RESULT_PASS;
@@ -197,6 +221,15 @@ pipeline_bvs_pktin_socket_unregister()
 
     /* Unregister the debug/acl pktin socket */
     ind_ovs_pktin_socket_unregister(&debug_acl_pktin_soc);
+
+    /* Unregister port pktin sockets */
+    int i;
+    for (i = 0; i <= SLSHARED_CONFIG_OF_PORT_MAX; i++) {
+        if (port_pktin_soc[i].in_use == true) {
+            ind_ovs_pktin_socket_unregister(&port_pktin_soc[i].pktin_soc);
+            port_pktin_soc[i].in_use = false;
+        }
+    }
 }
 
 static void

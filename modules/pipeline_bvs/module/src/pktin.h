@@ -23,6 +23,15 @@
 /* Overall minimum average interval between sflow, debug and acl packet-ins (in us) */
 #define GLOBAL_PKTIN_INTERVAL 10000 /* 100 packets/sec */
 
+/* Per-port minimum average interval between packet-ins (in us) */
+#define PORT_PKTIN_INTERVAL 100000 /* 10 packets/sec */
+
+/* Per-port packet-in burstiness tolerance. */
+#define PORT_PKTIN_BURST 5
+
+void process_port_pktin(uint8_t *data, unsigned int len,
+                        uint8_t reason, uint64_t metadata,
+                        struct ind_ovs_parsed_key *pkey);
 void process_sflow_pktin(uint8_t *data, unsigned int len,
                          uint8_t reason, uint64_t metadata,
                          struct ind_ovs_parsed_key *pkey);

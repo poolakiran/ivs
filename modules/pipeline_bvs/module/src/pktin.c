@@ -25,6 +25,21 @@ DEBUG_COUNTER(pktin_parse_error, "pipeline_bvs.pktin.parse_error",
               "Error while parsing packet-in");
 
 /*
+ * Process below pktin's:
+ * - PDU's (LLDP, LACP, CDP)
+ * - Switch agent pktins (ICMP, ARP, DHCP)
+ * - Packet of Death
+ * - Controller pktin's (New host, Station move)
+ */
+void process_port_pktin(uint8_t *data, unsigned int len,
+                        uint8_t reason, uint64_t metadata,
+                        struct ind_ovs_parsed_key *pkey)
+{
+
+
+}
+
+/*
  * Process sampled pktin's and send them directly to the sflow agent
  * Sflow samples are never sent to the controller
  */
