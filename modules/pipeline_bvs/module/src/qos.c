@@ -30,7 +30,7 @@
 
 #define NUM_OF_QUEUES 9
 
-static void
+void
 setup_tc(char *ifname)
 {
     int ifindex = if_nametoindex(ifname);
@@ -140,38 +140,4 @@ setup_tc(char *ifname)
 
 error:
     nl_socket_free(sk);
-}
-
-static indigo_core_listener_result_t
-qos_port_status_handler(of_port_status_t *port_status)
-{
-    uint8_t reason;
-
-    of_port_status_reason_get(port_status, &reason);
-    if (reason == OF_PORT_CHANGE_REASON_ADD) {
-        of_port_desc_t port_desc;
-        of_port_status_desc_bind(port_status, &port_desc);
-        of_port_name_t if_name;
-        of_port_desc_name_get(&port_desc, &if_name);
-        setup_tc(if_name);
-    }
-
-    return INDIGO_CORE_LISTENER_RESULT_PASS;
-}
-
-void
-pipeline_bvs_qos_register(void)
-{
-    /*
-     * Register listener for port_status msg
-     */
-    if (indigo_core_port_status_listener_register(qos_port_status_handler) < 0) {
-        AIM_LOG_ERROR("Failed to register for port_status in QOS");
-    }
-}
-
-void
-pipeline_bvs_qos_unregister(void)
-{
-    indigo_core_port_status_listener_unregister(qos_port_status_handler);
 }

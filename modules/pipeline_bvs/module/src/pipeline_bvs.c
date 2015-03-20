@@ -140,6 +140,40 @@ port_sampling_rate_set(of_port_no_t port_no, uint32_t sampling_rate,
     return INDIGO_ERROR_NONE;
 }
 
+static indigo_core_listener_result_t
+pipeline_bvs_port_status_handler(of_port_status_t *port_status)
+{
+    uint8_t reason;
+
+    if (reason == OF_PORT_CHANGE_REASON_ADD) {
+        of_port_status_reason_get(port_status, &reason);
+        of_port_desc_t port_desc;
+        of_port_status_desc_bind(port_status, &port_desc);
+
+        /* Use tc to set up queues for this port */
+        of_port_name_t if_name;
+        of_port_desc_name_get(&port_desc, &if_name);
+        setup_tc(if_name);
+    }
+
+    return INDIGO_CORE_LISTENER_RESULT_PASS;
+}
+
+static void
+pipeline_bvs_port_status_register(void)
+{
+    /* Register listener for port_status msg */
+    if (indigo_core_port_status_listener_register(pipeline_bvs_port_status_handler) < 0) {
+        AIM_LOG_ERROR("Failed to register for port_status");
+    }
+}
+
+static void
+pipeline_bvs_port_status_unregister(void)
+{
+    indigo_core_port_status_listener_unregister(pipeline_bvs_port_status_handler);
+}
+
 static void
 pipeline_bvs_init(const char *name)
 {
@@ -181,9 +215,9 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_lag_register();
     pipeline_bvs_table_span_register();
     pipeline_bvs_table_ecmp_register();
-    pipeline_bvs_qos_register();
     pipeline_inband_queue_priority_set(QUEUE_PRIORITY_INBAND);
     pipeline_bvs_stats_init();
+    pipeline_bvs_port_status_register();
 }
 
 static void
@@ -220,9 +254,9 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_lag_unregister();
     pipeline_bvs_table_span_unregister();
     pipeline_bvs_table_ecmp_unregister();
-    pipeline_bvs_qos_unregister();
     pipeline_inband_queue_priority_set(QUEUE_PRIORITY_INVALID);
     pipeline_bvs_stats_finish();
+    pipeline_bvs_port_status_unregister();
 }
 
 static indigo_error_t
