@@ -18,7 +18,10 @@
  ****************************************************************/
 
 #include "pipeline_bvs_int.h"
+#include "packet_of_death.h"
 
+DEBUG_COUNTER(packet_of_death_pktin, "pipeline_bvs.pktin.packet_of_death",
+              "Packet of death recv'd");
 DEBUG_COUNTER(sflow_pktin, "pipeline_bvs.pktin.sflow",
               "Sflow sampled pktin's recv'd");
 DEBUG_COUNTER(pktin_parse_error, "pipeline_bvs.pktin.parse_error",
@@ -35,8 +38,13 @@ void process_port_pktin(uint8_t *data, unsigned int len,
                         uint8_t reason, uint64_t metadata,
                         struct ind_ovs_parsed_key *pkey)
 {
+    of_octets_t octets = { .data = data, .bytes = len };
 
-
+    if (reason == OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH) {
+        debug_counter_inc(&packet_of_death_pktin);
+        process_packet_of_death(&octets);
+        return;
+    }
 }
 
 /*

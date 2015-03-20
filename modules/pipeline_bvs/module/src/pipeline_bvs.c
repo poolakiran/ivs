@@ -437,7 +437,9 @@ process_l2(struct ctx *ctx)
         PIPELINE_STAT(PACKET_OF_DEATH);
         if (port_entry->value.packet_of_death) {
             AIM_LOG_VERBOSE("sending packet of death to cpu");
-            action_controller(ctx->actx, IVS_PKTIN_USERDATA(OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH, 0));
+            uint64_t userdata = IVS_PKTIN_USERDATA(OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH, 0);
+            uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(&port_pktin_soc[ctx->key->in_port].pktin_soc);
+            action_userspace(ctx->actx, &userdata, sizeof(uint64_t), netlink_port);
         } else {
             AIM_LOG_VERBOSE("ignoring packet of death on not-allowed port");
         }
