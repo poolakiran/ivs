@@ -48,6 +48,9 @@ enum pipeline_bvs_version version;
 
 static uint32_t port_sampling_rate[SLSHARED_CONFIG_OF_PORT_MAX+1];
 
+static struct ind_ovs_pktin_socket sflow_pktin_soc;
+static struct ind_ovs_pktin_socket debug_acl_pktin_soc;
+
 /*
  * Switch -> Controller async msg channel selector.
  *
@@ -175,6 +178,28 @@ pipeline_bvs_port_status_unregister(void)
 }
 
 static void
+pipeline_bvs_pktin_socket_register()
+{
+    /* Register the sflow pktin socket */
+    ind_ovs_pktin_socket_register(&sflow_pktin_soc, process_sflow_pktin,
+                                  GLOBAL_PKTIN_INTERVAL, 0);
+
+    /* Register the debug/acl pktin socket */
+    ind_ovs_pktin_socket_register(&debug_acl_pktin_soc, NULL,
+                                  GLOBAL_PKTIN_INTERVAL, 0);
+}
+
+static void
+pipeline_bvs_pktin_socket_unregister()
+{
+    /* Unregister the sflow pktin socket */
+    ind_ovs_pktin_socket_unregister(&sflow_pktin_soc);
+
+    /* Unregister the debug/acl pktin socket */
+    ind_ovs_pktin_socket_unregister(&debug_acl_pktin_soc);
+}
+
+static void
 pipeline_bvs_init(const char *name)
 {
     if (!strcmp(name, "bvs-2.0")) {
@@ -218,6 +243,7 @@ pipeline_bvs_init(const char *name)
     pipeline_inband_queue_priority_set(QUEUE_PRIORITY_INBAND);
     pipeline_bvs_stats_init();
     pipeline_bvs_port_status_register();
+    pipeline_bvs_pktin_socket_register();
 }
 
 static void
@@ -257,6 +283,7 @@ pipeline_bvs_finish(void)
     pipeline_inband_queue_priority_set(QUEUE_PRIORITY_INVALID);
     pipeline_bvs_stats_finish();
     pipeline_bvs_port_status_unregister();
+    pipeline_bvs_pktin_socket_unregister();
 }
 
 static indigo_error_t
@@ -307,8 +334,10 @@ process_l2(struct ctx *ctx)
 
     if (ctx->key->in_port <= SLSHARED_CONFIG_OF_PORT_MAX &&
         port_sampling_rate[ctx->key->in_port]) {
-        action_sample_to_controller(ctx->actx, IVS_PKTIN_USERDATA(0, OFP_BSN_PKTIN_FLAG_SFLOW),
-                                    port_sampling_rate[ctx->key->in_port]);
+        uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(&sflow_pktin_soc);
+        uint64_t userdata = IVS_PKTIN_USERDATA(0, OFP_BSN_PKTIN_FLAG_SFLOW);
+        action_sample_to_userspace(ctx->actx, &userdata, sizeof(uint64_t), netlink_port,
+                                   port_sampling_rate[ctx->key->in_port]);
     }
 
     struct ind_ovs_port_counters *port_counters = ind_ovs_port_stats_select(ctx->key->in_port);

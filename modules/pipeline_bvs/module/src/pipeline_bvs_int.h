@@ -37,6 +37,7 @@
 #include <action/action.h>
 #include <sflowa/sflowa.h>
 #include <slshared/slshared_config.h>
+#include <debug_counter/debug_counter.h>
 
 #include "next_hop.h"
 #include "table_port.h"
@@ -68,6 +69,7 @@
 #include "group_span.h"
 #include "qos.h"
 #include "stats.h"
+#include "pktin.h"
 
 #define AIM_LOG_MODULE_NAME pipeline_bvs
 #include <AIM/aim_log.h>
