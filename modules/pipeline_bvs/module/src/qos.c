@@ -31,7 +31,7 @@
 #define NUM_OF_QUEUES 9
 
 void
-setup_tc(char *ifname)
+pipeline_bvs_setup_tc(char *ifname)
 {
     int ifindex = if_nametoindex(ifname);
     if (ifindex == 0) {

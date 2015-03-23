@@ -20,6 +20,6 @@
 #ifndef QOS_H
 #define QOS_H
 
-void setup_tc(char *ifname);
+void pipeline_bvs_setup_tc(char *ifname);
 
 #endif

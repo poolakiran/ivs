@@ -176,7 +176,7 @@ pipeline_bvs_port_status_handler(of_port_status_t *port_status)
         /* Use tc to set up queues for this port */
         of_port_name_t if_name;
         of_port_desc_name_get(&port_desc, &if_name);
-        setup_tc(if_name);
+        pipeline_bvs_setup_tc(if_name);
     } else if (reason == OF_PORT_CHANGE_REASON_DELETE &&
         port_pktin_soc[port_no].in_use == true) {
         ind_ovs_pktin_socket_unregister(&port_pktin_soc[port_no].pktin_soc);
