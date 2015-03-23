@@ -20,6 +20,11 @@
 #ifndef INBAND_H
 #define INBAND_H
 
+#include <indigo/of_state_manager.h>
+#include <PPE/ppe.h>
+
 void inband_init(void);
+indigo_core_listener_result_t inband_receive_packet(ppe_packet_t *ppep,
+                                                    of_port_no_t in_port);
 
 #endif /* INBAND_H */
