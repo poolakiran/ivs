@@ -27,6 +27,8 @@
 #include <dhcpra/dhcpra.h>
 #include <router_ip_table/router_ip_table.h>
 
+DEBUG_COUNTER(pktin, "pipeline_bvs.pktin",
+              "Received packet-in message from the kernel");
 DEBUG_COUNTER(ctrl_pktin, "pipeline_bvs.pktin.controller",
               "Pktin's passed directly to the controller");
 DEBUG_COUNTER(packet_of_death_pktin, "pipeline_bvs.pktin.packet_of_death",
@@ -52,11 +54,13 @@ is_ephemeral(uint32_t port)
  * - Packet of Death
  * - Controller pktin's (New host, Station move)
  */
-void process_port_pktin(uint8_t *data, unsigned int len,
-                        uint8_t reason, uint64_t metadata,
-                        struct ind_ovs_parsed_key *pkey)
+void
+pipeline_bvs_process_port_pktin(uint8_t *data, unsigned int len,
+                                uint8_t reason, uint64_t metadata,
+                                struct ind_ovs_parsed_key *pkey)
 {
     of_octets_t octets = { .data = data, .bytes = len };
+    debug_counter_inc(&pktin);
 
     if (reason == OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH) {
         debug_counter_inc(&packet_of_death_pktin);
@@ -132,9 +136,10 @@ void process_port_pktin(uint8_t *data, unsigned int len,
  * Process sampled pktin's and send them directly to the sflow agent
  * Sflow samples are never sent to the controller
  */
-void process_sflow_pktin(uint8_t *data, unsigned int len,
-                         uint8_t reason, uint64_t metadata,
-                         struct ind_ovs_parsed_key *pkey)
+void
+pipeline_bvs_process_sflow_pktin(uint8_t *data, unsigned int len,
+                                 uint8_t reason, uint64_t metadata,
+                                 struct ind_ovs_parsed_key *pkey)
 {
     debug_counter_inc(&sflow_pktin);
 
