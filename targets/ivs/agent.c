@@ -8,6 +8,7 @@
 #include <nat/nat.h>
 #include <sflowa/sflowa.h>
 #include <host_stats/host_stats.h>
+#include <cdpa/cdpa.h>
 
 void
 ivs_agent_init(void)
@@ -43,4 +44,8 @@ ivs_agent_init(void)
     }
 
     host_stats_init();
+
+    if (cdpa_init() < 0) {
+        AIM_DIE("Failed to initialize CDP Agent module");
+    }
 }
