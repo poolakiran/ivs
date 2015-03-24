@@ -114,6 +114,16 @@ process_port_pktin(uint8_t *data, unsigned int len,
         return;
     }
 
+    /*
+     * Identify the packet-in based on header type
+     *
+     * Echo requests/traceroute destined to VRouter will be
+     * consumed by the ICMP agent on the switch.
+     *
+     * If these pktin's also have ttl expired, we dont need to respond
+     * with icmp ttl expired msg to the original source,
+     * since echo/traceroute response will take precedence.
+     */
     indigo_core_listener_result_t result = INDIGO_CORE_LISTENER_RESULT_PASS;
     if (ppe_header_get(&ppep, PPE_HEADER_LLDP)) {
         inband_receive_packet(&ppep, pkey->in_port);
@@ -151,6 +161,10 @@ process_port_pktin(uint8_t *data, unsigned int len,
         return;
     }
 
+    /*
+     * Packet-in's passed by ICMP agent should later be
+     * checked for ttl expired/network unreachable reasons
+     */
     if (metadata & OFP_BSN_PKTIN_FLAG_L3_MISS) {
         result = icmpa_send(&ppep, pkey->in_port, 3, 0);
     } else if (metadata & OFP_BSN_PKTIN_FLAG_TTL_EXPIRED) {
