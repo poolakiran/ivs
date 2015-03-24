@@ -163,6 +163,8 @@ pipeline_bvs_port_status_handler(of_port_status_t *port_status)
     of_port_desc_port_no_get(&port_desc, &port_no);
 
     if (reason == OF_PORT_CHANGE_REASON_ADD) {
+        AIM_ASSERT(port_pktin_soc[port_no].in_use == false,
+                   "Port %u already in use", port_no);
 
         /* Create pktin socket for this port */
         if (port_no <= SLSHARED_CONFIG_OF_PORT_MAX) {
