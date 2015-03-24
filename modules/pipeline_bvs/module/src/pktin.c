@@ -68,6 +68,7 @@ pipeline_bvs_process_port_pktin(uint8_t *data, unsigned int len,
         return;
     }
 
+    /* Identify if the packet-in needs to go to the controller before parsing */
     if (metadata & OFP_BSN_PKTIN_FLAG_STATION_MOVE ||
         metadata & OFP_BSN_PKTIN_FLAG_NEW_HOST ||
         metadata & OFP_BSN_PKTIN_FLAG_ARP_CACHE) {
@@ -91,6 +92,9 @@ pipeline_bvs_process_port_pktin(uint8_t *data, unsigned int len,
         result = lacpa_receive_packet (&ppep, pkey->in_port);
     } else if (ppe_header_get(&ppep, PPE_HEADER_DHCP)) {
         result = dhcpra_receive_packet(&ppep, pkey->in_port);
+    } else if (ppe_header_get(&ppep, PPE_HEADER_ARP)) {
+        bool check_source = (metadata & OFP_BSN_PKTIN_FLAG_ARP) != 0;
+        result = arpa_receive_packet(&ppep, pkey->in_port, check_source);
     } else if (ppe_header_get(&ppep, PPE_HEADER_ICMP)) {
         result = icmpa_reply(&ppep, pkey->in_port);
     } else if (ppe_header_get(&ppep, PPE_HEADER_UDP) &&
@@ -117,10 +121,7 @@ pipeline_bvs_process_port_pktin(uint8_t *data, unsigned int len,
         return;
     }
 
-    if (metadata & (OFP_BSN_PKTIN_FLAG_ARP|OFP_BSN_PKTIN_FLAG_ARP_TARGET)) {
-        bool check_source = (metadata & OFP_BSN_PKTIN_FLAG_ARP) != 0;
-        result = arpa_receive_packet(&ppep, pkey->in_port, check_source);
-    } else if (metadata & OFP_BSN_PKTIN_FLAG_L3_MISS) {
+    if (metadata & OFP_BSN_PKTIN_FLAG_L3_MISS) {
         result = icmpa_send(&ppep, pkey->in_port, 3, 0);
     } else if (metadata & OFP_BSN_PKTIN_FLAG_TTL_EXPIRED) {
         result = icmpa_send(&ppep, pkey->in_port, 11, 0);
