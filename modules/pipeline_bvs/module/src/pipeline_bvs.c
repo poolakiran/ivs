@@ -168,8 +168,7 @@ pipeline_bvs_port_status_handler(of_port_status_t *port_status)
         if (port_no <= SLSHARED_CONFIG_OF_PORT_MAX) {
             ind_ovs_pktin_socket_register(&port_pktin_soc[port_no].pktin_soc,
                                           pipeline_bvs_process_port_pktin,
-                                          PORT_PKTIN_INTERVAL,
-                                          PORT_PKTIN_BURST);
+                                          PORT_PKTIN_INTERVAL, PKTIN_BURST);
             port_pktin_soc[port_no].in_use = true;
         }
 
@@ -207,11 +206,11 @@ pipeline_bvs_pktin_socket_register()
     /* Register the sflow pktin socket */
     ind_ovs_pktin_socket_register(&sflow_pktin_soc,
                                   pipeline_bvs_process_sflow_pktin,
-                                  GLOBAL_PKTIN_INTERVAL, 0);
+                                  GLOBAL_PKTIN_INTERVAL, PKTIN_BURST);
 
     /* Register the debug/acl pktin socket */
     ind_ovs_pktin_socket_register(&debug_acl_pktin_soc, NULL,
-                                  GLOBAL_PKTIN_INTERVAL, 0);
+                                  GLOBAL_PKTIN_INTERVAL, PKTIN_BURST);
 }
 
 static void

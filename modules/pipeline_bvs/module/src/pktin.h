@@ -24,10 +24,10 @@
 #define GLOBAL_PKTIN_INTERVAL 10000 /* 100 packets/sec */
 
 /* Per-port minimum average interval between packet-ins (in us) */
-#define PORT_PKTIN_INTERVAL 100000 /* 10 packets/sec */
+#define PORT_PKTIN_INTERVAL 5000
 
 /* Per-port packet-in burstiness tolerance. */
-#define PORT_PKTIN_BURST 5
+#define PKTIN_BURST 32
 
 void pipeline_bvs_process_port_pktin(uint8_t *data, unsigned int len,
                                      uint8_t reason, uint64_t metadata,
