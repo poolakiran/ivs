@@ -29,11 +29,12 @@
 /* Per-port packet-in burstiness tolerance. */
 #define PKTIN_BURST 32
 
-void pipeline_bvs_process_port_pktin(uint8_t *data, unsigned int len,
-                                     uint8_t reason, uint64_t metadata,
-                                     struct ind_ovs_parsed_key *pkey);
-void pipeline_bvs_process_sflow_pktin(uint8_t *data, unsigned int len,
-                                      uint8_t reason, uint64_t metadata,
-                                      struct ind_ovs_parsed_key *pkey);
+void pipeline_bvs_pktin_socket_register();
+void pipeline_bvs_pktin_socket_unregister();
+void pipeline_bvs_port_pktin_socket_register(of_port_no_t port_no);
+void pipeline_bvs_port_pktin_socket_unregister(of_port_no_t port_no);
+
+struct ind_ovs_pktin_socket *pipeline_bvs_get_pktin_socket(of_port_no_t port_no,
+                                                           uint64_t userdata);
 
 #endif

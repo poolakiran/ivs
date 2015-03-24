@@ -38,6 +38,16 @@ DEBUG_COUNTER(sflow_pktin, "pipeline_bvs.pktin.sflow",
 DEBUG_COUNTER(pktin_parse_error, "pipeline_bvs.pktin.parse_error",
               "Error while parsing packet-in");
 
+struct pipeline_bvs_port_pktin_socket {
+    struct ind_ovs_pktin_socket pktin_soc;
+    bool in_use;
+};
+
+static struct pipeline_bvs_port_pktin_socket port_pktin_soc[SLSHARED_CONFIG_OF_PORT_MAX+1];
+
+static struct ind_ovs_pktin_socket sflow_pktin_soc;
+static struct ind_ovs_pktin_socket debug_acl_pktin_soc;
+
 /*
  * Returns true if a given port is ephemeral, else returns false
  */
@@ -48,16 +58,36 @@ is_ephemeral(uint32_t port)
 }
 
 /*
+ * Returns the pktin socket based on the given the pktin flags
+ */
+struct ind_ovs_pktin_socket *
+pipeline_bvs_get_pktin_socket(of_port_no_t port_no, uint64_t userdata)
+{
+    uint64_t metadata = IVS_PKTIN_METADATA(userdata);
+
+    if (metadata & OFP_BSN_PKTIN_FLAG_SFLOW) {
+        return &sflow_pktin_soc;
+    } else if (metadata & (OFP_BSN_PKTIN_FLAG_INGRESS_ACL|OFP_BSN_PKTIN_FLAG_DEBUG)) {
+        return &debug_acl_pktin_soc;
+    }
+
+    AIM_ASSERT(port_no <= SLSHARED_CONFIG_OF_PORT_MAX,
+               "Port %u out of range", port_no);
+
+    return &port_pktin_soc[port_no].pktin_soc;
+}
+
+/*
  * Process below pktin's:
  * - PDU's (LLDP, LACP, CDP)
  * - Switch agent pktins (ICMP, ARP, DHCP)
  * - Packet of Death
  * - Controller pktin's (New host, Station move)
  */
-void
-pipeline_bvs_process_port_pktin(uint8_t *data, unsigned int len,
-                                uint8_t reason, uint64_t metadata,
-                                struct ind_ovs_parsed_key *pkey)
+static void
+process_port_pktin(uint8_t *data, unsigned int len,
+                   uint8_t reason, uint64_t metadata,
+                   struct ind_ovs_parsed_key *pkey)
 {
     of_octets_t octets = { .data = data, .bytes = len };
     debug_counter_inc(&pktin);
@@ -137,10 +167,10 @@ pipeline_bvs_process_port_pktin(uint8_t *data, unsigned int len,
  * Process sampled pktin's and send them directly to the sflow agent
  * Sflow samples are never sent to the controller
  */
-void
-pipeline_bvs_process_sflow_pktin(uint8_t *data, unsigned int len,
-                                 uint8_t reason, uint64_t metadata,
-                                 struct ind_ovs_parsed_key *pkey)
+static void
+process_sflow_pktin(uint8_t *data, unsigned int len,
+                    uint8_t reason, uint64_t metadata,
+                    struct ind_ovs_parsed_key *pkey)
 {
     debug_counter_inc(&sflow_pktin);
 
@@ -152,4 +182,59 @@ pipeline_bvs_process_sflow_pktin(uint8_t *data, unsigned int len,
     }
 
     sflowa_receive_packet(&ppep, pkey->in_port);
+}
+
+void
+pipeline_bvs_pktin_socket_register()
+{
+    /* Register the sflow pktin socket */
+    ind_ovs_pktin_socket_register(&sflow_pktin_soc,
+                                  process_sflow_pktin,
+                                  GLOBAL_PKTIN_INTERVAL, PKTIN_BURST);
+
+    /* Register the debug/acl pktin socket */
+    ind_ovs_pktin_socket_register(&debug_acl_pktin_soc, NULL,
+                                  GLOBAL_PKTIN_INTERVAL, PKTIN_BURST);
+}
+
+void
+pipeline_bvs_pktin_socket_unregister()
+{
+    /* Unregister the sflow pktin socket */
+    ind_ovs_pktin_socket_unregister(&sflow_pktin_soc);
+
+    /* Unregister the debug/acl pktin socket */
+    ind_ovs_pktin_socket_unregister(&debug_acl_pktin_soc);
+
+    /* Unregister port pktin sockets */
+    int i;
+    for (i = 0; i <= SLSHARED_CONFIG_OF_PORT_MAX; i++) {
+        pipeline_bvs_port_pktin_socket_unregister(i);
+    }
+}
+
+void
+pipeline_bvs_port_pktin_socket_register(of_port_no_t port_no)
+{
+    AIM_ASSERT(port_pktin_soc[port_no].in_use == false,
+               "Port %u already in use", port_no);
+
+    AIM_ASSERT(port_no <= SLSHARED_CONFIG_OF_PORT_MAX,
+               "Port %u out of range", port_no);
+
+    /* Create pktin socket for this port */
+    ind_ovs_pktin_socket_register(&port_pktin_soc[port_no].pktin_soc,
+                                  process_port_pktin,
+                                  PORT_PKTIN_INTERVAL, PKTIN_BURST);
+    port_pktin_soc[port_no].in_use = true;
+}
+
+void pipeline_bvs_port_pktin_socket_unregister(of_port_no_t port_no)
+{
+    if (port_pktin_soc[port_no].in_use == false) {
+        return;
+    }
+
+    ind_ovs_pktin_socket_unregister(&port_pktin_soc[port_no].pktin_soc);
+    port_pktin_soc[port_no].in_use = false;
 }

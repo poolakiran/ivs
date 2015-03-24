@@ -139,7 +139,6 @@ struct ctx {
     bool pktin_agent;
     bool pktin_controller;
     uint64_t pktin_metadata;
-    struct ind_ovs_pktin_socket pktin_soc;
 
     /* Internal state */
     uint16_t original_vlan_vid;

@@ -38,8 +38,8 @@ static struct debug_key make_debug_key(struct ctx *ctx);
 static struct vlan_acl_key make_vlan_acl_key(struct ctx *ctx);
 static struct ingress_acl_key make_ingress_acl_key(struct ctx *ctx);
 static uint32_t group_to_table_id(uint32_t group_id);
-static void mark_pktin_agent(struct ctx *ctx, uint64_t flag, struct ind_ovs_pktin_socket pktin_soc);
-static void mark_pktin_controller(struct ctx *ctx, uint64_t flag, struct ind_ovs_pktin_socket pktin_soc);
+static void mark_pktin_agent(struct ctx *ctx, uint64_t flag);
+static void mark_pktin_controller(struct ctx *ctx, uint64_t flag);
 static void mark_drop(struct ctx *ctx);
 static void process_pktin(struct ctx *ctx);
 static bool process_floating_ip(struct ctx *ctx);
@@ -47,16 +47,6 @@ static bool process_floating_ip(struct ctx *ctx);
 enum pipeline_bvs_version version;
 
 static uint32_t port_sampling_rate[SLSHARED_CONFIG_OF_PORT_MAX+1];
-
-struct pipeline_bvs_port_pktin_socket {
-    struct ind_ovs_pktin_socket pktin_soc;
-    bool in_use;
-};
-
-static struct pipeline_bvs_port_pktin_socket port_pktin_soc[SLSHARED_CONFIG_OF_PORT_MAX+1];
-
-static struct ind_ovs_pktin_socket sflow_pktin_soc;
-static struct ind_ovs_pktin_socket debug_acl_pktin_soc;
 
 /*
  * Switch -> Controller async msg channel selector.
@@ -163,25 +153,14 @@ pipeline_bvs_port_status_handler(of_port_status_t *port_status)
     of_port_desc_port_no_get(&port_desc, &port_no);
 
     if (reason == OF_PORT_CHANGE_REASON_ADD) {
-        AIM_ASSERT(port_pktin_soc[port_no].in_use == false,
-                   "Port %u already in use", port_no);
-
-        /* Create pktin socket for this port */
-        if (port_no <= SLSHARED_CONFIG_OF_PORT_MAX) {
-            ind_ovs_pktin_socket_register(&port_pktin_soc[port_no].pktin_soc,
-                                          pipeline_bvs_process_port_pktin,
-                                          PORT_PKTIN_INTERVAL, PKTIN_BURST);
-            port_pktin_soc[port_no].in_use = true;
-        }
+        pipeline_bvs_port_pktin_socket_register(port_no);
 
         /* Use tc to set up queues for this port */
         of_port_name_t if_name;
         of_port_desc_name_get(&port_desc, &if_name);
         pipeline_bvs_setup_tc(if_name);
-    } else if (reason == OF_PORT_CHANGE_REASON_DELETE &&
-        port_pktin_soc[port_no].in_use == true) {
-        ind_ovs_pktin_socket_unregister(&port_pktin_soc[port_no].pktin_soc);
-        port_pktin_soc[port_no].in_use = false;
+    } else if (reason == OF_PORT_CHANGE_REASON_DELETE) {
+        pipeline_bvs_port_pktin_socket_unregister(port_no);
     }
 
     return INDIGO_CORE_LISTENER_RESULT_PASS;
@@ -200,38 +179,6 @@ static void
 pipeline_bvs_port_status_unregister(void)
 {
     indigo_core_port_status_listener_unregister(pipeline_bvs_port_status_handler);
-}
-
-static void
-pipeline_bvs_pktin_socket_register()
-{
-    /* Register the sflow pktin socket */
-    ind_ovs_pktin_socket_register(&sflow_pktin_soc,
-                                  pipeline_bvs_process_sflow_pktin,
-                                  GLOBAL_PKTIN_INTERVAL, PKTIN_BURST);
-
-    /* Register the debug/acl pktin socket */
-    ind_ovs_pktin_socket_register(&debug_acl_pktin_soc, NULL,
-                                  GLOBAL_PKTIN_INTERVAL, PKTIN_BURST);
-}
-
-static void
-pipeline_bvs_pktin_socket_unregister()
-{
-    /* Unregister the sflow pktin socket */
-    ind_ovs_pktin_socket_unregister(&sflow_pktin_soc);
-
-    /* Unregister the debug/acl pktin socket */
-    ind_ovs_pktin_socket_unregister(&debug_acl_pktin_soc);
-
-    /* Unregister port pktin sockets */
-    int i;
-    for (i = 0; i <= SLSHARED_CONFIG_OF_PORT_MAX; i++) {
-        if (port_pktin_soc[i].in_use == true) {
-            ind_ovs_pktin_socket_unregister(&port_pktin_soc[i].pktin_soc);
-            port_pktin_soc[i].in_use = false;
-        }
-    }
 }
 
 static void
@@ -369,8 +316,9 @@ process_l2(struct ctx *ctx)
 
     if (ctx->key->in_port <= SLSHARED_CONFIG_OF_PORT_MAX &&
         port_sampling_rate[ctx->key->in_port]) {
-        uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(&sflow_pktin_soc);
         uint64_t userdata = IVS_PKTIN_USERDATA(0, OFP_BSN_PKTIN_FLAG_SFLOW);
+        struct ind_ovs_pktin_socket *pktin_soc = pipeline_bvs_get_pktin_socket(ctx->key->in_port, userdata);
+        uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(pktin_soc);
         action_sample_to_userspace(ctx->actx, &userdata, sizeof(uint64_t), netlink_port,
                                    port_sampling_rate[ctx->key->in_port]);
     }
@@ -400,14 +348,14 @@ process_l2(struct ctx *ctx)
                 AIM_LOG_VERBOSE("dropping CDP packet");
             } else {
                 AIM_LOG_VERBOSE("sending CDP packet directly to controller");
-                mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_PDU, port_pktin_soc[ctx->key->in_port].pktin_soc);
+                mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_PDU);
             }
             PIPELINE_STAT(PDU);
             mark_drop(ctx);
         } else {
             AIM_LOG_VERBOSE("sending ethertype %#x directly to controller", ntohs(ctx->key->ethertype));
             PIPELINE_STAT(PDU);
-            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_PDU, port_pktin_soc[ctx->key->in_port].pktin_soc);
+            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_PDU);
             mark_drop(ctx);
         }
     }
@@ -415,7 +363,7 @@ process_l2(struct ctx *ctx)
     if (!memcmp(ctx->key->ethernet.eth_dst, slow_protocols_mac.addr, OF_MAC_ADDR_BYTES)) {
         AIM_LOG_VERBOSE("sending slow protocols packet directly to controller");
         PIPELINE_STAT(PDU);
-        mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_PDU, port_pktin_soc[ctx->key->in_port].pktin_soc);
+        mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_PDU);
         mark_drop(ctx);
     }
 
@@ -440,7 +388,8 @@ process_l2(struct ctx *ctx)
         if (port_entry->value.packet_of_death) {
             AIM_LOG_VERBOSE("sending packet of death to cpu");
             uint64_t userdata = IVS_PKTIN_USERDATA(OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH, 0);
-            uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(&port_pktin_soc[ctx->key->in_port].pktin_soc);
+            struct ind_ovs_pktin_socket *pktin_soc = pipeline_bvs_get_pktin_socket(ctx->key->in_port, userdata);
+            uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(pktin_soc);
             action_userspace(ctx->actx, &userdata, sizeof(uint64_t), netlink_port);
         } else {
             AIM_LOG_VERBOSE("ignoring packet of death on not-allowed port");
@@ -539,7 +488,7 @@ process_l2(struct ctx *ctx)
             if (src_l2_entry->value.lag != ctx->ingress_lag) {
                 AIM_LOG_VERBOSE("incorrect lag_id in source l2table lookup (station move)");
                 PIPELINE_STAT(STATION_MOVE);
-                mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_STATION_MOVE, port_pktin_soc[ctx->key->in_port].pktin_soc);
+                mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_STATION_MOVE);
                 mark_drop(ctx);
             }
         }
@@ -547,7 +496,7 @@ process_l2(struct ctx *ctx)
         if (!disable_src_mac_check) {
             AIM_LOG_VERBOSE("miss in source l2table lookup (new host)");
             PIPELINE_STAT(NEW_HOST);
-            mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_NEW_HOST, port_pktin_soc[ctx->key->in_port].pktin_soc);
+            mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_NEW_HOST);
             mark_drop(ctx);
         }
     }
@@ -557,7 +506,7 @@ process_l2(struct ctx *ctx)
         if (port_entry->value.arp_offload) {
             AIM_LOG_VERBOSE("sending ARP packet to agent");
             PIPELINE_STAT(ARP_OFFLOAD);
-            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_ARP, port_pktin_soc[ctx->key->in_port].pktin_soc);
+            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_ARP);
             /* Continue forwarding packet */
         }
 
@@ -565,7 +514,7 @@ process_l2(struct ctx *ctx)
                 ctx->internal_vlan_vid, ntohl(ctx->key->arp.arp_tip))) {
             AIM_LOG_VERBOSE("trapping ARP packet to VLAN %u IP %{ipv4a}", ctx->internal_vlan_vid, ntohl(ctx->key->arp.arp_tip));
             PIPELINE_STAT(ARP_OFFLOAD_TRAP);
-            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_ARP_TARGET, port_pktin_soc[ctx->key->in_port].pktin_soc);
+            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_ARP_TARGET);
             mark_drop(ctx);
             process_pktin(ctx);
             return;
@@ -579,7 +528,7 @@ process_l2(struct ctx *ctx)
                 !memcmp(ctx->key->ethernet.eth_dst, &broadcast_mac, OF_MAC_ADDR_BYTES)) {
             AIM_LOG_VERBOSE("sending DHCP packet to agent");
             PIPELINE_STAT(DHCP_OFFLOAD);
-            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_DHCP, port_pktin_soc[ctx->key->in_port].pktin_soc);
+            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_DHCP);
         }
     }
 
@@ -673,7 +622,7 @@ process_l3(struct ctx *ctx)
     if (bad_ttl) {
         AIM_LOG_VERBOSE("sending TTL expired packet to agent");
         PIPELINE_STAT(BAD_TTL);
-        mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_TTL_EXPIRED, port_pktin_soc[ctx->key->in_port].pktin_soc);
+        mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_TTL_EXPIRED);
         mark_drop(ctx);
         process_debug(ctx);
         process_pktin(ctx);
@@ -713,12 +662,12 @@ process_l3(struct ctx *ctx)
 
     if (l3_cpu) {
         AIM_LOG_VERBOSE("L3 copy to CPU");
-        mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_L3_CPU, port_pktin_soc[ctx->key->in_port].pktin_soc);
+        mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_L3_CPU);
     }
 
     if (acl_cpu) {
         AIM_LOG_VERBOSE("Ingress ACL copy to CPU");
-        mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_INGRESS_ACL, debug_acl_pktin_soc);
+        mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_INGRESS_ACL);
     }
 
     if (l3_cpu || acl_cpu) {
@@ -740,7 +689,7 @@ process_l3(struct ctx *ctx)
             AIM_LOG_VERBOSE("L3 miss");
             PIPELINE_STAT(L3_MISS);
             mark_drop(ctx);
-            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_L3_MISS, port_pktin_soc[ctx->key->in_port].pktin_soc);
+            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_L3_MISS);
         } else if (!valid_next_hop) {
             AIM_LOG_VERBOSE("L3 null route");
             PIPELINE_STAT(L3_NULL_ROUTE);
@@ -847,7 +796,7 @@ process_debug(struct ctx *ctx)
         if (!(ctx->pktin_metadata & (OFP_BSN_PKTIN_FLAG_ARP|
                                      OFP_BSN_PKTIN_FLAG_DHCP|
                                      OFP_BSN_PKTIN_FLAG_STATION_MOVE))) {
-            mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_DEBUG, debug_acl_pktin_soc);
+            mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_DEBUG);
         }
     }
 
@@ -1117,19 +1066,17 @@ make_ingress_acl_key(struct ctx *ctx)
 }
 
 static void
-mark_pktin_agent(struct ctx *ctx, uint64_t flag, struct ind_ovs_pktin_socket pktin_soc)
+mark_pktin_agent(struct ctx *ctx, uint64_t flag)
 {
     ctx->pktin_agent = true;
     ctx->pktin_metadata |= flag;
-    ctx->pktin_soc = pktin_soc;
 }
 
 static void
-mark_pktin_controller(struct ctx *ctx, uint64_t flag, struct ind_ovs_pktin_socket pktin_soc)
+mark_pktin_controller(struct ctx *ctx, uint64_t flag)
 {
     ctx->pktin_controller = true;
     ctx->pktin_metadata |= flag;
-    ctx->pktin_soc = pktin_soc;
 }
 
 static void
@@ -1144,7 +1091,8 @@ process_pktin(struct ctx *ctx)
     if (ctx->pktin_agent || ctx->pktin_controller) {
         uint8_t reason = ctx->pktin_controller ? OF_PACKET_IN_REASON_ACTION : OF_PACKET_IN_REASON_NO_MATCH;
         uint64_t userdata = IVS_PKTIN_USERDATA(reason, ctx->pktin_metadata);
-        uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(&ctx->pktin_soc);
+        struct ind_ovs_pktin_socket *pktin_soc = pipeline_bvs_get_pktin_socket(ctx->key->in_port, userdata);
+        uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(pktin_soc);
         action_userspace(ctx->actx, &userdata, sizeof(uint64_t), netlink_port);
     }
 }
@@ -1167,7 +1115,7 @@ process_floating_ip(struct ctx *ctx)
                 pipeline_bvs_table_arp_cache_lookup(v->new_vlan_vid,
                                                     ntohl(ctx->key->ipv4.ipv4_dst));
             if (!arp_cache_entry) {
-                mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_ARP_CACHE, port_pktin_soc[ctx->key->in_port].pktin_soc);
+                mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_ARP_CACHE);
                 process_pktin(ctx);
                 return true;
             }
