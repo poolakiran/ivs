@@ -67,7 +67,8 @@ pipeline_bvs_get_pktin_socket(of_port_no_t port_no, uint64_t userdata)
 
     if (metadata & OFP_BSN_PKTIN_FLAG_SFLOW) {
         return &sflow_pktin_soc;
-    } else if (metadata & (OFP_BSN_PKTIN_FLAG_INGRESS_ACL|OFP_BSN_PKTIN_FLAG_DEBUG)) {
+    } else if ((metadata ^ OFP_BSN_PKTIN_FLAG_INGRESS_ACL) == 0 ||
+        (metadata ^ OFP_BSN_PKTIN_FLAG_DEBUG) == 0) {
         return &debug_acl_pktin_soc;
     }
 
@@ -102,9 +103,7 @@ process_port_pktin(uint8_t *data, unsigned int len,
     if (metadata & OFP_BSN_PKTIN_FLAG_STATION_MOVE ||
         metadata & OFP_BSN_PKTIN_FLAG_NEW_HOST ||
         metadata & OFP_BSN_PKTIN_FLAG_ARP_CACHE) {
-        debug_counter_inc(&ctrl_pktin);
-        ind_ovs_pktin(pkey->in_port, data, len, reason, metadata, pkey);
-        return;
+        goto send_to_controller;
     }
 
     ppe_packet_t ppep;
@@ -157,8 +156,18 @@ process_port_pktin(uint8_t *data, unsigned int len,
         }
     }
 
+    /*
+     * Identify if the packet-in has debug/acl flag set
+     * Debug/ACL packet-in's should always go the controller
+     */
+    bool debug_acl_flag = metadata & (OFP_BSN_PKTIN_FLAG_INGRESS_ACL|OFP_BSN_PKTIN_FLAG_DEBUG);
+
     if (result == INDIGO_CORE_LISTENER_RESULT_DROP) {
-        return;
+        if (debug_acl_flag) {
+            goto send_to_controller;
+        } else {
+            return;
+        }
     }
 
     /*
@@ -171,10 +180,14 @@ process_port_pktin(uint8_t *data, unsigned int len,
         result = icmpa_send(&ppep, pkey->in_port, 11, 0);
     }
 
-    if (result != INDIGO_CORE_LISTENER_RESULT_DROP) {
-        debug_counter_inc(&ctrl_pktin);
-        ind_ovs_pktin(pkey->in_port, data, len, reason, metadata, pkey);
+    if (result == INDIGO_CORE_LISTENER_RESULT_DROP && !debug_acl_flag) {
+        return;
     }
+
+send_to_controller:
+    debug_counter_inc(&ctrl_pktin);
+    ind_ovs_pktin(pkey->in_port, data, len, reason, metadata, pkey);
+    return;
 }
 
 /*
