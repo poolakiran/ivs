@@ -20,7 +20,6 @@
 #ifndef PACKET_OF_DEATH_H
 #define PACKET_OF_DEATH_H
 
-void
-process_packet_of_death(of_octets_t *data);
+void pipeline_bvs_process_packet_of_death(of_octets_t *data);
 
 #endif

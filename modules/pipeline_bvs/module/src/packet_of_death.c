@@ -57,7 +57,7 @@ static const uint8_t packet_of_death[] = {
 };
 
 void
-process_packet_of_death(of_octets_t *data)
+pipeline_bvs_process_packet_of_death(of_octets_t *data)
 {
     if (data->bytes != sizeof(packet_of_death)
         || memcmp(data->data, packet_of_death, sizeof(packet_of_death))) {

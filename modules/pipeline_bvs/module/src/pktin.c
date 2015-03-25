@@ -94,7 +94,7 @@ process_port_pktin(uint8_t *data, unsigned int len,
 
     if (reason == OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH) {
         debug_counter_inc(&packet_of_death_pktin);
-        process_packet_of_death(&octets);
+        pipeline_bvs_process_packet_of_death(&octets);
         return;
     }
 
