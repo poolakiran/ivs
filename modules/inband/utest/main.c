@@ -87,7 +87,6 @@ static indigo_port_info_t port_info[] = {
     { NULL, "eth2", 3 },
 };
 
-static indigo_core_packet_in_listener_f listener = NULL;
 static const char *expected_adds[32], *expected_removes[32];
 static int num_expected_adds, num_expected_removes;
 static const char *controller_ips[1024];
@@ -99,19 +98,15 @@ packet_in(const uint8_t *data, int length,
           of_port_no_t in_port,
           enum listener_result_assertion expect)
 {
-    of_packet_in_t *obj = of_packet_in_new(OF_VERSION_1_3);
-    of_match_t match = { 0 };
-    match.version = OF_VERSION_1_3;
-    match.fields.in_port = in_port;
-    OF_MATCH_MASK_IN_PORT_EXACT_SET(&match);
-    AIM_TRUE_OR_DIE(of_packet_in_match_set(obj, &match) == 0);
-    of_octets_t octets = { .data = (uint8_t *)data, .bytes = length };
-    AIM_TRUE_OR_DIE(of_packet_in_data_set(obj, &octets) == 0);
-    indigo_core_listener_result_t result = listener(obj);
+    ppe_packet_t ppep;
+    ppe_packet_init(&ppep, (uint8_t *)data, length);
+    if (ppe_parse(&ppep) < 0) {
+        return;
+    }
+    indigo_core_listener_result_t result = inband_receive_packet(&ppep, in_port);
     if (expect != DONTCARE) {
         AIM_ASSERT(expect == (int)result);
     }
-    of_object_delete(obj);
 }
 
 /*
@@ -382,8 +377,6 @@ int aim_main(int argc, char* argv[])
 
     inband_init();
 
-    assert(listener != NULL);
-
     test_basic();
     test_corrupt();
     test_invalid();
@@ -393,14 +386,6 @@ int aim_main(int argc, char* argv[])
 }
 
 /* OFStateManager stubs */
-
-indigo_error_t
-indigo_core_packet_in_listener_register(indigo_core_packet_in_listener_f fn)
-{
-    assert(listener == NULL);
-    listener = fn;
-    return INDIGO_ERROR_NONE;
-}
 
 indigo_error_t
 indigo_core_dpid_get(of_dpid_t *dpid)

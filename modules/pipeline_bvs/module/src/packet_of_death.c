@@ -1,6 +1,6 @@
 /****************************************************************
  *
- *        Copyright 2014, Big Switch Networks, Inc.
+ *        Copyright 2015, Big Switch Networks, Inc.
  *
  * Licensed under the Eclipse Public License, Version 1.0 (the
  * "License"); you may not use this file except in compliance
@@ -17,8 +17,12 @@
  *
  ****************************************************************/
 
-#include "ovs_driver_int.h"
-#include <indigo/of_state_manager.h>
+#include "pipeline_bvs_int.h"
+#include "packet_of_death.h"
+#include <indigo/port_manager.h>
+#include <sys/ioctl.h>
+#include <errno.h>
+#include <unistd.h>
 
 #ifndef _LINUX_IF_H
 /* Some versions of libnetlink include linux/if.h, which conflicts with net/if.h. */
@@ -52,42 +56,57 @@ static const uint8_t packet_of_death[] = {
     0x00, 0x00
 };
 
-static indigo_core_listener_result_t
-ind_ovs_packet_of_death_listener(of_packet_in_t *msg)
+void
+pipeline_bvs_process_packet_of_death(of_octets_t *data)
 {
-    uint8_t reason;
-    of_packet_in_reason_get(msg, &reason);
-    if (reason != OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH) {
-        return INDIGO_CORE_LISTENER_RESULT_PASS;
-    }
-
-    of_octets_t data;
-    of_packet_in_data_get(msg, &data);
-    if (data.bytes != sizeof(packet_of_death)
-            || memcmp(data.data, packet_of_death, sizeof(packet_of_death))) {
-        AIM_LOG_VERBOSE("Received malformed packet of death, dropping");
-        return INDIGO_CORE_LISTENER_RESULT_DROP;
+    if (data->bytes != sizeof(packet_of_death)
+        || memcmp(data->data, packet_of_death, sizeof(packet_of_death))) {
+        AIM_LOG_VERBOSE("Received malformed packet of death");
+        return;
     }
 
     AIM_LOG_WARN("Received packet of death, shutting down all ports");
 
-    int i;
-    for (i = 0; i < IND_OVS_MAX_PORTS; i++) {
-        struct ind_ovs_port *port = ind_ovs_ports[i];
-        if (port) {
-            port->admin_down = true;
-            port->ifflags &= ~IFF_UP;
-            (void) ind_ovs_set_interface_flags(port->ifname, port->ifflags);
+    indigo_port_info_t *port_list, *port_info;
+    if (indigo_port_interface_list(&port_list) < 0) {
+        AIM_LOG_VERBOSE("Failed to retrive port list");
+        return;
+    }
+
+    int sock = socket(AF_PACKET, SOCK_RAW, 0);
+    if (sock < 0) {
+        return;
+    }
+
+    for (port_info = port_list; port_info; port_info = port_info->next) {
+        struct ifreq req;
+        strncpy(req.ifr_name, port_info->port_name, sizeof(req.ifr_name));
+
+        /*
+         * Execute the SIOCGIFFLAGS ioctl on the given interface,
+         * to get the current ifflags.
+         */
+        if (ioctl(sock, SIOCGIFFLAGS, &req) < 0) {
+            /* Not a netdev, continue */
+            continue;
+        } else {
+            req.ifr_flags &= ~IFF_UP;
+
+            /*
+            * Execute the SIOCSIFFLAGS ioctl on the given interface,
+            * to set the new ifflags.
+            */
+            if (ioctl(sock, SIOCSIFFLAGS, &req) < 0) {
+                AIM_LOG_VERBOSE("Failed to set ifflags for port %u: %s",
+                                port_info->of_port, strerror(errno));
+                goto cleanup;
+            }
         }
     }
 
-    ind_ovs_kflow_invalidate_all();
+    ind_ovs_barrier_defer_revalidation(-1);
 
-    return INDIGO_CORE_LISTENER_RESULT_DROP;
-}
-
-void
-ind_ovs_packet_of_death_init(void)
-{
-    indigo_core_packet_in_listener_register(ind_ovs_packet_of_death_listener);
+cleanup:
+    indigo_port_interface_list_destroy(port_list);
+    close(sock);
 }

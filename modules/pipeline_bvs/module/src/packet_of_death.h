@@ -1,6 +1,6 @@
 /****************************************************************
  *
- *        Copyright 2014, Big Switch Networks, Inc.
+ *        Copyright 2015, Big Switch Networks, Inc.
  *
  * Licensed under the Eclipse Public License, Version 1.0 (the
  * "License"); you may not use this file except in compliance
@@ -17,14 +17,9 @@
  *
  ****************************************************************/
 
-#ifndef INBAND_H
-#define INBAND_H
+#ifndef PACKET_OF_DEATH_H
+#define PACKET_OF_DEATH_H
 
-#include <indigo/of_state_manager.h>
-#include <PPE/ppe.h>
+void pipeline_bvs_process_packet_of_death(of_octets_t *data);
 
-void inband_init(void);
-indigo_core_listener_result_t inband_receive_packet(ppe_packet_t *ppep,
-                                                    of_port_no_t in_port);
-
-#endif /* INBAND_H */
+#endif

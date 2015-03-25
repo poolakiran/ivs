@@ -140,6 +140,47 @@ port_sampling_rate_set(of_port_no_t port_no, uint32_t sampling_rate,
     return INDIGO_ERROR_NONE;
 }
 
+static indigo_core_listener_result_t
+pipeline_bvs_port_status_handler(of_port_status_t *port_status)
+{
+    uint8_t reason;
+
+    of_port_status_reason_get(port_status, &reason);
+    of_port_desc_t port_desc;
+    of_port_status_desc_bind(port_status, &port_desc);
+
+    of_port_no_t port_no;
+    of_port_desc_port_no_get(&port_desc, &port_no);
+
+    if (reason == OF_PORT_CHANGE_REASON_ADD) {
+        pipeline_bvs_port_pktin_socket_register(port_no);
+
+        /* Use tc to set up queues for this port */
+        of_port_name_t if_name;
+        of_port_desc_name_get(&port_desc, &if_name);
+        pipeline_bvs_setup_tc(if_name);
+    } else if (reason == OF_PORT_CHANGE_REASON_DELETE) {
+        pipeline_bvs_port_pktin_socket_unregister(port_no);
+    }
+
+    return INDIGO_CORE_LISTENER_RESULT_PASS;
+}
+
+static void
+pipeline_bvs_port_status_register(void)
+{
+    /* Register listener for port_status msg */
+    if (indigo_core_port_status_listener_register(pipeline_bvs_port_status_handler) < 0) {
+        AIM_LOG_ERROR("Failed to register for port_status");
+    }
+}
+
+static void
+pipeline_bvs_port_status_unregister(void)
+{
+    indigo_core_port_status_listener_unregister(pipeline_bvs_port_status_handler);
+}
+
 static void
 pipeline_bvs_init(const char *name)
 {
@@ -181,9 +222,10 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_lag_register();
     pipeline_bvs_table_span_register();
     pipeline_bvs_table_ecmp_register();
-    pipeline_bvs_qos_register();
     pipeline_inband_queue_priority_set(QUEUE_PRIORITY_INBAND);
     pipeline_bvs_stats_init();
+    pipeline_bvs_port_status_register();
+    pipeline_bvs_pktin_socket_register();
 }
 
 static void
@@ -220,9 +262,10 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_lag_unregister();
     pipeline_bvs_table_span_unregister();
     pipeline_bvs_table_ecmp_unregister();
-    pipeline_bvs_qos_unregister();
     pipeline_inband_queue_priority_set(QUEUE_PRIORITY_INVALID);
     pipeline_bvs_stats_finish();
+    pipeline_bvs_port_status_unregister();
+    pipeline_bvs_pktin_socket_unregister();
 }
 
 static indigo_error_t
@@ -273,8 +316,11 @@ process_l2(struct ctx *ctx)
 
     if (ctx->key->in_port <= SLSHARED_CONFIG_OF_PORT_MAX &&
         port_sampling_rate[ctx->key->in_port]) {
-        action_sample_to_controller(ctx->actx, IVS_PKTIN_USERDATA(0, OFP_BSN_PKTIN_FLAG_SFLOW),
-                                    port_sampling_rate[ctx->key->in_port]);
+        uint64_t userdata = IVS_PKTIN_USERDATA(0, OFP_BSN_PKTIN_FLAG_SFLOW);
+        struct ind_ovs_pktin_socket *pktin_soc = pipeline_bvs_get_pktin_socket(ctx->key->in_port, userdata);
+        uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(pktin_soc);
+        action_sample_to_userspace(ctx->actx, &userdata, sizeof(uint64_t), netlink_port,
+                                   port_sampling_rate[ctx->key->in_port]);
     }
 
     struct ind_ovs_port_counters *port_counters = ind_ovs_port_stats_select(ctx->key->in_port);
@@ -341,7 +387,10 @@ process_l2(struct ctx *ctx)
         PIPELINE_STAT(PACKET_OF_DEATH);
         if (port_entry->value.packet_of_death) {
             AIM_LOG_VERBOSE("sending packet of death to cpu");
-            action_controller(ctx->actx, IVS_PKTIN_USERDATA(OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH, 0));
+            uint64_t userdata = IVS_PKTIN_USERDATA(OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH, 0);
+            struct ind_ovs_pktin_socket *pktin_soc = pipeline_bvs_get_pktin_socket(ctx->key->in_port, userdata);
+            uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(pktin_soc);
+            action_userspace(ctx->actx, &userdata, sizeof(uint64_t), netlink_port);
         } else {
             AIM_LOG_VERBOSE("ignoring packet of death on not-allowed port");
         }
@@ -1041,7 +1090,10 @@ process_pktin(struct ctx *ctx)
 {
     if (ctx->pktin_agent || ctx->pktin_controller) {
         uint8_t reason = ctx->pktin_controller ? OF_PACKET_IN_REASON_ACTION : OF_PACKET_IN_REASON_NO_MATCH;
-        action_controller(ctx->actx, IVS_PKTIN_USERDATA(reason, ctx->pktin_metadata));
+        uint64_t userdata = IVS_PKTIN_USERDATA(reason, ctx->pktin_metadata);
+        struct ind_ovs_pktin_socket *pktin_soc = pipeline_bvs_get_pktin_socket(ctx->key->in_port, userdata);
+        uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(pktin_soc);
+        action_userspace(ctx->actx, &userdata, sizeof(uint64_t), netlink_port);
     }
 }
 

@@ -244,8 +244,6 @@ ind_ovs_init(const char *datapath_name)
     ind_ovs_pktin_socket_register(&ind_ovs_pktout_soc, NULL, PKTIN_INTERVAL,
                                   PKTIN_BURST_SIZE);
 
-    ind_ovs_packet_of_death_init();
-
     if ((ret = ind_ovs_create_datapath(datapath_name)) != 0) {
         LOG_ERROR("failed to create OVS datapath");
         return ret;

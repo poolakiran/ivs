@@ -82,39 +82,19 @@ static debug_counter_t sent_lldp_reply;
 static debug_counter_t invalid_management_tlv;
 static debug_counter_t controller_add_failed;
 
-static indigo_core_listener_result_t
-pktin_listener(of_packet_in_t *packet_in)
+indigo_core_listener_result_t
+inband_receive_packet(ppe_packet_t *ppep, of_port_no_t in_port)
 {
-    if (packet_in->version < OF_VERSION_1_3) {
-        return INDIGO_CORE_LISTENER_RESULT_PASS;
-    }
-
-    of_match_t match;
-    if (of_packet_in_match_get(packet_in, &match) < 0) {
-        AIM_LOG_ERROR("Failed to parse packet-in match");
-        return INDIGO_CORE_LISTENER_RESULT_PASS;
-    }
-
-    if (!ind_ovs_uplink_check(match.fields.in_port)) {
+    if (!ind_ovs_uplink_check(in_port)) {
         AIM_LOG_TRACE("Not received on an uplink port");
         return INDIGO_CORE_LISTENER_RESULT_PASS;
     }
 
-    of_octets_t octets;
-    of_packet_in_data_get(packet_in, &octets);
-
     /*
-     * Identify if this is an LLDP Packet
+     * Get the start of LLDP header
      */
-    ppe_packet_t ppep;
-    ppe_packet_init(&ppep, octets.data, octets.bytes);
-    if (ppe_parse(&ppep) < 0) {
-        AIM_LOG_WARN("Packet-in parsing failed");
-        return INDIGO_CORE_LISTENER_RESULT_PASS;
-    }
-
     uint8_t *header;
-    if ((header = ppe_header_get(&ppep, PPE_HEADER_LLDP)) == NULL) {
+    if ((header = ppe_header_get(ppep, PPE_HEADER_LLDP)) == NULL) {
         AIM_LOG_VERBOSE("Not an LLDP packet");
         return INDIGO_CORE_LISTENER_RESULT_PASS;
     }
@@ -127,7 +107,7 @@ pktin_listener(of_packet_in_t *packet_in)
     int num_new_controllers = 0;
 
     struct lldp_tlv tlv;
-    int remain = octets.bytes - (header - octets.data);
+    int remain = ppep->size - (header - ppep->data);
     const uint8_t *pos = header;
     while (inband_lldp_parse_tlv(&pos, &remain, &tlv)) {
         AIM_LOG_TRACE("Found tlv type=%u oui=%u subtype=%u payload_length=%u", tlv.type, tlv.oui, tlv.subtype, tlv.payload_length);
@@ -184,7 +164,7 @@ pktin_listener(of_packet_in_t *packet_in)
 
     synchronize_controllers(new_controllers, num_new_controllers);
 
-    send_lldp_reply(match.fields.in_port);
+    send_lldp_reply(in_port);
 
     retarget_logger();
 
@@ -375,8 +355,6 @@ get_port_name(of_port_no_t port, indigo_port_name_t port_name)
 void
 inband_init(void)
 {
-    (void) indigo_core_packet_in_listener_register(pktin_listener);
-
     debug_counter_register(&received_uplink_lldp, "inband.received_uplink_lldp",
                            "Received an LLDP on an uplink port");
     debug_counter_register(&sent_lldp_reply, "inband.sent_lldp_reply",
