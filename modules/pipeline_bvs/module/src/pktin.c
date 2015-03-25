@@ -20,6 +20,7 @@
 #include "pipeline_bvs_int.h"
 #include "packet_of_death.h"
 #include <inband/inband.h>
+#include <cdpa/cdpa.h>
 #include <lldpa/lldpa.h>
 #include <lacpa/lacpa.h>
 #include <arpa/arpa.h>
@@ -47,6 +48,8 @@ static struct pipeline_bvs_port_pktin_socket port_pktin_soc[SLSHARED_CONFIG_OF_P
 
 static struct ind_ovs_pktin_socket sflow_pktin_soc;
 static struct ind_ovs_pktin_socket debug_acl_pktin_soc;
+
+static const of_mac_addr_t cdp_mac = { { 0x01, 0x00, 0x0c, 0xcc, 0xcc, 0xcc } };
 
 /*
  * Returns true if a given port is ephemeral, else returns false
@@ -124,7 +127,9 @@ process_port_pktin(uint8_t *data, unsigned int len,
      * since echo/traceroute response will take precedence.
      */
     indigo_core_listener_result_t result = INDIGO_CORE_LISTENER_RESULT_PASS;
-    if (ppe_header_get(&ppep, PPE_HEADER_LLDP)) {
+    if (!memcmp(data, cdp_mac.addr, OF_MAC_ADDR_BYTES)) {
+        result = cdpa_receive_packet(&octets, pkey->in_port);
+    } else if (ppe_header_get(&ppep, PPE_HEADER_LLDP)) {
         inband_receive_packet(&ppep, pkey->in_port);
         result = lldpa_receive_packet(&octets, pkey->in_port);
     } else if (ppe_header_get(&ppep, PPE_HEADER_LACP)) {
