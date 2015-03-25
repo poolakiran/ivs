@@ -54,7 +54,7 @@ GLOBAL_LINK_LIBS += -ldl
 endif
 
 # Closed source modules
-DEPENDMODULES += pipeline_bvs lpm inband lldpa lacpa arpa router_ip_table icmpa dhcpra nat slshared slot_allocator host_sflow sflowa host_stats
+DEPENDMODULES += pipeline_bvs lpm inband lldpa lacpa arpa router_ip_table icmpa dhcpra nat slshared slot_allocator host_sflow sflowa host_stats cdpa
 
 #
 # Resolve module dependencies
@@ -100,6 +100,7 @@ GLOBAL_CFLAGS += -DAIM_CONFIG_INCLUDE_MODULES_INIT=1
 GLOBAL_CFLAGS += -DAIM_CONFIG_INCLUDE_MAIN=1
 GLOBAL_CFLAGS += -DAIM_CONFIG_INCLUDE_PVS_SYSLOG=1
 GLOBAL_CFLAGS += -DAIM_CONFIG_LOG_INCLUDE_ENV_VARIABLES=0
+GLOBAL_CFLAGS += -DAIM_CONFIG_INCLUDE_GNU_SOURCE=1
 GLOBAL_CFLAGS += -DSOCKETMANAGER_CONFIG_MAX_TIMERS=512
 GLOBAL_CFLAGS += -DSOCKETMANAGER_CONFIG_MAX_SOCKETS=4096
 GLOBAL_CFLAGS += -DBIGRING_CONFIG_INCLUDE_LOCKING=0
@@ -151,6 +152,10 @@ GLOBAL_LINK_LIBS += $(LIBNL_LIBS)
 
 ifdef BUILD_ID
 GLOBAL_CFLAGS += "-DBUILD_ID=$(BUILD_ID)"
+endif
+
+ifdef BUILD_OS
+GLOBAL_CFLAGS += "-DBUILD_OS=$(BUILD_OS)"
 endif
 
 
