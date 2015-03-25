@@ -442,6 +442,8 @@ process_l2(struct ctx *ctx)
         AIM_LOG_VERBOSE("Packet received on unconfigured vlan %u (bad VLAN)", vlan_vid);
         PIPELINE_STAT(BAD_VLAN);
         mark_drop(ctx);
+        process_debug(ctx);
+        process_pktin(ctx);
         return;
     }
 
