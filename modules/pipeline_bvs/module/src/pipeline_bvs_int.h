@@ -81,6 +81,8 @@
 #define FORMAT_IPV4 "%hhu.%hhu.%hhu.%hhu"
 #define VALUE_IPV4(a) (a)[0],(a)[1],(a)[2],(a)[3]
 
+#define INTERNAL_PRIORITY_INVALID UINT32_MAX
+
 enum table_id {
     TABLE_ID_L2 = 0,
     TABLE_ID_VLAN = 1,
