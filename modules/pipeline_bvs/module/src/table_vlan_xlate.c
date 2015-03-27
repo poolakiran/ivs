@@ -54,6 +54,7 @@ parse_value(of_flow_add_t *obj, struct vlan_xlate_value *value)
     of_list_instruction_t insts;
     of_object_t inst;
     bool seen_new_vlan_vid = false;
+    value->internal_priority = INTERNAL_PRIORITY_INVALID;
 
     of_flow_add_instructions_bind(obj, &insts);
     OF_LIST_INSTRUCTION_ITER(&insts, &inst, rv) {
@@ -87,6 +88,9 @@ parse_value(of_flow_add_t *obj, struct vlan_xlate_value *value)
             }
             break;
         }
+        case OF_INSTRUCTION_BSN_INTERNAL_PRIORITY:
+            of_instruction_bsn_internal_priority_value_get(&inst, &value->internal_priority);
+            break;
         default:
             AIM_LOG_ERROR("Unexpected instruction %s in vlan_xlate table", of_object_id_str[inst.object_id]);
             goto error;

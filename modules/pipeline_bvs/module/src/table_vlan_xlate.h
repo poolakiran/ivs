@@ -29,6 +29,7 @@ AIM_STATIC_ASSERT(VLAN_XLATE_KEY_SIZE, sizeof(struct vlan_xlate_key) == 8);
 
 struct vlan_xlate_value {
     uint16_t new_vlan_vid;
+    uint32_t internal_priority;
 };
 
 struct vlan_xlate_entry {
