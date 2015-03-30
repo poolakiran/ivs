@@ -32,7 +32,6 @@ struct priority_to_queue_value {
 struct priority_to_queue_entry {
     struct priority_to_queue_key key;
     struct priority_to_queue_value value;
-    list_links_t links;
 };
 
 void pipeline_bvs_table_priority_to_queue_register(void);
