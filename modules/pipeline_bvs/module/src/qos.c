@@ -123,7 +123,7 @@ pipeline_bvs_setup_tc(char *ifname)
             tcmsg.tcm_parent = TC_H_MAKE(1<<16, i+1);
             tcmsg.tcm_handle = TC_H_MAKE((10+i) << 16, 0);
             nlmsg_append(msg, &tcmsg, sizeof(tcmsg), NLMSG_ALIGNTO);
-            if (i == QUEUE_PRIORITY_UNCLASSIFIED || i == QUEUE_PRIORITY_UNUSED ||
+            if (i == QUEUE_PRIORITY_UNUSED_1 || i == QUEUE_PRIORITY_UNUSED_2 ||
                 i == QUEUE_PRIORITY_PDU) {
                 nla_put_string(msg, TCA_KIND, "pfifo");
                 struct tc_fifo_qopt opt = { .limit=100 };
