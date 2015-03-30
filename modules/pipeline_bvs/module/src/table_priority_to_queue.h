@@ -1,6 +1,6 @@
 /****************************************************************
  *
- *        Copyright 2014, Big Switch Networks, Inc.
+ *        Copyright 2015, Big Switch Networks, Inc.
  *
  * Licensed under the Eclipse Public License, Version 1.0 (the
  * "License"); you may not use this file except in compliance
@@ -17,29 +17,26 @@
  *
  ****************************************************************/
 
-#ifndef TABLE_VLAN_XLATE_H
-#define TABLE_VLAN_XLATE_H
+#ifndef TABLE_PRIORITY_TO_QUEUE_H
+#define TABLE_PRIORITY_TO_QUEUE_H
 
-struct vlan_xlate_key {
-    uint32_t vlan_xlate_port_group_id;
-    uint16_t vlan_vid;
-    uint16_t pad;
-};
-AIM_STATIC_ASSERT(VLAN_XLATE_KEY_SIZE, sizeof(struct vlan_xlate_key) == 8);
-
-struct vlan_xlate_value {
-    uint16_t new_vlan_vid;
+struct priority_to_queue_key {
     uint32_t internal_priority;
 };
+AIM_STATIC_ASSERT(PRIORITY_TO_QUEUE_KEY_SIZE, sizeof(struct priority_to_queue_key) == 4);
 
-struct vlan_xlate_entry {
-    bighash_entry_t hash_entry;
-    struct vlan_xlate_key key;
-    struct vlan_xlate_value value;
+struct priority_to_queue_value {
+    uint32_t queue_id;
 };
 
-void pipeline_bvs_table_vlan_xlate_register(void);
-void pipeline_bvs_table_vlan_xlate_unregister(void);
-struct vlan_xlate_entry *pipeline_bvs_table_vlan_xlate_lookup(uint32_t vlan_xlate_port_group_id, uint16_t vlan_vid);
+struct priority_to_queue_entry {
+    struct priority_to_queue_key key;
+    struct priority_to_queue_value value;
+    list_links_t links;
+};
+
+void pipeline_bvs_table_priority_to_queue_register(void);
+void pipeline_bvs_table_priority_to_queue_unregister(void);
+struct priority_to_queue_entry* pipeline_bvs_table_priority_to_queue_lookup(uint32_t internal_priority);
 
 #endif

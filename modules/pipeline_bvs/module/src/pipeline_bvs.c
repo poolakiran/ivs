@@ -226,6 +226,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_stats_init();
     pipeline_bvs_port_status_register();
     pipeline_bvs_pktin_socket_register();
+    pipeline_bvs_table_priority_to_queue_register();
 }
 
 static void
@@ -266,6 +267,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_stats_finish();
     pipeline_bvs_port_status_unregister();
     pipeline_bvs_pktin_socket_unregister();
+    pipeline_bvs_table_priority_to_queue_unregister();
 }
 
 static indigo_error_t

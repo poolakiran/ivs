@@ -84,6 +84,7 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
     value->require_vlan_xlate = false;
     value->disable_vlan_counters = false;
     value->ingress_lag = NULL;
+    value->internal_priority = INTERNAL_PRIORITY_INVALID;
 
     of_flow_add_instructions_bind(obj, &insts);
     OF_LIST_INSTRUCTION_ITER(&insts, &inst, rv) {
@@ -168,6 +169,9 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
             break;
         case OF_INSTRUCTION_BSN_SPAN_DESTINATION: /* fall-through */
         case OF_INSTRUCTION_BSN_AUTO_NEGOTIATION:
+            break;
+        case OF_INSTRUCTION_BSN_INTERNAL_PRIORITY:
+            of_instruction_bsn_internal_priority_value_get(&inst, &value->internal_priority);
             break;
         default:
             AIM_LOG_ERROR("Unexpected instruction %s in port table", of_object_id_str[inst.object_id]);
