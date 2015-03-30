@@ -104,8 +104,8 @@ priority_to_queue_add(void *table_priv, of_list_bsn_tlv_t *key_tlvs,
     entry->key = key;
     entry->value = value;
 
-    AIM_LOG_TRACE("Create priority_to_queue entry prio=%u -> queue_id=%u",
-                  entry->key.internal_priority, entry->value.queue_id);
+    AIM_LOG_VERBOSE("Create priority_to_queue entry prio=%u -> queue_id=%u",
+                    entry->key.internal_priority, entry->value.queue_id);
     list_push(&priority_to_queue_list, &entry->links);
 
     *entry_priv = entry;
@@ -125,9 +125,9 @@ priority_to_queue_modify(void *table_priv, void *entry_priv,
         return rv;
     }
 
-    AIM_LOG_TRACE("Modify priority_to_queue entry prio=%u from queue_id=%u to "
-                  "queue_id=%u", entry->key.internal_priority,
-                  entry->value.queue_id, value.queue_id);
+    AIM_LOG_VERBOSE("Modify priority_to_queue entry prio=%u from queue_id=%u "
+                    "to queue_id=%u", entry->key.internal_priority,
+                    entry->value.queue_id, value.queue_id);
     entry->value = value;
 
     return INDIGO_ERROR_NONE;
