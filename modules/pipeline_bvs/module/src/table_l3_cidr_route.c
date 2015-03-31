@@ -304,12 +304,12 @@ pipeline_bvs_table_l3_cidr_route_lookup(uint32_t vrf, uint32_t ipv4)
     }
 
     if (entry) {
-        AIM_LOG_VERBOSE("Hit l3_cidr_route entry vrf=%u ipv4=%{ipv4a}/%u"
-                        " -> next_hop=%{next_hop} cpu=%d",
-                        entry->key.vrf, entry->key.ipv4, entry->key.mask_len,
-                        &entry->value.next_hop, entry->value.cpu);
+        packet_trace("Hit l3_cidr_route entry vrf=%u ipv4=%{ipv4a}/%u"
+                     " -> next_hop=%{next_hop} cpu=%d",
+                     entry->key.vrf, entry->key.ipv4, entry->key.mask_len,
+                     &entry->value.next_hop, entry->value.cpu);
     } else {
-        AIM_LOG_VERBOSE("Miss l3_cidr_route entry vrf=%u ipv4=%{ipv4a}", vrf, ntohl(ipv4));
+        packet_trace("Miss l3_cidr_route entry vrf=%u ipv4=%{ipv4a}", vrf, ntohl(ipv4));
     }
 
     return entry;

@@ -38,6 +38,7 @@
 #include <sflowa/sflowa.h>
 #include <slshared/slshared_config.h>
 #include <debug_counter/debug_counter.h>
+#include <packet_trace/packet_trace.h>
 
 #include "next_hop.h"
 #include "table_port.h"

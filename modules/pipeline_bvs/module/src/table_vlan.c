@@ -236,10 +236,10 @@ pipeline_bvs_table_vlan_lookup(uint16_t vlan_vid)
     struct vlan_key key = { .vlan_vid = vlan_vid & ~VLAN_CFI_BIT};
     struct vlan_entry *entry = vlan_hashtable_first(vlan_hashtable, &key);
     if (entry) {
-        AIM_LOG_VERBOSE("Hit vlan entry vlan=%u -> l3_interface_class_id=%#x vrf=%u",
-                        entry->key.vlan_vid, entry->value.l3_interface_class_id, entry->value.vrf);
+        packet_trace("Hit vlan entry vlan=%u -> l3_interface_class_id=%#x vrf=%u",
+                     entry->key.vlan_vid, entry->value.l3_interface_class_id, entry->value.vrf);
     } else {
-        AIM_LOG_VERBOSE("Miss vlan entry vlan=%u", key.vlan_vid);
+        packet_trace("Miss vlan entry vlan=%u", key.vlan_vid);
     }
     return entry;
 }

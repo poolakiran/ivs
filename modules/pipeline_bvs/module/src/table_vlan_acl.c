@@ -235,13 +235,13 @@ pipeline_bvs_table_vlan_acl_lookup(const struct vlan_acl_key *key)
         struct vlan_acl_entry *entry = container_of(tcam_entry, tcam_entry, struct vlan_acl_entry);
         const struct vlan_acl_key *entry_key = tcam_entry->key;
         const struct vlan_acl_key *entry_mask = tcam_entry->mask;
-        AIM_LOG_VERBOSE("Hit vlan_acl entry vlan_vid=%u/%#x eth_src=%{mac}/%{mac} eth_dst=%{mac}/%{mac} -> l3_interface_class_id=%u l3_src_class_id=%u vrf=%u",
-                        entry_key->vlan_vid, entry_mask->vlan_vid, &entry_key->eth_src, &entry_mask->eth_src, &entry_key->eth_dst, &entry_mask->eth_dst,
-                        entry->value.l3_interface_class_id, entry->value.l3_src_class_id, entry->value.vrf);
+        packet_trace("Hit vlan_acl entry vlan_vid=%u/%#x eth_src=%{mac}/%{mac} eth_dst=%{mac}/%{mac} -> l3_interface_class_id=%u l3_src_class_id=%u vrf=%u",
+                     entry_key->vlan_vid, entry_mask->vlan_vid, &entry_key->eth_src, &entry_mask->eth_src, &entry_key->eth_dst, &entry_mask->eth_dst,
+                     entry->value.l3_interface_class_id, entry->value.l3_src_class_id, entry->value.vrf);
         return entry;
     } else {
-        AIM_LOG_VERBOSE("Miss vlan_acl entry vlan_vid=%u eth_src=%{mac} eth_dst=%{mac}",
-                        key->vlan_vid, &key->eth_src, &key->eth_dst);
+        packet_trace("Miss vlan_acl entry vlan_vid=%u eth_src=%{mac} eth_dst=%{mac}",
+                     key->vlan_vid, &key->eth_src, &key->eth_dst);
         return NULL;
     }
 }
