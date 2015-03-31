@@ -172,6 +172,6 @@ pipeline_bvs_table_arp_offload_lookup(uint16_t vlan_vid, uint32_t ipv4)
     key.pad = 0;
     key.ipv4 = ipv4;
     struct arp_offload_entry *entry = arp_offload_hashtable_first(arp_offload_hashtable, &key);
-    AIM_LOG_VERBOSE("%s arp_offload entry vlan=%u, ip=%{ipv4a}", entry ? "Hit" : "Miss", vlan_vid, ipv4);
+    packet_trace("%s arp_offload entry vlan=%u, ip=%{ipv4a}", entry ? "Hit" : "Miss", vlan_vid, ipv4);
     return entry;
 }

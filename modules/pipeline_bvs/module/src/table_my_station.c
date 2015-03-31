@@ -150,10 +150,10 @@ pipeline_bvs_table_my_station_lookup(const uint8_t *mac)
         struct my_station_entry *entry = container_of(tcam_entry, tcam_entry, struct my_station_entry);
         const struct my_station_key *entry_key = tcam_entry->key;
         const struct my_station_key *entry_mask = tcam_entry->mask;
-        AIM_LOG_VERBOSE("Hit my_station entry mac=%{mac}/%{mac}", &entry_key->mac, &entry_mask->mac);
+        packet_trace("Hit my_station entry mac=%{mac}/%{mac}", &entry_key->mac, &entry_mask->mac);
         return entry;
     } else {
-        AIM_LOG_VERBOSE("Miss my_station entry mac=%{mac}", &key.mac);
+        packet_trace("Miss my_station entry mac=%{mac}", &key.mac);
         return NULL;
     }
 }

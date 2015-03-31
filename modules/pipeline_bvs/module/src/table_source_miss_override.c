@@ -212,10 +212,10 @@ pipeline_bvs_table_source_miss_override_lookup(uint16_t vlan_vid, uint32_t in_po
     };
     struct source_miss_override_entry *entry = source_miss_override_hashtable_first(source_miss_override_hashtable, &key);
     if (entry) {
-        AIM_LOG_VERBOSE("Hit source_miss_override entry vlan=%u port=%u -> cpu=%u",
-                        entry->key.vlan_vid, entry->key.in_port, entry->value.cpu);
+        packet_trace("Hit source_miss_override entry vlan=%u port=%u -> cpu=%u",
+                     entry->key.vlan_vid, entry->key.in_port, entry->value.cpu);
     } else {
-        AIM_LOG_VERBOSE("Miss source_miss_override entry vlan=%u port=%u", key.vlan_vid, key.in_port);
+        packet_trace("Miss source_miss_override entry vlan=%u port=%u", key.vlan_vid, key.in_port);
     }
     return entry;
 }

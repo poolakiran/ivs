@@ -279,13 +279,13 @@ pipeline_bvs_table_l2_lookup(uint16_t vlan_vid, const uint8_t *mac)
 
     struct l2_entry *entry = l2_hashtable_first(l2_hashtable, &key);
     if (entry) {
-        AIM_LOG_VERBOSE("Hit L2 entry vlan=%u, mac=%{mac} -> lag=%s",
-                        entry->key.vlan_vid, &entry->key.mac,
-                        lag_name(entry->value.lag));
+        packet_trace("Hit L2 entry vlan=%u, mac=%{mac} -> lag=%s",
+                     entry->key.vlan_vid, &entry->key.mac,
+                     lag_name(entry->value.lag));
         return entry;
     } else {
-        AIM_LOG_VERBOSE("Miss L2 entry vlan=%u, mac=%{mac}",
-                        key.vlan_vid, &key.mac);
+        packet_trace("Miss L2 entry vlan=%u, mac=%{mac}",
+                     key.vlan_vid, &key.mac);
         return miss_entry;
     }
 }

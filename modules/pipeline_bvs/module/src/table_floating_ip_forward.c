@@ -268,13 +268,13 @@ pipeline_bvs_table_floating_ip_forward_lookup(uint16_t vlan_vid, uint32_t ipv4_s
     memcpy(&key.eth_dst, eth_dst, OF_MAC_ADDR_BYTES);
     struct floating_ip_forward_entry *entry = floating_ip_forward_hashtable_first(floating_ip_forward_hashtable, &key);
     if (entry) {
-        AIM_LOG_VERBOSE("Hit floating_ip_forward entry vlan=%u ipv4_src=%{ipv4a} eth_dst=%{mac} -> "
-                        "new_vlan=%u new_ipv4_src=%{ipv4a} new_eth_src=%{mac} new_eth_dst=%{mac} ipv4_netmask=%{ipv4a}",
-                        entry->key.vlan_vid, entry->key.ipv4_src, &entry->key.eth_dst,
-                        entry->value.new_vlan_vid, entry->value.new_ipv4_src, &entry->value.new_eth_src, &entry->value.new_eth_dst, entry->value.ipv4_netmask);
+        packet_trace("Hit floating_ip_forward entry vlan=%u ipv4_src=%{ipv4a} eth_dst=%{mac} -> "
+                     "new_vlan=%u new_ipv4_src=%{ipv4a} new_eth_src=%{mac} new_eth_dst=%{mac} ipv4_netmask=%{ipv4a}",
+                     entry->key.vlan_vid, entry->key.ipv4_src, &entry->key.eth_dst,
+                     entry->value.new_vlan_vid, entry->value.new_ipv4_src, &entry->value.new_eth_src, &entry->value.new_eth_dst, entry->value.ipv4_netmask);
     } else {
-        AIM_LOG_VERBOSE("Miss floating_ip_forward entry vlan=%u ipv4_src=%{ipv4a} eth_dst=%{mac}",
-                        key.vlan_vid, key.ipv4_src, &key.eth_dst);
+        packet_trace("Miss floating_ip_forward entry vlan=%u ipv4_src=%{ipv4a} eth_dst=%{mac}",
+                     key.vlan_vid, key.ipv4_src, &key.eth_dst);
     }
     return entry;
 }

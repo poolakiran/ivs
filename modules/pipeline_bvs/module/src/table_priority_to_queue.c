@@ -181,12 +181,12 @@ pipeline_bvs_table_priority_to_queue_lookup(uint32_t internal_priority)
         struct priority_to_queue_entry *entry = container_of(cur, links,
                                                              struct priority_to_queue_entry);
         if (entry->key.internal_priority == internal_priority) {
-            AIM_LOG_VERBOSE("Hit priority_to_queue entry prio=%u, queue_id=%u",
-                            internal_priority, entry->value.queue_id);
+            packet_trace("Hit priority_to_queue entry prio=%u, queue_id=%u",
+                         internal_priority, entry->value.queue_id);
             return entry;
         }
     }
 
-    AIM_LOG_VERBOSE("Miss priority_to_queue entry prio=%u", internal_priority);
+    packet_trace("Miss priority_to_queue entry prio=%u", internal_priority);
     return NULL;
 }
