@@ -65,7 +65,7 @@ parse_value(of_list_bsn_tlv_t *tlvs)
     if (tlv.object_id == OF_BSN_TLV_QUEUE_WEIGHT) {
         uint32_t queue_weight;
         of_bsn_tlv_queue_weight_value_get(&tlv, &queue_weight);
-        if (queue_weight == 0 || queue_weight >= 128) {
+        if (queue_weight >= 128) {
             AIM_LOG_ERROR("invalid queue weight");
             return INDIGO_ERROR_PARAM;
         }
