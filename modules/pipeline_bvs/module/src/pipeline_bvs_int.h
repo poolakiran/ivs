@@ -154,6 +154,7 @@ struct ctx {
     uint16_t cur_tag;
     uint32_t ingress_port_group_id;
     uint32_t skb_priority;
+    uint32_t internal_priority;
 };
 
 enum pipeline_bvs_version {
