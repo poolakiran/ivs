@@ -219,8 +219,9 @@ pipeline_bvs_table_port_entry_create(
         return rv;
     }
 
-    AIM_LOG_VERBOSE("Create port entry port=%u -> lag_id=%u egr_port_group_id=%u vlan_xlate_port_group_id=%u default_vlan_vid=%u ingress_port_group_id=%u %s%s%s%s%s",
+    AIM_LOG_VERBOSE("Create port entry port=%u -> lag_id=%u egr_port_group_id=%u vlan_xlate_port_group_id=%u default_vlan_vid=%u ingress_port_group_id=%u internal_prio=%u %s%s%s%s%s",
                     entry->key.port, entry->value.lag_id, entry->value.egr_port_group_id, entry->value.vlan_xlate_port_group_id, entry->value.default_vlan_vid, entry->value.ingress_port_group_id,
+                    entry->value.internal_priority,
                     entry->value.disable_src_mac_check ? "disable_src_mac_check " : "",
                     entry->value.arp_offload ? "arp_offload " : "",
                     entry->value.dhcp_offload ? "dhcp_offload " : "",
@@ -315,8 +316,9 @@ pipeline_bvs_table_port_lookup(uint32_t port_no)
 
     struct port_entry *entry = port_hashtable_first(port_hashtable, &key);
     if (entry) {
-        AIM_LOG_VERBOSE("Hit port entry port=%u -> lag_id=%u egr_port_group_id=%u vlan_xlate_port_group_id=%u default_vlan_vid=%u ingress_port_group_id=%u %s%s%s%s%s",
+        AIM_LOG_VERBOSE("Hit port entry port=%u -> lag_id=%u egr_port_group_id=%u vlan_xlate_port_group_id=%u default_vlan_vid=%u ingress_port_group_id=%u internal_prio=%u %s%s%s%s%s",
                         entry->key.port, entry->value.lag_id, entry->value.egr_port_group_id, entry->value.vlan_xlate_port_group_id, entry->value.default_vlan_vid, entry->value.ingress_port_group_id,
+                        entry->value.internal_priority,
                         entry->value.disable_src_mac_check ? "disable_src_mac_check " : "",
                         entry->value.arp_offload ? "arp_offload " : "",
                         entry->value.dhcp_offload ? "dhcp_offload " : "",
