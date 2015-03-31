@@ -151,6 +151,9 @@ pipeline_bvs_port_status_handler(of_port_status_t *port_status)
 
     of_port_no_t port_no;
     of_port_desc_port_no_get(&port_desc, &port_no);
+    if (port_no == OF_PORT_DEST_LOCAL) {
+        port_no = OVSP_LOCAL;
+    }
 
     if (reason == OF_PORT_CHANGE_REASON_ADD) {
         pipeline_bvs_port_pktin_socket_register(port_no);

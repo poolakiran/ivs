@@ -27,6 +27,7 @@
 #include <icmpa/icmpa.h>
 #include <dhcpra/dhcpra.h>
 #include <router_ip_table/router_ip_table.h>
+#include <indigo/port_manager.h>
 
 DEBUG_COUNTER(pktin, "pipeline_bvs.pktin",
               "Received packet-in message from the kernel");
@@ -227,6 +228,19 @@ pipeline_bvs_pktin_socket_register()
     /* Register the debug/acl pktin socket */
     ind_ovs_pktin_socket_register(&debug_acl_pktin_soc, NULL,
                                   GLOBAL_PKTIN_INTERVAL, PKTIN_BURST);
+
+    /* Register port pktin sockets */
+    indigo_port_info_t *port_list, *port_info;
+    if (indigo_port_interface_list(&port_list) < 0) {
+        AIM_LOG_VERBOSE("Failed to retrieve port list");
+        return;
+    }
+
+    for (port_info = port_list; port_info; port_info = port_info->next) {
+        pipeline_bvs_port_pktin_socket_register(port_info->of_port);
+    }
+
+    indigo_port_interface_list_destroy(port_list);
 }
 
 void
@@ -248,11 +262,13 @@ pipeline_bvs_pktin_socket_unregister()
 void
 pipeline_bvs_port_pktin_socket_register(of_port_no_t port_no)
 {
-    AIM_ASSERT(port_pktin_soc[port_no].in_use == false,
-               "Port %u already in use", port_no);
 
     AIM_ASSERT(port_no <= SLSHARED_CONFIG_OF_PORT_MAX,
                "Port %u out of range", port_no);
+
+    if (port_pktin_soc[port_no].in_use == true) {
+        return;
+    }
 
     /* Create pktin socket for this port */
     ind_ovs_pktin_socket_register(&port_pktin_soc[port_no].pktin_soc,
@@ -263,6 +279,9 @@ pipeline_bvs_port_pktin_socket_register(of_port_no_t port_no)
 
 void pipeline_bvs_port_pktin_socket_unregister(of_port_no_t port_no)
 {
+    AIM_ASSERT(port_no <= SLSHARED_CONFIG_OF_PORT_MAX,
+               "Port %u out of range", port_no);
+
     if (port_pktin_soc[port_no].in_use == false) {
         return;
     }

@@ -69,7 +69,7 @@ pipeline_bvs_process_packet_of_death(of_octets_t *data)
 
     indigo_port_info_t *port_list, *port_info;
     if (indigo_port_interface_list(&port_list) < 0) {
-        AIM_LOG_VERBOSE("Failed to retrive port list");
+        AIM_LOG_VERBOSE("Failed to retrieve port list");
         return;
     }
 
