@@ -175,6 +175,10 @@ indigo_error_t indigo_port_interface_add(
     assert(of_port < IND_OVS_MAX_PORTS || of_port == OF_PORT_DEST_NONE);
     assert(strlen(port_name) < 256);
 
+    if (ind_ovs_port_lookup_by_name(port_name)) {
+        return INDIGO_ERROR_NONE;
+    }
+
     struct nl_msg *msg = ind_ovs_create_nlmsg(ovs_vport_family, OVS_VPORT_CMD_NEW);
     nla_put_u32(msg, OVS_VPORT_ATTR_TYPE, OVS_VPORT_TYPE_NETDEV);
     nla_put_string(msg, OVS_VPORT_ATTR_NAME, port_name);
@@ -191,6 +195,10 @@ ind_ovs_port_add_internal(const char *port_name)
 {
     if (strlen(port_name) >= 256) {
         return INDIGO_ERROR_PARAM;
+    }
+
+    if (ind_ovs_port_lookup_by_name(port_name)) {
+        return INDIGO_ERROR_NONE;
     }
 
     struct nl_msg *msg = ind_ovs_create_nlmsg(ovs_vport_family, OVS_VPORT_CMD_NEW);
@@ -238,7 +246,7 @@ indigo_port_interface_list_destroy(indigo_port_info_t* list)
 
 void
 ind_ovs_port_added(uint32_t port_no, const char *ifname,
-                   enum ovs_vport_type type, of_mac_addr_t mac_addr)
+                   enum ovs_vport_type type)
 {
     indigo_error_t err;
 
@@ -248,6 +256,19 @@ ind_ovs_port_added(uint32_t port_no, const char *ifname,
     }
 
     debug_counter_inc(&add);
+
+    of_mac_addr_t mac_addr = of_mac_addr_all_zeros;
+    struct rtnl_link *link = rtnl_link_get_by_name(link_cache, ifname);
+    if (link) {
+        struct nl_addr *addr = rtnl_link_get_addr(link);
+        void *data = nl_addr_get_binary_addr(addr);
+        AIM_ASSERT(nl_addr_get_len(addr) == sizeof(mac_addr));
+        memcpy(&mac_addr, data, sizeof(mac_addr));
+    }
+
+    if (port_no == OVSP_LOCAL) {
+        ifname = "local";
+    }
 
     struct ind_ovs_port *port = aim_zmalloc(sizeof(*port));
 
@@ -302,6 +323,10 @@ ind_ovs_port_added(uint32_t port_no, const char *ifname,
     ind_ovs_upcall_register(port);
     LOG_INFO("Added %s %s", port->is_uplink ? "uplink" : "port", port->ifname);
     ind_ovs_barrier_defer_revalidation_internal();
+
+    if (port->is_uplink) {
+        ind_ovs_uplink_reselect();
+    }
     return;
 
 cleanup_port:
@@ -340,6 +365,8 @@ ind_ovs_port_deleted(uint32_t port_no)
         return;
     }
 
+    bool was_uplink = port->is_uplink;
+
     debug_counter_inc(&delete);
 
     ind_ovs_upcall_unregister(port);
@@ -357,6 +384,10 @@ ind_ovs_port_deleted(uint32_t port_no)
     ind_ovs_ports[port_no] = NULL;
 
     ind_ovs_barrier_defer_revalidation_internal();
+
+    if (was_uplink) {
+        ind_ovs_uplink_reselect();
+    }
 }
 
 indigo_error_t
@@ -870,6 +901,10 @@ link_change_cb(struct nl_cache *cache,
     port_status_notify(port->dp_port_no, OF_PORT_CHANGE_REASON_MODIFY);
 
     ind_ovs_barrier_defer_revalidation_internal();
+
+    if (port->is_uplink) {
+        ind_ovs_uplink_reselect();
+    }
 }
 
 static void

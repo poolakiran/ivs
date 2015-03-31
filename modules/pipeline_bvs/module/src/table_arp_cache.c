@@ -191,6 +191,6 @@ pipeline_bvs_table_arp_cache_lookup(uint16_t vlan_vid, uint32_t ipv4)
     key.pad = 0;
     key.ipv4 = ipv4;
     struct arp_cache_entry *entry = arp_cache_hashtable_first(arp_cache_hashtable, &key);
-    AIM_LOG_VERBOSE("%s arp_cache entry vlan=%u, ip=%{ipv4a}", entry ? "Hit" : "Miss", vlan_vid, ipv4);
+    packet_trace("%s arp_cache entry vlan=%u, ip=%{ipv4a}", entry ? "Hit" : "Miss", vlan_vid, ipv4);
     return entry;
 }

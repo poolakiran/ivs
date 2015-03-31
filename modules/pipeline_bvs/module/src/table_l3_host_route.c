@@ -245,11 +245,11 @@ pipeline_bvs_table_l3_host_route_lookup(uint32_t vrf, uint32_t ipv4)
     struct l3_host_route_key key = { .vrf=vrf, .ipv4 = ntohl(ipv4) };
     struct l3_host_route_entry *entry = l3_host_route_hashtable_first(l3_host_route_hashtable, &key);
     if (entry) {
-        AIM_LOG_VERBOSE("Hit l3_host_route entry vrf=%u ip=%{ipv4a} -> next_hop=%{next_hop} cpu=%d",
+        packet_trace("Hit l3_host_route entry vrf=%u ip=%{ipv4a} -> next_hop=%{next_hop} cpu=%d",
                         entry->key.vrf, entry->key.ipv4,
                         &entry->value.next_hop, entry->value.cpu);
     } else {
-        AIM_LOG_VERBOSE("Miss l3_host_route entry vrf=%u ip=%{ipv4a}",
+        packet_trace("Miss l3_host_route entry vrf=%u ip=%{ipv4a}",
                         key.vrf, key.ipv4);
     }
     return entry;

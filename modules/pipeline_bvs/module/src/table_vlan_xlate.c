@@ -222,12 +222,12 @@ pipeline_bvs_table_vlan_xlate_lookup(uint32_t vlan_xlate_port_group_id, uint16_t
 
     struct vlan_xlate_entry *entry = vlan_xlate_hashtable_first(vlan_xlate_hashtable, &key);
     if (entry) {
-        AIM_LOG_VERBOSE("Hit vlan_xlate entry vlan_xlate_port_group_id=%u, vlan=%u -> vlan=%u, internal_prio=%u",
-                        entry->key.vlan_xlate_port_group_id, entry->key.vlan_vid,
-                        entry->value.new_vlan_vid, entry->value.internal_priority);
+        packet_trace("Hit vlan_xlate entry vlan_xlate_port_group_id=%u, vlan=%u -> vlan=%u, internal_prio=%u",
+                     entry->key.vlan_xlate_port_group_id, entry->key.vlan_vid,
+                     entry->value.new_vlan_vid, entry->value.internal_priority);
     } else {
-        AIM_LOG_VERBOSE("Miss vlan_xlate entry vlan_xlate_port_group_id=%u, vlan=%u",
-                        key.vlan_xlate_port_group_id, key.vlan_vid);
+        packet_trace("Miss vlan_xlate entry vlan_xlate_port_group_id=%u, vlan=%u",
+                     key.vlan_xlate_port_group_id, key.vlan_vid);
     }
     return entry;
 }

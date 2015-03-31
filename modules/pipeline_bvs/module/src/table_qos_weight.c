@@ -35,7 +35,7 @@ parse_key(of_list_bsn_tlv_t *tlvs)
     if (tlv.object_id == OF_BSN_TLV_QUEUE_ID) {
         uint32_t queue_id;
         of_bsn_tlv_queue_id_value_get(&tlv, &queue_id);
-        if (queue_id >= 4) {
+        if (queue_id >= 9) {
             AIM_LOG_ERROR("invalid queue id");
             return INDIGO_ERROR_PARAM;
         }
@@ -65,7 +65,7 @@ parse_value(of_list_bsn_tlv_t *tlvs)
     if (tlv.object_id == OF_BSN_TLV_QUEUE_WEIGHT) {
         uint32_t queue_weight;
         of_bsn_tlv_queue_weight_value_get(&tlv, &queue_weight);
-        if (queue_weight == 0 || queue_weight >= 128) {
+        if (queue_weight >= 128) {
             AIM_LOG_ERROR("invalid queue weight");
             return INDIGO_ERROR_PARAM;
         }
@@ -132,7 +132,7 @@ static const indigo_core_gentable_ops_t qos_weight_ops = {
 void
 pipeline_bvs_table_qos_weight_register(void)
 {
-    indigo_core_gentable_register("qos_weight", &qos_weight_ops, NULL, 4, 4,
+    indigo_core_gentable_register("qos_weight", &qos_weight_ops, NULL, 10, 4,
                                   &qos_weight_table);
 }
 

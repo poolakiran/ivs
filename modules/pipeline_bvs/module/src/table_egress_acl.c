@@ -208,14 +208,14 @@ pipeline_bvs_table_egress_acl_lookup(const struct egress_acl_key *key)
         struct egress_acl_entry *entry = container_of(tcam_entry, tcam_entry, struct egress_acl_entry);
         const struct egress_acl_key *entry_key = tcam_entry->key;
         const struct egress_acl_key *entry_mask = tcam_entry->mask;
-        AIM_LOG_VERBOSE("Hit egress_acl entry vlan_vid=%u l3_interface_class_id=%u/%#x egr_port_group_id=%u drop=%u",
-                        entry_key->vlan_vid, entry_key->l3_interface_class_id,
-                        entry_mask->l3_interface_class_id, entry_key->egr_port_group_id,
-                        entry->value.drop);
+        packet_trace("Hit egress_acl entry vlan_vid=%u l3_interface_class_id=%u/%#x egr_port_group_id=%u drop=%u",
+                     entry_key->vlan_vid, entry_key->l3_interface_class_id,
+                     entry_mask->l3_interface_class_id, entry_key->egr_port_group_id,
+                     entry->value.drop);
         return entry;
     } else {
-        AIM_LOG_VERBOSE("Miss egress_acl entry vlan_vid=%u l3_interface_class_id=%u egr_port_group_id=%u",
-                        key->vlan_vid, key->l3_interface_class_id, key->egr_port_group_id);
+        packet_trace("Miss egress_acl entry vlan_vid=%u l3_interface_class_id=%u egr_port_group_id=%u",
+                     key->vlan_vid, key->l3_interface_class_id, key->egr_port_group_id);
         return NULL;
     }
 }

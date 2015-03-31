@@ -44,7 +44,7 @@ DEPENDMODULES := SocketManager OFConnectionManager OFStateManager OVSDriver \
                  Configuration loci indigo BigList BigHash ivs_common pipeline pipeline_standard tcam xbuf \
                  PPE IOF \
                  AIM murmur cjson OS uCli debug_counter timer_wheel bloom_filter BigRing minimatch action \
-                 stats pipeline_reflect shared_debug_counter
+                 stats pipeline_reflect shared_debug_counter packet_trace
 
 ifndef NO_LUAJIT
 DEPENDMODULES += luajit pipeline_lua
@@ -105,6 +105,7 @@ GLOBAL_CFLAGS += -DSOCKETMANAGER_CONFIG_MAX_TIMERS=512
 GLOBAL_CFLAGS += -DSOCKETMANAGER_CONFIG_MAX_SOCKETS=4096
 GLOBAL_CFLAGS += -DBIGRING_CONFIG_INCLUDE_LOCKING=0
 GLOBAL_CFLAGS += -DSLSHARED_CONFIG_PKTIN_LISTENER_REGISTER=0
+GLOBAL_CFLAGS += -DSLSHARED_CONFIG_OF_PORT_MAX=1024
 GLOBAL_CFLAGS += -g
 GLOBAL_CFLAGS += -I .
 GLOBAL_CFLAGS += -I $(ROOT)/openvswitch

@@ -1,0 +1,15 @@
+standard
+
+# Not yet passing
+^mirror.UnicastSpineAndHostEgressMirror
+^pktin.VlanXlateDrop_NewHost
+^mirror.ModifySpan
+^mirror.UnicastSpineAndSpineIngressMirror
+^mirror.ModifyMirror
+^pktin.CDP
+^mtest.arp_offload
+^mtest.pktin_CDP
+^mtest.pktin_dhcp
+^cdpa.CdpRxRequest
+^l3.PktOutCidrRouteTrap
+^l3.PktOutHostRouteTrap

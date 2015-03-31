@@ -270,10 +270,10 @@ pipeline_bvs_table_flood_lookup(const struct flood_key *key)
 {
     struct flood_entry *entry = flood_hashtable_first(flood_hashtable, key);
     if (entry) {
-        AIM_LOG_VERBOSE("Hit flood entry lag_id=%u", entry->key.lag_id);
+        packet_trace("Hit flood entry lag_id=%u", entry->key.lag_id);
         return entry;
     } else {
-        AIM_LOG_VERBOSE("Miss flood entry lag_id=%u", key->lag_id);
+        packet_trace("Miss flood entry lag_id=%u", key->lag_id);
         return miss_entry;
     }
 }
