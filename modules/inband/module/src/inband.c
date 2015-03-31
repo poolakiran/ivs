@@ -69,7 +69,7 @@ static const char *inband_interface_name = "inband";
 
 /* Copied from IVS main.c */
 static indigo_cxn_config_params_t cxn_config_params = {
-    .version = OF_VERSION_1_3,
+    .version = OF_VERSION_1_4,
     .cxn_priority = 0,
     .local = false,
     .listen = false,
