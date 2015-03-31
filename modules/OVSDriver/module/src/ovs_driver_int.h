@@ -178,7 +178,7 @@ void ind_ovs_kflow_module_init(void);
 /* Management of the port set */
 void ind_ovs_port_init(void);
 void ind_ovs_port_finish(void);
-void ind_ovs_port_added(uint32_t port_no, const char *ifname, enum ovs_vport_type type, of_mac_addr_t mac_addr);
+void ind_ovs_port_added(uint32_t port_no, const char *ifname, enum ovs_vport_type type);
 void ind_ovs_port_deleted(uint32_t port_no);
 struct ind_ovs_port *ind_ovs_port_lookup(of_port_no_t port_no);
 struct ind_ovs_port *ind_ovs_port_lookup_by_name(const char *ifname);
@@ -186,7 +186,8 @@ struct ind_ovs_port *ind_ovs_port_lookup_by_name(const char *ifname);
 /* Interface of the uplink submodule */
 bool ind_ovs_uplink_check_by_name(const char *name);
 bool ind_ovs_uplink_check(of_port_no_t port_no);
-of_port_no_t ind_ovs_uplink_first(void);
+of_port_no_t ind_ovs_uplink_select(void);
+void ind_ovs_uplink_reselect(void);
 
 /* Interface of the upcall submodule */
 void ind_ovs_upcall_init(void);
@@ -198,6 +199,7 @@ void ind_ovs_upcall_respawn(void);
 
 /* Interface of the multicast submodule */
 void ind_ovs_multicast_init(void);
+void ind_ovs_multicast_resync(void);
 
 /* Interface of the group submodule */
 void ind_ovs_group_module_init(void);
