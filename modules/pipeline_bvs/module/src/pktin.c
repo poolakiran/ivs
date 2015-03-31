@@ -262,12 +262,13 @@ pipeline_bvs_pktin_socket_unregister()
 void
 pipeline_bvs_port_pktin_socket_register(of_port_no_t port_no)
 {
-    if (port_pktin_soc[port_no].in_use == true) {
-        return;
-    }
 
     AIM_ASSERT(port_no <= SLSHARED_CONFIG_OF_PORT_MAX,
                "Port %u out of range", port_no);
+
+    if (port_pktin_soc[port_no].in_use == true) {
+        return;
+    }
 
     /* Create pktin socket for this port */
     ind_ovs_pktin_socket_register(&port_pktin_soc[port_no].pktin_soc,
@@ -278,6 +279,9 @@ pipeline_bvs_port_pktin_socket_register(of_port_no_t port_no)
 
 void pipeline_bvs_port_pktin_socket_unregister(of_port_no_t port_no)
 {
+    AIM_ASSERT(port_no <= SLSHARED_CONFIG_OF_PORT_MAX,
+               "Port %u out of range", port_no);
+
     if (port_pktin_soc[port_no].in_use == false) {
         return;
     }
