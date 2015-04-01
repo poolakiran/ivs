@@ -43,6 +43,7 @@ static void mark_pktin_controller(struct ctx *ctx, uint64_t flag);
 static void mark_drop(struct ctx *ctx);
 static void process_pktin(struct ctx *ctx);
 static bool process_floating_ip(struct ctx *ctx);
+static void trace_packet_headers(struct ctx *ctx);
 
 enum pipeline_bvs_version version;
 
@@ -312,6 +313,8 @@ pipeline_bvs_process(struct ind_ovs_parsed_key *key,
 static void
 process_l2(struct ctx *ctx)
 {
+    trace_packet_headers(ctx);
+
     ctx->recursion_depth++;
     if (ctx->recursion_depth > 10) {
         AIM_LOG_INTERNAL("Exceeded max recursion depth");
@@ -1198,6 +1201,42 @@ process_floating_ip(struct ctx *ctx)
     }
 
     return false;
+}
+
+static void
+trace_packet_headers(struct ctx *ctx)
+{
+    if (!packet_trace_enabled) {
+        return;
+    }
+
+    const struct ind_ovs_parsed_key *key = ctx->key;
+    packet_trace("Headers:");
+    packet_trace("  in_port %u priority %u", key->in_port, key->priority);
+    packet_trace("  eth_src %{mac} eth_dst %{mac} eth_type 0x%04x", &key->ethernet.eth_src, &key->ethernet.eth_dst, ntohs(key->ethertype));
+    if (key->vlan) {
+        packet_trace("  vlan_vid %u vlan_pcp %u", VLAN_VID(ntohs(key->vlan)), VLAN_PCP(ntohs(key->vlan)));
+    }
+    if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_IPV4)) {
+        packet_trace("  ipv4_src %{ipv4a} ipv4_dst %{ipv4a} ip_proto %u ip_tos %u ip_ttl %u ip_frag %u",
+                     ntohl(key->ipv4.ipv4_src), ntohl(key->ipv4.ipv4_dst), key->ipv4.ipv4_proto, key->ipv4.ipv4_tos, key->ipv4.ipv4_ttl, key->ipv4.ipv4_frag);
+    }
+    /* TODO ipv6 */
+    if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_TCP)) {
+        packet_trace("  tcp_src %u tcp_dst %u", ntohs(key->tcp.tcp_src), ntohs(key->tcp.tcp_dst));
+    }
+    if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_UDP)) {
+        packet_trace("  udp_src %u udp_dst %u", ntohs(key->udp.udp_src), ntohs(key->udp.udp_dst));
+    }
+    if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_ICMP)) {
+        packet_trace("  icmp_type %u icmp_code %u", key->icmp.icmp_type, key->icmp.icmp_code);
+    }
+    /* TODO icmpv6 */
+    if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_ARP)) {
+        packet_trace("  arp_op %u arp_spa %{ipv4a} arp_tpa %{ipv4a} arp_sha %{mac} arp_tha %{mac}",
+                     ntohs(key->arp.arp_op), ntohl(key->arp.arp_sip), ntohl(key->arp.arp_tip),
+                     key->arp.arp_sha, key->arp.arp_tha);
+    }
 }
 
 static struct pipeline_ops pipeline_bvs_ops = {
