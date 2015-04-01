@@ -128,9 +128,9 @@ pipeline_bvs_table_vlan_xlate_entry_create(
         return rv;
     }
 
-    AIM_LOG_VERBOSE("Create vlan_xlate entry vlan_xlate_port_group_id=%u, vlan=%u -> vlan %u",
+    AIM_LOG_VERBOSE("Create vlan_xlate entry vlan_xlate_port_group_id=%u, vlan=%u -> vlan=%u, internal_prio=%u",
                     entry->key.vlan_xlate_port_group_id, &entry->key.vlan_vid,
-                    entry->value.new_vlan_vid);
+                    entry->value.new_vlan_vid, entry->value.internal_priority);
 
     vlan_xlate_hashtable_insert(vlan_xlate_hashtable, entry);
 
@@ -222,9 +222,9 @@ pipeline_bvs_table_vlan_xlate_lookup(uint32_t vlan_xlate_port_group_id, uint16_t
 
     struct vlan_xlate_entry *entry = vlan_xlate_hashtable_first(vlan_xlate_hashtable, &key);
     if (entry) {
-        packet_trace("Hit vlan_xlate entry vlan_xlate_port_group_id=%u, vlan=%u -> vlan %u",
+        packet_trace("Hit vlan_xlate entry vlan_xlate_port_group_id=%u, vlan=%u -> vlan=%u, internal_prio=%u",
                      entry->key.vlan_xlate_port_group_id, entry->key.vlan_vid,
-                     entry->value.new_vlan_vid);
+                     entry->value.new_vlan_vid, entry->value.internal_priority);
     } else {
         packet_trace("Miss vlan_xlate entry vlan_xlate_port_group_id=%u, vlan=%u",
                      key.vlan_xlate_port_group_id, key.vlan_vid);

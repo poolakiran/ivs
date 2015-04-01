@@ -120,14 +120,14 @@ enum group_table_id {
  */
 enum queue_priority {
     QUEUE_PRIORITY_INVALID = -1,
-    QUEUE_PRIORITY_UNCLASSIFIED = 0,
-    QUEUE_PRIORITY_UNUSED = 1,
-    QUEUE_PRIORITY_INBAND = 2,
+    QUEUE_PRIORITY_VLAN_PRIO_0_1 = 0,
+    QUEUE_PRIORITY_VLAN_PRIO_2_3 = 1,
+    QUEUE_PRIORITY_VLAN_PRIO_4_5 = 2,
     QUEUE_PRIORITY_VLAN_PRIO_6_7 = 3,
     QUEUE_PRIORITY_SPAN = 4,
-    QUEUE_PRIORITY_VLAN_PRIO_4_5 = 5,
-    QUEUE_PRIORITY_VLAN_PRIO_2_3 = 6,
-    QUEUE_PRIORITY_VLAN_PRIO_0_1 = 7,
+    QUEUE_PRIORITY_UNUSED_1 = 5,
+    QUEUE_PRIORITY_UNUSED_2 = 6,
+    QUEUE_PRIORITY_INBAND = 7,
     QUEUE_PRIORITY_PDU = 8,
 };
 
@@ -155,6 +155,7 @@ struct ctx {
     uint16_t cur_tag;
     uint32_t ingress_port_group_id;
     uint32_t skb_priority;
+    uint32_t internal_priority;
 };
 
 enum pipeline_bvs_version {

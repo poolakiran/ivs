@@ -21,7 +21,9 @@
 
 static indigo_core_gentable_t *priority_to_queue_table;
 static const indigo_core_gentable_ops_t priority_to_queue_ops;
-static LIST_DEFINE(priority_to_queue_list);
+
+#define MAX_INTERNAL_PRIORITY 9
+static struct priority_to_queue_entry prio_to_queue[MAX_INTERNAL_PRIORITY+1];
 
 static indigo_error_t
 priority_to_queue_parse_key(of_list_bsn_tlv_t *tlvs,
@@ -41,6 +43,12 @@ priority_to_queue_parse_key(of_list_bsn_tlv_t *tlvs,
     } else {
         AIM_LOG_ERROR("expected priority key TLV, instead got %s",
                       of_object_id_str[tlv.object_id]);
+        return INDIGO_ERROR_PARAM;
+    }
+
+    if (key->internal_priority > MAX_INTERNAL_PRIORITY) {
+        AIM_LOG_ERROR("Internal priority out of range (%u)",
+                      key->internal_priority);
         return INDIGO_ERROR_PARAM;
     }
 
@@ -100,13 +108,12 @@ priority_to_queue_add(void *table_priv, of_list_bsn_tlv_t *key_tlvs,
         return rv;
     }
 
-    entry = aim_zmalloc(sizeof(*entry));
+    entry = &prio_to_queue[key.internal_priority];
     entry->key = key;
     entry->value = value;
 
     AIM_LOG_VERBOSE("Create priority_to_queue entry prio=%u -> queue_id=%u",
                     entry->key.internal_priority, entry->value.queue_id);
-    list_push(&priority_to_queue_list, &entry->links);
 
     *entry_priv = entry;
     return INDIGO_ERROR_NONE;
@@ -141,8 +148,7 @@ priority_to_queue_delete(void *table_priv, void *entry_priv,
     struct priority_to_queue_entry *entry = entry_priv;
     AIM_LOG_TRACE("Delete priority_to_queue entry prio=%u -> queue_id=%u",
                   entry->key.internal_priority, entry->value.queue_id);
-    list_remove(&entry->links);
-    aim_free(entry);
+    entry->key.internal_priority = INTERNAL_PRIORITY_INVALID;
     return INDIGO_ERROR_NONE;
 }
 
@@ -163,7 +169,13 @@ static const indigo_core_gentable_ops_t priority_to_queue_ops = {
 void
 pipeline_bvs_table_priority_to_queue_register(void)
 {
-    indigo_core_gentable_register("priority_to_queue", &priority_to_queue_ops, NULL, 12, 8,
+    int i;
+    for (i=0; i <= MAX_INTERNAL_PRIORITY; i++) {
+        prio_to_queue[i].key.internal_priority = INTERNAL_PRIORITY_INVALID;
+    }
+
+    indigo_core_gentable_register("priority_to_queue", &priority_to_queue_ops,
+                                  NULL, MAX_INTERNAL_PRIORITY+1, 8,
                                   &priority_to_queue_table);
 }
 
@@ -176,15 +188,16 @@ pipeline_bvs_table_priority_to_queue_unregister(void)
 struct priority_to_queue_entry *
 pipeline_bvs_table_priority_to_queue_lookup(uint32_t internal_priority)
 {
-    list_links_t *cur;
-    LIST_FOREACH(&priority_to_queue_list, cur) {
-        struct priority_to_queue_entry *entry = container_of(cur, links,
-                                                             struct priority_to_queue_entry);
-        if (entry->key.internal_priority == internal_priority) {
-            packet_trace("Hit priority_to_queue entry prio=%u, queue_id=%u",
-                         internal_priority, entry->value.queue_id);
-            return entry;
-        }
+    if (internal_priority > MAX_INTERNAL_PRIORITY) {
+        AIM_LOG_ERROR("Internal priority out of range (%u)", internal_priority);
+        return NULL;
+    }
+
+    struct priority_to_queue_entry *entry = &prio_to_queue[internal_priority];
+    if (entry->key.internal_priority != INTERNAL_PRIORITY_INVALID) {
+        packet_trace("Hit priority_to_queue entry prio=%u, queue_id=%u",
+                     internal_priority, entry->value.queue_id);
+        return entry;
     }
 
     packet_trace("Miss priority_to_queue entry prio=%u", internal_priority);

@@ -48,6 +48,15 @@ enum pipeline_bvs_version version;
 
 static uint32_t port_sampling_rate[SLSHARED_CONFIG_OF_PORT_MAX+1];
 
+static int vlan_pcp_to_queue[8] = {QUEUE_PRIORITY_VLAN_PRIO_0_1,
+                                   QUEUE_PRIORITY_VLAN_PRIO_0_1,
+                                   QUEUE_PRIORITY_VLAN_PRIO_2_3,
+                                   QUEUE_PRIORITY_VLAN_PRIO_2_3,
+                                   QUEUE_PRIORITY_VLAN_PRIO_4_5,
+                                   QUEUE_PRIORITY_VLAN_PRIO_4_5,
+                                   QUEUE_PRIORITY_VLAN_PRIO_6_7,
+                                   QUEUE_PRIORITY_VLAN_PRIO_6_7};
+
 /*
  * Switch -> Controller async msg channel selector.
  *
@@ -404,12 +413,14 @@ process_l2(struct ctx *ctx)
 
     uint16_t tag = VLAN_VID(ntohs(ctx->key->vlan));
     uint16_t vlan_vid;
+    uint32_t internal_priority = INTERNAL_PRIORITY_INVALID;
 
     if (!(ctx->key->vlan & htons(VLAN_CFI_BIT))) {
         packet_trace("Using VLAN from port table");
         vlan_vid = port_entry->value.default_vlan_vid;
         action_push_vlan(ctx->actx);
         action_set_vlan_vid(ctx->actx, vlan_vid);
+        internal_priority = port_entry->value.internal_priority;
     } else {
         struct vlan_xlate_entry *vlan_xlate_entry =
             pipeline_bvs_table_vlan_xlate_lookup(port_entry->value.vlan_xlate_port_group_id, tag);
@@ -417,6 +428,7 @@ process_l2(struct ctx *ctx)
             packet_trace("Using VLAN from vlan_xlate");
             vlan_vid = vlan_xlate_entry->value.new_vlan_vid;
             action_set_vlan_vid(ctx->actx, vlan_vid);
+            internal_priority = vlan_xlate_entry->value.internal_priority;
         } else if (port_entry->value.require_vlan_xlate) {
             packet_trace("vlan_xlate required and missed, dropping");
             PIPELINE_STAT(VLAN_XLATE_MISS);
@@ -432,6 +444,7 @@ process_l2(struct ctx *ctx)
 
     ctx->internal_vlan_vid = vlan_vid;
     ctx->cur_tag = vlan_vid;
+    ctx->internal_priority = internal_priority;
 
     struct vlan_acl_key vlan_acl_key = make_vlan_acl_key(ctx);
     struct vlan_acl_entry *vlan_acl_entry =
@@ -915,6 +928,23 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
         pipeline_bvs_table_egress_mirror_lookup(out_port);
     if (egress_mirror_entry) {
         span(ctx, egress_mirror_entry->value.span);
+    }
+
+    /* If skb_priority is already set in the packet, use that instead */
+    if (!ctx->skb_priority) {
+        if (ctx->internal_priority != INTERNAL_PRIORITY_INVALID) {
+            struct priority_to_queue_entry *prio_to_queue_entry =
+                pipeline_bvs_table_priority_to_queue_lookup(ctx->internal_priority);
+            if (prio_to_queue_entry) {
+                ctx->skb_priority = prio_to_queue_entry->value.queue_id;
+                if (tag != 0) {
+                    action_set_vlan_pcp(ctx->actx, ctx->internal_priority);
+                }
+            }
+        } else if (tag != 0) {
+            /* Use vlan pcp to decide the skb_priority */
+            ctx->skb_priority = vlan_pcp_to_queue[VLAN_PCP(ntohs(ctx->actx->current_key.vlan))];
+        }
     }
 
     action_set_priority(ctx->actx, ctx->skb_priority);
