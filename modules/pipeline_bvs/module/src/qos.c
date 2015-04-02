@@ -33,6 +33,11 @@
 void
 pipeline_bvs_setup_tc(char *ifname)
 {
+    if (!strcmp(ifname, "local")) {
+        /* There's no real interface named "local" so this would fail */
+        return;
+    }
+
     int ifindex = if_nametoindex(ifname);
     if (ifindex == 0) {
         AIM_LOG_ERROR("if_nametoindex failed for %s", ifname);
