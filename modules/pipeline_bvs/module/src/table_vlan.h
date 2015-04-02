@@ -31,6 +31,7 @@ struct vlan_value {
     uint32_t *ports; /* first tagged ports, then untagged ports */
     int num_ports;
     int num_tagged_ports;
+    uint32_t internal_priority;
 };
 
 struct vlan_entry {
