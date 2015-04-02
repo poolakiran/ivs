@@ -13,3 +13,4 @@ standard
 ^cdpa.CdpRxRequest
 ^l3.PktOutCidrRouteTrap
 ^l3.PktOutHostRouteTrap
+^nat.InsertMany
