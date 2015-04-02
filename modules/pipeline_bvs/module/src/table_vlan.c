@@ -60,6 +60,7 @@ parse_value(of_flow_add_t *obj, struct vlan_value *value)
     value->ports = aim_malloc(ports_size * sizeof(value->ports[0]));
     value->num_ports = 0;
     value->num_tagged_ports = 0;
+    value->internal_priority = INTERNAL_PRIORITY_INVALID;
 
     of_flow_add_instructions_bind(obj, &insts);
     OF_LIST_INSTRUCTION_ITER(&insts, &inst, rv) {
@@ -107,6 +108,9 @@ parse_value(of_flow_add_t *obj, struct vlan_value *value)
             }
             break;
         }
+        case OF_INSTRUCTION_BSN_INTERNAL_PRIORITY:
+            of_instruction_bsn_internal_priority_value_get(&inst, &value->internal_priority);
+            break;
         default:
             AIM_LOG_ERROR("Unexpected instruction %s in vlan table", of_object_id_str[inst.object_id]);
             goto error;
@@ -146,8 +150,8 @@ pipeline_bvs_table_vlan_entry_create(
         return rv;
     }
 
-    AIM_LOG_VERBOSE("Create vlan entry vlan=%u -> l3_interface_class_id=%#x vrf=%u",
-                    entry->key.vlan_vid, entry->value.l3_interface_class_id, entry->value.vrf);
+    AIM_LOG_VERBOSE("Create vlan entry vlan=%u -> l3_interface_class_id=%#x vrf=%u, internal_prio=%u",
+                    entry->key.vlan_vid, entry->value.l3_interface_class_id, entry->value.vrf, entry->value.internal_priority);
 
     vlan_hashtable_insert(vlan_hashtable, entry);
 
@@ -236,8 +240,8 @@ pipeline_bvs_table_vlan_lookup(uint16_t vlan_vid)
     struct vlan_key key = { .vlan_vid = vlan_vid & ~VLAN_CFI_BIT};
     struct vlan_entry *entry = vlan_hashtable_first(vlan_hashtable, &key);
     if (entry) {
-        packet_trace("Hit vlan entry vlan=%u -> l3_interface_class_id=%#x vrf=%u",
-                     entry->key.vlan_vid, entry->value.l3_interface_class_id, entry->value.vrf);
+        packet_trace("Hit vlan entry vlan=%u -> l3_interface_class_id=%#x vrf=%u, internal_prio=%u",
+                     entry->key.vlan_vid, entry->value.l3_interface_class_id, entry->value.vrf, entry->value.internal_priority);
     } else {
         packet_trace("Miss vlan entry vlan=%u", key.vlan_vid);
     }
