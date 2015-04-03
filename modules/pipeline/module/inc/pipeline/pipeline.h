@@ -113,4 +113,6 @@ pipeline_add_stats(struct xbuf *stats, struct stats_handle *stats_handle)
  */
 void pipeline_inband_queue_priority_set(int priority);
 
+void pipeline_init(void);
+
 #endif

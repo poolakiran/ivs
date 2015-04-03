@@ -523,6 +523,7 @@ aim_main(int argc, char* argv[])
         return 1;
     }
 
+    pipeline_init();
     inband_init();
     ivs_agent_init();
 
