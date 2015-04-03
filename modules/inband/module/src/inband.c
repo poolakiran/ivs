@@ -82,21 +82,23 @@ static debug_counter_t sent_lldp_reply;
 static debug_counter_t invalid_management_tlv;
 static debug_counter_t controller_add_failed;
 
-indigo_core_listener_result_t
-inband_receive_packet(ppe_packet_t *ppep, of_port_no_t in_port)
+void
+inband_receive_packet(uint8_t *data, unsigned int len, of_port_no_t in_port)
 {
-    if (!ind_ovs_uplink_check(in_port)) {
-        AIM_LOG_TRACE("Not received on an uplink port");
-        return INDIGO_CORE_LISTENER_RESULT_PASS;
+    ppe_packet_t ppep;
+    ppe_packet_init(&ppep, data, len);
+    if (ppe_parse(&ppep) < 0) {
+        AIM_LOG_WARN("Packet-in parsing failed");
+        return;
     }
 
     /*
      * Get the start of LLDP header
      */
     uint8_t *header;
-    if ((header = ppe_header_get(ppep, PPE_HEADER_LLDP)) == NULL) {
+    if ((header = ppe_header_get(&ppep, PPE_HEADER_LLDP)) == NULL) {
         AIM_LOG_VERBOSE("Not an LLDP packet");
-        return INDIGO_CORE_LISTENER_RESULT_PASS;
+        return;
     }
 
     debug_counter_inc(&received_uplink_lldp);
@@ -107,7 +109,7 @@ inband_receive_packet(ppe_packet_t *ppep, of_port_no_t in_port)
     int num_new_controllers = 0;
 
     struct lldp_tlv tlv;
-    int remain = ppep->size - (header - ppep->data);
+    int remain = ppep.size - (header - ppep.data);
     const uint8_t *pos = header;
     while (inband_lldp_parse_tlv(&pos, &remain, &tlv)) {
         AIM_LOG_TRACE("Found tlv type=%u oui=%u subtype=%u payload_length=%u", tlv.type, tlv.oui, tlv.subtype, tlv.payload_length);
@@ -167,8 +169,6 @@ inband_receive_packet(ppe_packet_t *ppep, of_port_no_t in_port)
     send_lldp_reply(in_port);
 
     retarget_logger();
-
-    return INDIGO_CORE_LISTENER_RESULT_PASS;
 }
 
 static void

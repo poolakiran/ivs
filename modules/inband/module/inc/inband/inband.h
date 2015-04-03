@@ -24,7 +24,6 @@
 #include <PPE/ppe.h>
 
 void inband_init(void);
-indigo_core_listener_result_t inband_receive_packet(ppe_packet_t *ppep,
-                                                    of_port_no_t in_port);
+void inband_receive_packet(uint8_t *data, unsigned int len, of_port_no_t in_port);
 
 #endif /* INBAND_H */
