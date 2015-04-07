@@ -137,17 +137,15 @@ pipeline_process(struct ind_ovs_parsed_key *key,
     mask->populated = key->populated;
     ATTR_BITMAP_SET(mask->populated, OVS_KEY_ATTR_ETHERTYPE);
 
-    if (ind_ovs_uplink_check(key->in_port)) {
-        mask->ethertype = -1;
-        if (key->ethertype == htons(0x88cc)) {
-            uint64_t userdata = IVS_PKTIN_USERDATA(0, OFP_BSN_PKTIN_FLAG_PDU);
-            uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(&inband_pktin_soc);
-            action_userspace(actx, &userdata, sizeof(uint64_t), netlink_port);
-        }
-    }
-
     if (ind_ovs_inband_vlan != VLAN_INVALID) {
         if (ind_ovs_uplink_check(key->in_port)) {
+            mask->ethertype = -1;
+            if (key->ethertype == htons(0x88cc)) {
+                uint64_t userdata = 0;
+                uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(&inband_pktin_soc);
+                action_userspace(actx, &userdata, sizeof(uint64_t), netlink_port);
+            }
+
             mask->vlan = -1;
             if (VLAN_VID(ntohs(key->vlan)) == ind_ovs_inband_vlan) {
                 packet_trace("Sending in-band management packet from uplink to internal port");
