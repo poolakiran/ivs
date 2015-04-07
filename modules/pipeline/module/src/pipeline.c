@@ -24,6 +24,7 @@
 #include <ivs/ivs.h>
 #include <loci/loci.h>
 #include <packet_trace/packet_trace.h>
+#include <inband/inband.h>
 
 #define AIM_LOG_MODULE_NAME pipeline
 #include <AIM/aim_log.h>
@@ -42,6 +43,8 @@ static struct pipeline pipelines[MAX_PIPELINES];
 static struct pipeline *current_pipeline;
 
 static int queue_priority_inband = -1;
+
+static struct ind_ovs_pktin_socket inband_pktin_soc;
 
 void
 pipeline_register(const char *name, const struct pipeline_ops *ops)
@@ -136,6 +139,13 @@ pipeline_process(struct ind_ovs_parsed_key *key,
 
     if (ind_ovs_inband_vlan != VLAN_INVALID) {
         if (ind_ovs_uplink_check(key->in_port)) {
+            mask->ethertype = -1;
+            if (key->ethertype == htons(0x88cc)) {
+                uint64_t userdata = 0;
+                uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(&inband_pktin_soc);
+                action_userspace(actx, &userdata, sizeof(uint64_t), netlink_port);
+            }
+
             mask->vlan = -1;
             if (VLAN_VID(ntohs(key->vlan)) == ind_ovs_inband_vlan) {
                 packet_trace("Sending in-band management packet from uplink to internal port");
@@ -173,6 +183,20 @@ void
 pipeline_inband_queue_priority_set(int priority)
 {
     queue_priority_inband = priority;
+}
+
+static void
+process_inband_pktin(uint8_t *data, unsigned int len,
+                     uint8_t reason, uint64_t metadata,
+                     struct ind_ovs_parsed_key *pkey)
+{
+    inband_receive_packet(data, len, pkey->in_port);
+}
+
+void
+pipeline_init(void)
+{
+    ind_ovs_pktin_socket_register(&inband_pktin_soc, process_inband_pktin, 5000, 32);
 }
 
 void

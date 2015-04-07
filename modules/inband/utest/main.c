@@ -31,12 +31,6 @@
 #include <indigo/of_state_manager.h>
 #include <indigo/port_manager.h>
 
-enum listener_result_assertion {
-    PASS = INDIGO_CORE_LISTENER_RESULT_PASS,
-    DROP = INDIGO_CORE_LISTENER_RESULT_DROP,
-    DONTCARE,
-};
-
 static const uint8_t lldp_prefix[] = {
     // Destination MAC
     0x01, 0x80, 0xc2, 0x00, 0x00, 0x0e,
@@ -94,19 +88,10 @@ static int next_controller_id;
 static bool disable_expectations;
 
 static void
-packet_in(const uint8_t *data, int length,
-          of_port_no_t in_port,
-          enum listener_result_assertion expect)
+packet_in(uint8_t *data, int length,
+          of_port_no_t in_port)
 {
-    ppe_packet_t ppep;
-    ppe_packet_init(&ppep, (uint8_t *)data, length);
-    if (ppe_parse(&ppep) < 0) {
-        return;
-    }
-    indigo_core_listener_result_t result = inband_receive_packet(&ppep, in_port);
-    if (expect != DONTCARE) {
-        AIM_ASSERT(expect == (int)result);
-    }
+    inband_receive_packet(data, length, in_port);
 }
 
 /*
@@ -154,8 +139,7 @@ append_management_address_tlv(uint8_t *dest, const char *ip)
 static void
 lldp_packet_in(of_port_no_t port,
                const char *controller1_ip,
-               const char *controller2_ip,
-               enum listener_result_assertion expect)
+               const char *controller2_ip)
 {
     static uint8_t data[1500];
     int offset = 0;
@@ -177,7 +161,7 @@ lldp_packet_in(of_port_no_t port,
 
     fprintf(stderr, "Sending LLDP with management IPs %s and %s\n", controller1_ip, controller2_ip);
 
-    packet_in(data, offset, port, expect);
+    packet_in(data, offset, port);
 }
 
 static void
@@ -218,7 +202,7 @@ static void
 reset(void)
 {
     disable_expectations = true;
-    lldp_packet_in(1, NULL, NULL, PASS);
+    lldp_packet_in(1, NULL, NULL);
     disable_expectations = false;
     check_expectations();
 }
@@ -231,17 +215,17 @@ test_basic(void)
     /* Add two controllers */
     expect_add("fe80::1");
     expect_add("fe80::2");
-    lldp_packet_in(1, "fe80::1", "fe80::2", PASS);
+    lldp_packet_in(1, "fe80::1", "fe80::2");
     check_expectations();
 
     /* Same controllers, different order */
-    lldp_packet_in(1, "fe80::2", "fe80::1", PASS);
+    lldp_packet_in(1, "fe80::2", "fe80::1");
     check_expectations();
 
     /* Replace one controller */
     expect_remove("fe80::2");
     expect_add("fe80::3");
-    lldp_packet_in(1, "fe80::1", "fe80::3", PASS);
+    lldp_packet_in(1, "fe80::1", "fe80::3");
     check_expectations();
 
     /* Replace both controllers */
@@ -249,17 +233,17 @@ test_basic(void)
     expect_remove("fe80::3");
     expect_add("fe80::4");
     expect_add("fe80::5");
-    lldp_packet_in(1, "fe80::4", "fe80::5", PASS);
+    lldp_packet_in(1, "fe80::4", "fe80::5");
     check_expectations();
 
     /* Remove a controller */
     expect_remove("fe80::4");
-    lldp_packet_in(1, "fe80::5", NULL, PASS);
+    lldp_packet_in(1, "fe80::5", NULL);
     check_expectations();
 
     /* Remove the last controller */
     expect_remove("fe80::5");
-    lldp_packet_in(1, NULL, NULL, PASS);
+    lldp_packet_in(1, NULL, NULL);
     check_expectations();
 }
 
@@ -291,14 +275,14 @@ test_corrupt(void)
     int bit;
     for (bit = 0; bit < offset*8; bit++) {
         data[bit/8] ^= 1<<(bit %8);
-        packet_in(data, offset, 1, DONTCARE);
+        packet_in(data, offset, 1);
         data[bit/8] ^= 1<<(bit %8);
     }
 
     /* Truncate the message and make sure the parser doesn't crash */
     int i;
     for (i = 0; i < offset; i++) {
-        packet_in(data, i, 1, DONTCARE);
+        packet_in(data, i, 1);
     }
 
     disable_expectations = false;
@@ -317,33 +301,29 @@ test_invalid(void)
 
     /* Duplicate addresses */
     expect_add("fe80::1");
-    lldp_packet_in(1, "fe80::1", "fe80::1", PASS);
+    lldp_packet_in(1, "fe80::1", "fe80::1");
     check_expectations();
 
     /* Same duplicate addresses */
-    lldp_packet_in(1, "fe80::1", "fe80::1", PASS);
+    lldp_packet_in(1, "fe80::1", "fe80::1");
     check_expectations();
 
     /* Different duplicate addresses */
     expect_remove("fe80::1");
     expect_add("fe80::2");
-    lldp_packet_in(1, "fe80::2", "fe80::2", PASS);
+    lldp_packet_in(1, "fe80::2", "fe80::2");
     check_expectations();
 
     /* Fail indigo_cxn_controller_add */
-    lldp_packet_in(1, "::", "fe80::2", PASS);
+    lldp_packet_in(1, "::", "fe80::2");
     check_expectations();
 
     /* Invalid IP address length */
-    lldp_packet_in(1, "invalid-ipv6-length", "fe80::2", PASS);
+    lldp_packet_in(1, "invalid-ipv6-length", "fe80::2");
     check_expectations();
 
     /* Unsupported address type */
-    lldp_packet_in(1, "unsupported-address-type", "fe80::2", PASS);
-    check_expectations();
-
-    /* Not from an uplink port */
-    lldp_packet_in(2, "fe80::1", "fe80::2", PASS);
+    lldp_packet_in(1, "unsupported-address-type", "fe80::2");
     check_expectations();
 }
 
@@ -360,13 +340,13 @@ test_hostname_override(void)
     /* Set the environment variable and check that the LLDP reply changes */
     setenv("IVS_HOSTNAME", "host1234", true);
     memcpy(expected_hostname, "host1234", 8);
-    lldp_packet_in(1, NULL, NULL, PASS);
+    lldp_packet_in(1, NULL, NULL);
     check_expectations();
 
     /* Unset the environment variable and check that the LLDP reply is back to normal*/
     unsetenv("IVS_HOSTNAME");
     memcpy(expected_hostname, "hostname", 8);
-    lldp_packet_in(1, NULL, NULL, PASS);
+    lldp_packet_in(1, NULL, NULL);
     check_expectations();
 }
 

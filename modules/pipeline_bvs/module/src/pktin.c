@@ -131,7 +131,6 @@ process_port_pktin(uint8_t *data, unsigned int len,
     if (!memcmp(data, cdp_mac.addr, OF_MAC_ADDR_BYTES)) {
         result = cdpa_receive_packet(&octets, pkey->in_port);
     } else if (ppe_header_get(&ppep, PPE_HEADER_LLDP)) {
-        inband_receive_packet(&ppep, pkey->in_port);
         result = lldpa_receive_packet(&octets, pkey->in_port);
     } else if (ppe_header_get(&ppep, PPE_HEADER_LACP)) {
         result = lacpa_receive_packet (&ppep, pkey->in_port);
