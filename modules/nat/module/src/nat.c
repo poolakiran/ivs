@@ -36,6 +36,8 @@
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/netfilter/nfnetlink_conntrack.h>
 #include <endian.h>
+#include <net/if.h>
+#include <ivs/ivs.h>
 #include "nat_int.h"
 #include "nat_log.h"
 
@@ -219,10 +221,40 @@ nat_container_setup(struct nat_entry *entry)
 }
 
 static void
+wait_for_interface_delete(const char *name)
+{
+    /* Wait for up to one second before giving up */
+    int i = 0;
+    while (if_nametoindex(name) != 0 && i < 10) {
+        usleep(1000 * (1 << i++));
+    }
+
+    if (if_nametoindex(name) != 0) {
+        AIM_LOG_WARN("interface %s was not deleted within one second", name);
+    }
+}
+
+static void
 nat_container_teardown(struct nat_entry *entry)
 {
     AIM_LOG_VERBOSE("Destroying NAT container %s", entry->key.name);
     close(entry->netns);
+
+    char ext_ifname[IFNAMSIZ+1];
+    format_port_name(ext_ifname, entry->value.external_mac);
+    char int_ifname[IFNAMSIZ+1];
+    format_port_name(int_ifname, entry->value.internal_mac);
+
+    /* The kernel can take over 100ms after close() to delete the interfaces */
+    wait_for_interface_delete(ext_ifname);
+    wait_for_interface_delete(int_ifname);
+
+    /* Receive the vport deleted notifications
+     *
+     * This allows future container setups with the same MACs to succeed
+     * without needing to go to the event loop first.
+     */
+    ind_ovs_handle_multicast();
 }
 
 
