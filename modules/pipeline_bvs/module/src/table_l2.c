@@ -271,7 +271,7 @@ pipeline_bvs_table_l2_unregister(void)
 }
 
 struct l2_entry *
-pipeline_bvs_table_l2_lookup(uint16_t vlan_vid, const uint8_t *mac)
+pipeline_bvs_table_l2_lookup(uint16_t vlan_vid, const uint8_t *mac, bool allow_miss)
 {
     struct l2_key key;
     key.vlan_vid = VLAN_VID(vlan_vid);
@@ -286,6 +286,6 @@ pipeline_bvs_table_l2_lookup(uint16_t vlan_vid, const uint8_t *mac)
     } else {
         packet_trace("Miss L2 entry vlan=%u, mac=%{mac}",
                      key.vlan_vid, &key.mac);
-        return miss_entry;
+        return allow_miss ? miss_entry : NULL;
     }
 }

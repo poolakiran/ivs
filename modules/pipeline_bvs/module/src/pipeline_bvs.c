@@ -494,7 +494,7 @@ process_l2(struct ctx *ctx)
 
     /* Source lookup */
     struct l2_entry *src_l2_entry =
-        pipeline_bvs_table_l2_lookup(vlan_vid, ctx->key->ethernet.eth_src);
+        pipeline_bvs_table_l2_lookup(vlan_vid, ctx->key->ethernet.eth_src, false);
 
     bool disable_src_mac_check =
         port_entry->value.disable_src_mac_check &&
@@ -583,7 +583,7 @@ process_l2(struct ctx *ctx)
 
     /* Destination lookup */
     struct l2_entry *dst_l2_entry =
-        pipeline_bvs_table_l2_lookup(vlan_vid, ctx->key->ethernet.eth_dst);
+        pipeline_bvs_table_l2_lookup(vlan_vid, ctx->key->ethernet.eth_dst, true);
     if (!dst_l2_entry) {
         packet_trace("miss in destination l2table lookup (destination lookup failure)");
         PIPELINE_STAT(DESTINATION_LOOKUP_FAILURE);
