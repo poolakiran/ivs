@@ -27,14 +27,21 @@
 #include <linux/pkt_sched.h>
 #include <linux/pkt_cls.h>
 #include <linux/if_ether.h>
+#include <indigo/port_manager.h>
 
 #define NUM_OF_QUEUES 9
 
+static bool port_tc_setup[SLSHARED_CONFIG_OF_PORT_MAX+1];
+
 void
-pipeline_bvs_setup_tc(char *ifname)
+pipeline_bvs_setup_tc(char *ifname, of_port_no_t port_no)
 {
     if (!strcmp(ifname, "local")) {
         /* There's no real interface named "local" so this would fail */
+        return;
+    }
+
+    if (port_tc_setup[port_no] == true) {
         return;
     }
 
@@ -143,6 +150,24 @@ pipeline_bvs_setup_tc(char *ifname)
         }
     }
 
+    port_tc_setup[port_no] = true;
+
 error:
     nl_socket_free(sk);
+}
+
+void
+pipeline_bvs_qos_register(void)
+{
+    indigo_port_info_t *port_list, *port_info;
+    if (indigo_port_interface_list(&port_list) < 0) {
+        AIM_LOG_VERBOSE("Failed to retrieve port list");
+        return;
+    }
+
+    for (port_info = port_list; port_info; port_info = port_info->next) {
+        pipeline_bvs_setup_tc(port_info->port_name, port_info->of_port);
+    }
+
+    indigo_port_interface_list_destroy(port_list);
 }
