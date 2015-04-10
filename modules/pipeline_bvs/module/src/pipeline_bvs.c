@@ -322,7 +322,10 @@ process_l2(struct ctx *ctx)
     }
 
     ctx->original_vlan_vid = VLAN_VID(ntohs(ctx->key->vlan));
-    ctx->skb_priority = ctx->key->priority;
+    /* Extract skb_priority only for cpu generated packets */
+    if (ctx->key->in_port == OVSP_LOCAL) {
+        ctx->skb_priority = ctx->key->priority;
+    }
 
     /* Ingress mirror */
     struct ingress_mirror_entry *ingress_mirror_entry =
