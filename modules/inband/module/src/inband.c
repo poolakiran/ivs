@@ -161,6 +161,50 @@ inband_receive_packet(uint8_t *data, unsigned int len, of_port_no_t in_port)
             }
 
             num_new_controllers++;
+        } else if (tlv.type == LLDP_TLV_VENDOR && tlv.oui == LLDP_BSN_OUI &&
+                tlv.subtype == LLDP_BSN_INBAND_CONTROLLER_ADDR) {
+            AIM_LOG_TRACE("Found inband OpenFlow controller address TLV");
+
+            if (num_controllers >= MAX_INBAND_CONTROLLERS) {
+                AIM_LOG_WARN("Too many inband OpenFlow controller address TLVs in LLDP");
+                debug_counter_inc(&invalid_management_tlv);
+                continue;
+            }
+
+            if (tlv.payload_length != sizeof(of_ipv6_t)) {
+                AIM_LOG_WARN("Unexpected length in OpenFlow controller address TLV");
+                debug_counter_inc(&invalid_management_tlv);
+                continue;
+            }
+
+            struct inband_controller *new_controller = &new_controllers[num_new_controllers];
+            memset(new_controller, 0, sizeof(*new_controller));
+
+            char addr_str[64];
+            inet_ntop(AF_INET6, tlv.payload, addr_str, sizeof(addr_str));
+
+            AIM_LOG_VERBOSE("Controller address: %s", addr_str);
+
+            indigo_cxn_params_tcp_over_ipv6_t *proto = &new_controller->protocol_params.tcp_over_ipv6;
+            proto->protocol = INDIGO_CXN_PROTO_TCP_OVER_IPV6;
+            snprintf(proto->controller_ip, sizeof(proto->controller_ip),
+                    "%s%%%s", addr_str, inband_interface_name);
+            proto->controller_port = 6653;
+
+            /* Don't add duplicate controllers */
+            int i;
+            bool found = false;
+            for (i = 0; i < num_new_controllers; i++) {
+                struct inband_controller *other = &new_controllers[i];
+                if (!memcmp(&other->protocol_params, &new_controller->protocol_params, sizeof(other->protocol_params))) {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                num_new_controllers++;
+            }
         }
     }
 

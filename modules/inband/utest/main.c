@@ -86,6 +86,8 @@ static int num_expected_adds, num_expected_removes;
 static const char *controller_ips[1024];
 static int next_controller_id;
 static bool disable_expectations;
+static bool send_mgmt_addr_tlv;
+static bool send_inband_addr_tlv;
 
 static void
 packet_in(uint8_t *data, int length,
@@ -136,6 +138,28 @@ append_management_address_tlv(uint8_t *dest, const char *ip)
     return i;
 }
 
+/*
+ * Inband OpenFlow controller address TLV payload
+ *
+ * - oui == 0x0026e1 (3 bytes)
+ * - subtype == 5 (1 byte)
+ * - ipv6 (16 bytes)
+ */
+
+static int
+append_inband_controller_tlv(uint8_t *dest, const char *ip)
+{
+    int i = 0;
+    dest[i++] = 0xfe; /* type */
+    dest[i++] = 0x14; /* length */
+    dest[i++] = 0x00; /* oui */
+    dest[i++] = 0x26; /* oui */
+    dest[i++] = 0xe1; /* oui */
+    dest[i++] = 0x05; /* subtype */
+    inet_pton(AF_INET6, ip, &dest[i]); i+=16; /* address */
+    return i;
+}
+
 static void
 lldp_packet_in(of_port_no_t port,
                const char *controller1_ip,
@@ -148,18 +172,28 @@ lldp_packet_in(of_port_no_t port,
     offset += sizeof(lldp_prefix);
 
     if (controller1_ip) {
-        offset += append_management_address_tlv(data + offset, controller1_ip);
+        if (send_mgmt_addr_tlv) {
+            offset += append_management_address_tlv(data + offset, controller1_ip);
+        }
+        if (send_inband_addr_tlv) {
+            offset += append_inband_controller_tlv(data + offset, controller1_ip);
+        }
     }
 
     if (controller2_ip) {
-        offset += append_management_address_tlv(data + offset, controller2_ip);
+        if (send_mgmt_addr_tlv) {
+            offset += append_management_address_tlv(data + offset, controller2_ip);
+        }
+        if (send_inband_addr_tlv) {
+            offset += append_inband_controller_tlv(data + offset, controller2_ip);
+        }
     }
 
     /* End of LLDPDU */
     data[offset++] = 0;
     data[offset++] = 0;
 
-    fprintf(stderr, "Sending LLDP with management IPs %s and %s\n", controller1_ip, controller2_ip);
+    fprintf(stderr, "Sending LLDP with IPs %s and %s\n", controller1_ip, controller2_ip);
 
     packet_in(data, offset, port);
 }
@@ -357,10 +391,22 @@ int aim_main(int argc, char* argv[])
 
     inband_init();
 
+    send_mgmt_addr_tlv = true;
+    send_inband_addr_tlv = false;
     test_basic();
     test_corrupt();
     test_invalid();
     test_hostname_override();
+
+    fprintf(stderr, "Running basic test with inband OpenFlow controller address TLV\n");
+    send_mgmt_addr_tlv = false;
+    send_inband_addr_tlv = true;
+    test_basic();
+
+    fprintf(stderr, "Running basic test with both management address and inband OpenFlow controller address TLVs\n");
+    send_mgmt_addr_tlv = true;
+    send_inband_addr_tlv = true;
+    test_basic();
 
     return 0;
 }
