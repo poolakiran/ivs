@@ -231,7 +231,7 @@ pipeline_bvs_pktin_socket_register()
     /* Register port pktin sockets */
     indigo_port_info_t *port_list, *port_info;
     if (indigo_port_interface_list(&port_list) < 0) {
-        AIM_LOG_VERBOSE("Failed to retrieve port list");
+        AIM_LOG_ERROR("Failed to retrieve port list");
         return;
     }
 
