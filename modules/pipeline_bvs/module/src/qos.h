@@ -20,6 +20,7 @@
 #ifndef QOS_H
 #define QOS_H
 
-void pipeline_bvs_setup_tc(char *ifname);
+void pipeline_bvs_setup_tc(char *ifname, of_port_no_t port_no);
+void pipeline_bvs_qos_register(void);
 
 #endif

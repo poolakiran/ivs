@@ -171,7 +171,7 @@ pipeline_bvs_port_status_handler(of_port_status_t *port_status)
         /* Use tc to set up queues for this port */
         of_port_name_t if_name;
         of_port_desc_name_get(&port_desc, &if_name);
-        pipeline_bvs_setup_tc(if_name);
+        pipeline_bvs_setup_tc(if_name, port_no);
     } else if (reason == OF_PORT_CHANGE_REASON_DELETE) {
         pipeline_bvs_port_pktin_socket_unregister(port_no);
     }
@@ -240,6 +240,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_port_status_register();
     pipeline_bvs_pktin_socket_register();
     pipeline_bvs_table_priority_to_queue_register();
+    pipeline_bvs_qos_register();
 }
 
 static void
