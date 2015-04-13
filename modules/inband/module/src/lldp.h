@@ -29,6 +29,10 @@
 #define LLDP_ADDRESS_FAMILY_IPV4 1
 #define LLDP_ADDRESS_FAMILY_IPV6 2
 
+#define LLDP_TLV_VENDOR 127
+#define LLDP_BSN_OUI 0x26e1
+#define LLDP_BSN_INBAND_CONTROLLER_ADDR 5
+
 struct lldp_tlv {
     uint8_t type;
     uint32_t oui;
