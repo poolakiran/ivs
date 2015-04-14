@@ -24,6 +24,8 @@
 #include <indigo/indigo.h>
 #include <indigo/of_state_manager.h>
 #include <packet_trace/packet_trace.h>
+#include <arpa/inet.h>
+#include "table_ifp.h"
 
 #define AIM_LOG_MODULE_NAME pipeline_bigtap
 #include <AIM/aim_log.h>
@@ -36,6 +38,8 @@ AIM_LOG_STRUCT_DEFINE(AIM_LOG_OPTIONS_DEFAULT, AIM_LOG_BITS_DEFAULT, NULL, 0);
 /* Overall packet-in burstiness tolerance. */
 #define PKTIN_BURST_SIZE 32
 
+static struct ifp_key make_ifp_key(const struct ind_ovs_parsed_key *key);
+
 struct ind_ovs_pktin_socket pktin_soc;
 
 static void
@@ -43,11 +47,13 @@ pipeline_bigtap_init(const char *name)
 {
     ind_ovs_pktin_socket_register(&pktin_soc, NULL, PKTIN_INTERVAL,
                                   PKTIN_BURST_SIZE);
+    pipeline_bigtap_table_ifp_register();
 }
 
 static void
 pipeline_bigtap_finish(void)
 {
+    pipeline_bigtap_table_ifp_unregister();
     ind_ovs_pktin_socket_unregister(&pktin_soc);
 }
 
@@ -61,11 +67,84 @@ pipeline_bigtap_process(struct ind_ovs_parsed_key *key,
     memset(mask, 0xff, sizeof(*mask));
     mask->populated = populated;
 
-    uint64_t userdata = IVS_PKTIN_USERDATA(OF_PACKET_IN_REASON_NO_MATCH, 0);
-    uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(&pktin_soc);
-    action_userspace(actx, &userdata, sizeof(uint64_t), netlink_port);
+    struct ifp_key ifp_key = make_ifp_key(key);
+    struct ifp_entry *ifp_entry =
+        pipeline_bigtap_table_ifp_lookup(&ifp_key);
+    if (ifp_entry) {
+        if (ifp_entry->value.new_vlan_vid != VLAN_INVALID) {
+            action_set_vlan_vid(actx, ifp_entry->value.new_vlan_vid);
+        }
+
+        uint32_t out_port;
+        AIM_BITMAP_ITER(&ifp_entry->value.out_port_bitmap, out_port) {
+            action_output(actx, out_port);
+        }
+    }
 
     return INDIGO_ERROR_NONE;
+}
+
+static struct ifp_key
+make_ifp_key(const struct ind_ovs_parsed_key *key)
+{
+    struct ifp_key ifp_key;
+    memset(&ifp_key, 0, sizeof(ifp_key));
+
+    if (key->in_port == OVSP_LOCAL) {
+        ifp_key.in_port = OF_PORT_DEST_LOCAL;
+    } else {
+        ifp_key.in_port = key->in_port;
+    }
+
+    memcpy(ifp_key.eth_dst, key->ethernet.eth_dst, OF_MAC_ADDR_BYTES);
+    memcpy(ifp_key.eth_src, key->ethernet.eth_src, OF_MAC_ADDR_BYTES);
+
+    if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_ETHERTYPE)) {
+        ifp_key.eth_type = ntohs(key->ethertype);
+        if (ifp_key.eth_type <= OF_DL_TYPE_NOT_ETH_TYPE) {
+            ifp_key.eth_type = OF_DL_TYPE_NOT_ETH_TYPE;
+        }
+    } else {
+        ifp_key.eth_type = OF_DL_TYPE_NOT_ETH_TYPE;
+    }
+
+    if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_VLAN)) {
+        ifp_key.vlan = ntohs(key->vlan) | VLAN_CFI_BIT;
+    } else {
+        ifp_key.vlan = 0;
+    }
+
+    if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_IPV4)) {
+        ifp_key.ip_tos = key->ipv4.ipv4_tos;
+        ifp_key.ip_proto = key->ipv4.ipv4_proto;
+        ifp_key.ipv4_src = ntohl(key->ipv4.ipv4_src);
+        ifp_key.ipv4_dst = ntohl(key->ipv4.ipv4_dst);
+    } else if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_IPV6)) {
+        ifp_key.ip_tos = key->ipv6.ipv6_tclass;
+        ifp_key.ip_proto = key->ipv6.ipv6_proto;
+        memcpy(&ifp_key.ipv6_src, &key->ipv6.ipv6_src, OF_IPV6_BYTES);
+        memcpy(&ifp_key.ipv6_dst, &key->ipv6.ipv6_dst, OF_IPV6_BYTES);
+    }
+
+    if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_TCP)) {
+        ifp_key.tp_src = ntohs(key->tcp.tcp_src);
+        ifp_key.tp_dst = ntohs(key->tcp.tcp_dst);
+    } else if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_UDP)) {
+        ifp_key.tp_src = ntohs(key->udp.udp_src);
+        ifp_key.tp_dst = ntohs(key->udp.udp_dst);
+    } else if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_ICMP)) {
+        ifp_key.tp_src = key->icmp.icmp_type & 0xff;
+        ifp_key.tp_dst = key->icmp.icmp_code & 0xff;
+    } else if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_ICMPV6)) {
+        ifp_key.tp_src = key->icmpv6.icmpv6_type & 0xff;
+        ifp_key.tp_dst = key->icmpv6.icmpv6_code & 0xff;
+    }
+
+    if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_TCP_FLAGS)) {
+        ifp_key.tcp_flags = ntohs(key->tcp_flags);
+    }
+
+    return ifp_key;
 }
 
 static struct pipeline_ops pipeline_bigtap_ops = {
