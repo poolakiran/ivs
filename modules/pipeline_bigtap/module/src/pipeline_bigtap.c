@@ -26,6 +26,7 @@
 #include <packet_trace/packet_trace.h>
 #include <arpa/inet.h>
 #include "table_ifp.h"
+#include "table_vfp.h"
 
 #define AIM_LOG_MODULE_NAME pipeline_bigtap
 #include <AIM/aim_log.h>
@@ -39,6 +40,7 @@ AIM_LOG_STRUCT_DEFINE(AIM_LOG_OPTIONS_DEFAULT, AIM_LOG_BITS_DEFAULT, NULL, 0);
 #define PKTIN_BURST_SIZE 32
 
 static struct ifp_key make_ifp_key(const struct ind_ovs_parsed_key *key);
+static struct vfp_key make_vfp_key(const struct ind_ovs_parsed_key *key);
 static void pktin(struct action_context *actx, uint8_t reason);
 
 struct ind_ovs_pktin_socket pktin_soc;
@@ -51,12 +53,14 @@ pipeline_bigtap_init(const char *name)
     ind_ovs_pktin_socket_register(&pktin_soc, NULL, PKTIN_INTERVAL,
                                   PKTIN_BURST_SIZE);
     pipeline_bigtap_table_ifp_register();
+    pipeline_bigtap_table_vfp_register();
 }
 
 static void
 pipeline_bigtap_finish(void)
 {
     pipeline_bigtap_table_ifp_unregister();
+    pipeline_bigtap_table_vfp_unregister();
     ind_ovs_pktin_socket_unregister(&pktin_soc);
 }
 
@@ -89,6 +93,13 @@ pipeline_bigtap_process(struct ind_ovs_parsed_key *key,
         packet_trace("sending CDP packet to the controller");
         pktin(actx, OF_PACKET_IN_REASON_NO_MATCH);
         return INDIGO_ERROR_NONE;
+    }
+
+    struct vfp_key vfp_key = make_vfp_key(key);
+    struct vfp_entry *vfp_entry =
+        pipeline_bigtap_table_vfp_lookup(&vfp_key);
+    if (vfp_entry && vfp_entry->value.cpu) {
+        pktin(actx, OF_PACKET_IN_REASON_NO_MATCH);
     }
 
     struct ifp_key ifp_key = make_ifp_key(key);
@@ -169,6 +180,45 @@ make_ifp_key(const struct ind_ovs_parsed_key *key)
     }
 
     return ifp_key;
+}
+
+static struct vfp_key
+make_vfp_key(const struct ind_ovs_parsed_key *key)
+{
+    struct vfp_key vfp_key;
+    memset(&vfp_key, 0, sizeof(vfp_key));
+
+    if (key->in_port == OVSP_LOCAL) {
+        vfp_key.in_port = OF_PORT_DEST_LOCAL;
+    } else {
+        vfp_key.in_port = key->in_port;
+    }
+
+    if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_ETHERTYPE)) {
+        vfp_key.eth_type = ntohs(key->ethertype);
+        if (vfp_key.eth_type <= OF_DL_TYPE_NOT_ETH_TYPE) {
+            vfp_key.eth_type = OF_DL_TYPE_NOT_ETH_TYPE;
+        }
+    } else {
+        vfp_key.eth_type = OF_DL_TYPE_NOT_ETH_TYPE;
+    }
+
+    if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_IPV4)) {
+        vfp_key.ip_proto = key->ipv4.ipv4_proto;
+    } else if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_IPV6)) {
+        vfp_key.ip_proto = key->ipv6.ipv6_proto;
+    }
+
+    if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_UDP)) {
+        vfp_key.tp_src = ntohs(key->udp.udp_src);
+        vfp_key.tp_dst = ntohs(key->udp.udp_dst);
+    }
+
+    if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_TCP_FLAGS)) {
+        vfp_key.tcp_flags = ntohs(key->tcp_flags);
+    }
+
+    return vfp_key;
 }
 
 static void
