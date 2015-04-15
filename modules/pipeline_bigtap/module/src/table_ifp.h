@@ -44,10 +44,9 @@ struct ifp_key {
     uint16_t tp_src;
     uint16_t tp_dst;
     uint16_t tcp_flags;
-
-    /* TODO bsn_in_port_512 */
+    uint32_t in_ports[4];
 };
-AIM_STATIC_ASSERT(IFP_KEY_SIZE, sizeof(struct ifp_key) == 68);
+AIM_STATIC_ASSERT(IFP_KEY_SIZE, sizeof(struct ifp_key) == 84);
 
 struct ifp_value {
     uint16_t new_vlan_vid;

@@ -52,6 +52,7 @@ static const of_match_fields_t maximum_mask = {
     .icmpv6_type = 0xff,
     .icmpv6_code = 0xff,
     .bsn_tcp_flags = 0xffff,
+    .bsn_in_ports_128 = { 0xffffffffffffffff, 0xffffffffffffffff },
 };
 static const of_match_fields_t minimum_mask = {
 };
@@ -104,6 +105,11 @@ parse_key(of_flow_add_t *obj, struct ifp_key *key,
 
     key->in_port = match.fields.in_port;
     mask->in_port = match.masks.in_port;
+
+    mask->in_ports[0] = match.masks.bsn_in_ports_128.hi >> 32;
+    mask->in_ports[1] = match.masks.bsn_in_ports_128.hi;
+    mask->in_ports[2] = match.masks.bsn_in_ports_128.lo >> 32;
+    mask->in_ports[3] = match.masks.bsn_in_ports_128.lo;
 
     memcpy(key->eth_dst, &match.fields.eth_dst, sizeof(key->eth_dst));
     memcpy(mask->eth_dst, &match.fields.eth_dst, sizeof(mask->eth_dst));
@@ -240,9 +246,10 @@ pipeline_bigtap_table_ifp_entry_create(
         return rv;
     }
 
-    AIM_LOG_VERBOSE("Create ifp entry prio=%u in_port=%u/%#x eth_src=%{mac}/%{mac} eth_dst=%{mac}/%{mac} eth_type=%#x/%#x vlan=%#x/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} ip_proto=%u/%#x ip_tos=%#x/%#x tp_src=%u/%#x tp_dst=%u/%#x tcp_flags=%#x/%#x"
+    AIM_LOG_VERBOSE("Create ifp entry prio=%u in_port=%u/%#x eth_src=%{mac}/%{mac} eth_dst=%{mac}/%{mac} eth_type=%#x/%#x vlan=%#x/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} ip_proto=%u/%#x ip_tos=%#x/%#x tp_src=%u/%#x tp_dst=%u/%#x tcp_flags=%#x/%#x in_ports=%08x%08x%08x%08x"
                     " -> out_ports=%{aim_bitmap}",
                     priority, key.in_port, mask.in_port, &key.eth_src, &mask.eth_src, &key.eth_dst, &mask.eth_dst, key.eth_type, mask.eth_type, key.vlan, mask.vlan, key.ipv4_src, mask.ipv4_src, key.ipv4_dst, mask.ipv4_dst, key.ip_proto, mask.ip_proto, key.ip_tos, mask.ip_tos, key.tp_src, mask.tp_src, key.tp_dst, mask.tp_dst, key.tcp_flags, mask.tcp_flags,
+                    ~mask.in_ports[0], ~mask.in_ports[1], ~mask.in_ports[2], ~mask.in_ports[3],
                     &entry->value.out_port_bitmap);
 
     stats_alloc(&entry->stats_handle);
@@ -273,9 +280,10 @@ pipeline_bigtap_table_ifp_entry_modify(
 
     const struct ifp_key *entry_key = entry->tcam_entry.key;
     const struct ifp_key *entry_mask = entry->tcam_entry.mask;
-    AIM_LOG_VERBOSE("Modify ifp entry prio=%u in_port=%u/%#x eth_src=%{mac}/%{mac} eth_dst=%{mac}/%{mac} eth_type=%#x/%#x vlan=%#x/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} ip_proto=%u/%#x ip_tos=%#x/%#x tp_src=%u/%#x tp_dst=%u/%#x tcp_flags=%#x/%#x"
+    AIM_LOG_VERBOSE("Modify ifp entry prio=%u in_port=%u/%#x eth_src=%{mac}/%{mac} eth_dst=%{mac}/%{mac} eth_type=%#x/%#x vlan=%#x/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} ip_proto=%u/%#x ip_tos=%#x/%#x tp_src=%u/%#x tp_dst=%u/%#x tcp_flags=%#x/%#x in_ports=%08x%08x%08x%08x"
                     " -> out_ports=%{aim_bitmap}",
                     entry->tcam_entry.priority, entry_key->in_port, entry_mask->in_port, &entry_key->eth_src, &entry_mask->eth_src, &entry_key->eth_dst, &entry_mask->eth_dst, entry_key->eth_type, entry_mask->eth_type, entry_key->vlan, entry_mask->vlan, entry_key->ipv4_src, entry_mask->ipv4_src, entry_key->ipv4_dst, entry_mask->ipv4_dst, entry_key->ip_proto, entry_mask->ip_proto, entry_key->ip_tos, entry_mask->ip_tos, entry_key->tp_src, entry_mask->tp_src, entry_key->tp_dst, entry_mask->tp_dst, entry_key->tcp_flags, entry_mask->tcp_flags,
+                    ~entry_mask->in_ports[0], ~entry_mask->in_ports[1], ~entry_mask->in_ports[2], ~entry_mask->in_ports[3],
                     &entry->value.out_port_bitmap);
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
@@ -348,9 +356,10 @@ pipeline_bigtap_table_ifp_lookup(const struct ifp_key *key)
         struct ifp_entry *entry = container_of(tcam_entry, tcam_entry, struct ifp_entry);
         const struct ifp_key *entry_key = tcam_entry->key;
         const struct ifp_key *entry_mask = tcam_entry->mask;
-        packet_trace("Hit ifp entry prio=%u in_port=%u/%#x eth_src=%{mac}/%{mac} eth_dst=%{mac}/%{mac} eth_type=%#x/%#x vlan=%#x/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} ip_proto=%u/%#x ip_tos=%#x/%#x tp_src=%u/%#x tp_dst=%u/%#x tcp_flags=%#x/%#x"
+        packet_trace("Hit ifp entry prio=%u in_port=%u/%#x eth_src=%{mac}/%{mac} eth_dst=%{mac}/%{mac} eth_type=%#x/%#x vlan=%#x/%#x ipv4_src=%{ipv4a}/%{ipv4a} ipv4_dst=%{ipv4a}/%{ipv4a} ip_proto=%u/%#x ip_tos=%#x/%#x tp_src=%u/%#x tp_dst=%u/%#x tcp_flags=%#x/%#x in_ports=%08x%08x%08x%08x"
                      " -> out_ports=%{aim_bitmap}",
                      tcam_entry->priority, entry_key->in_port, entry_mask->in_port, &entry_key->eth_src, &entry_mask->eth_src, &entry_key->eth_dst, &entry_mask->eth_dst, entry_key->eth_type, entry_mask->eth_type, entry_key->vlan, entry_mask->vlan, entry_key->ipv4_src, entry_mask->ipv4_src, entry_key->ipv4_dst, entry_mask->ipv4_dst, entry_key->ip_proto, entry_mask->ip_proto, entry_key->ip_tos, entry_mask->ip_tos, entry_key->tp_src, entry_mask->tp_src, entry_key->tp_dst, entry_mask->tp_dst, entry_key->tcp_flags, entry_mask->tcp_flags,
+                     ~entry_mask->in_ports[0], ~entry_mask->in_ports[1], ~entry_mask->in_ports[2], ~entry_mask->in_ports[3],
                      &entry->value.out_port_bitmap);
         return entry;
     } else {

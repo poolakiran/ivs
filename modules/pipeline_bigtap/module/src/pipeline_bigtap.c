@@ -131,6 +131,14 @@ make_ifp_key(const struct ind_ovs_parsed_key *key)
         ifp_key.in_port = key->in_port;
     }
 
+    /* Set a bit in the in_ports bitmap */
+    if (key->in_port < 128) {
+        uint32_t idx = key->in_port;
+        uint32_t word = 3 - idx/32;
+        uint32_t bit = idx % 32;
+        ifp_key.in_ports[word] = 1 << bit;
+    }
+
     memcpy(ifp_key.eth_dst, key->ethernet.eth_dst, OF_MAC_ADDR_BYTES);
     memcpy(ifp_key.eth_src, key->ethernet.eth_src, OF_MAC_ADDR_BYTES);
 
