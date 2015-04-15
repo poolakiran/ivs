@@ -39,8 +39,11 @@ AIM_LOG_STRUCT_DEFINE(AIM_LOG_OPTIONS_DEFAULT, AIM_LOG_BITS_DEFAULT, NULL, 0);
 #define PKTIN_BURST_SIZE 32
 
 static struct ifp_key make_ifp_key(const struct ind_ovs_parsed_key *key);
+static void pktin(struct action_context *actx, uint8_t reason);
 
 struct ind_ovs_pktin_socket pktin_soc;
+static const of_mac_addr_t slow_protocols_mac = { { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x02 } };
+static const of_mac_addr_t cdp_mac = { { 0x01, 0x00, 0x0c, 0xcc, 0xcc, 0xcc } };
 
 static void
 pipeline_bigtap_init(const char *name)
@@ -66,6 +69,27 @@ pipeline_bigtap_process(struct ind_ovs_parsed_key *key,
     uint64_t populated = mask->populated;
     memset(mask, 0xff, sizeof(*mask));
     mask->populated = populated;
+
+    /* LLDP */
+    if (key->ethertype == htons(0x88cc)) {
+        packet_trace("sending LLDP packet to the controller");
+        pktin(actx, OF_PACKET_IN_REASON_NO_MATCH);
+        return INDIGO_ERROR_NONE;
+    }
+
+    /* LACP */
+    if (!memcmp(key->ethernet.eth_dst, slow_protocols_mac.addr, OF_MAC_ADDR_BYTES)) {
+        packet_trace("sending slow protocols packet to the controller");
+        pktin(actx, OF_PACKET_IN_REASON_NO_MATCH);
+        return INDIGO_ERROR_NONE;
+    }
+
+    /* CDP */
+    if (!memcmp(key->ethernet.eth_dst, cdp_mac.addr, OF_MAC_ADDR_BYTES)) {
+        packet_trace("sending CDP packet to the controller");
+        pktin(actx, OF_PACKET_IN_REASON_NO_MATCH);
+        return INDIGO_ERROR_NONE;
+    }
 
     struct ifp_key ifp_key = make_ifp_key(key);
     struct ifp_entry *ifp_entry =
@@ -145,6 +169,14 @@ make_ifp_key(const struct ind_ovs_parsed_key *key)
     }
 
     return ifp_key;
+}
+
+static void
+pktin(struct action_context *actx, uint8_t reason)
+{
+    uint64_t userdata = IVS_PKTIN_USERDATA(reason, 0);
+    uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(&pktin_soc);
+    action_userspace(actx, &userdata, sizeof(uint64_t), netlink_port);
 }
 
 static struct pipeline_ops pipeline_bigtap_ops = {
