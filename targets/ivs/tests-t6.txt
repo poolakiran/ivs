@@ -8,3 +8,8 @@ standard
 ^cdpa.CdpRxRequest
 ^l3.PktOutCidrRouteTrap
 ^l3.PktOutHostRouteTrap
+
+# Physical switch specific
+^priority_to_queue_table.VlanPriority
+^priority_to_queue_table.VlanPriorityOverPortPriority
+^priority_to_queue_table.VlanPriorityOverVlanXlatePriority
