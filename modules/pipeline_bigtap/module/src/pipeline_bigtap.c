@@ -74,31 +74,27 @@ pipeline_bigtap_process(struct ind_ovs_parsed_key *key,
     memset(mask, 0xff, sizeof(*mask));
     mask->populated = populated;
 
-    /* LLDP */
+    bool cpu = false;
+
     if (key->ethertype == htons(0x88cc)) {
         packet_trace("sending LLDP packet to the controller");
-        pktin(actx, OF_PACKET_IN_REASON_NO_MATCH);
-        return INDIGO_ERROR_NONE;
-    }
-
-    /* LACP */
-    if (!memcmp(key->ethernet.eth_dst, slow_protocols_mac.addr, OF_MAC_ADDR_BYTES)) {
-        packet_trace("sending slow protocols packet to the controller");
-        pktin(actx, OF_PACKET_IN_REASON_NO_MATCH);
-        return INDIGO_ERROR_NONE;
-    }
-
-    /* CDP */
-    if (!memcmp(key->ethernet.eth_dst, cdp_mac.addr, OF_MAC_ADDR_BYTES)) {
+        cpu = true;
+    } else if (!memcmp(key->ethernet.eth_dst, slow_protocols_mac.addr, OF_MAC_ADDR_BYTES)) {
+        packet_trace("sending slow protocols (LACP) packet to the controller");
+        cpu = true;
+    } if (!memcmp(key->ethernet.eth_dst, cdp_mac.addr, OF_MAC_ADDR_BYTES)) {
         packet_trace("sending CDP packet to the controller");
-        pktin(actx, OF_PACKET_IN_REASON_NO_MATCH);
-        return INDIGO_ERROR_NONE;
+        cpu = true;
     }
 
     struct vfp_key vfp_key = make_vfp_key(key);
     struct vfp_entry *vfp_entry =
         pipeline_bigtap_table_vfp_lookup(&vfp_key);
-    if (vfp_entry && vfp_entry->value.cpu) {
+    if (vfp_entry) {
+        cpu = cpu || vfp_entry->value.cpu;
+    }
+
+    if (cpu) {
         pktin(actx, OF_PACKET_IN_REASON_NO_MATCH);
     }
 
