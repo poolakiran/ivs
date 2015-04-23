@@ -31,6 +31,12 @@ static const of_match_fields_t required_mask = {
     .ipv4_src = 0xffffffff,
     .eth_dst = { { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff } },
 };
+static const of_match_fields_t required_mask_eth_type = {
+    .eth_type = 0xffff,
+    .vlan_vid = 0xffff,
+    .ipv4_src = 0xffffffff,
+    .eth_dst = { { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff } },
+};
 
 static indigo_error_t
 parse_key(of_flow_add_t *obj, struct floating_ip_forward_key *key)
@@ -39,7 +45,8 @@ parse_key(of_flow_add_t *obj, struct floating_ip_forward_key *key)
     if (of_flow_add_match_get(obj, &match) < 0) {
         return INDIGO_ERROR_BAD_MATCH;
     }
-    if (memcmp(&match.masks, &required_mask, sizeof(of_match_fields_t))) {
+    if (memcmp(&match.masks, &required_mask, sizeof(of_match_fields_t)) &&
+            memcmp(&match.masks, &required_mask_eth_type, sizeof(of_match_fields_t))) {
         return INDIGO_ERROR_BAD_MATCH;
     }
     key->vlan_vid = match.fields.vlan_vid & ~VLAN_CFI_BIT;
