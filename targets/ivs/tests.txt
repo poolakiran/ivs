@@ -32,3 +32,6 @@ nicira_dec_ttl
 ^flow_query.Flow_Add_8
 ^flow_stats.AggregateStats
 ^flow_stats.DeletedFlowStats
+^counters.TxBytPerQueue
+^counters.TxPktPerQueue
+^pktact.DirectPacketQueue
