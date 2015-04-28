@@ -88,7 +88,7 @@ class XDRTypedef(object):
     def unpack(cls, data):
         return cls.unpack_from(xdrlib.Unpacker(data))
 
-class l2_key(XDRStruct):
+class endpoint_key(XDRStruct):
     __slots__ = ['vlan', 'mac_hi', 'mac_lo']
 
     def __init__(self, vlan=None, mac_hi=None, mac_lo=None):
@@ -104,7 +104,7 @@ class l2_key(XDRStruct):
 
     @classmethod
     def unpack_from(cls, unpacker):
-        obj = l2_key()
+        obj = endpoint_key()
         obj.vlan = unpacker.unpack_uint()
         obj.mac_hi = unpacker.unpack_uint()
         obj.mac_lo = unpacker.unpack_uint()
@@ -123,7 +123,7 @@ class l2_key(XDRStruct):
 
     def __repr__(self):
         parts = []
-        parts.append('l2_key(')
+        parts.append('endpoint_key(')
         parts.append('vlan=')
         parts.append(repr(self.vlan))
         parts.append(", ")
@@ -135,7 +135,7 @@ class l2_key(XDRStruct):
         parts.append(')')
         return ''.join(parts)
 
-class l2_value(XDRStruct):
+class endpoint_value(XDRStruct):
     __slots__ = ['port']
 
     def __init__(self, port=None):
@@ -147,7 +147,7 @@ class l2_value(XDRStruct):
 
     @classmethod
     def unpack_from(cls, unpacker):
-        obj = l2_value()
+        obj = endpoint_value()
         obj.port = unpacker.unpack_uint()
         return obj
 
@@ -160,72 +160,49 @@ class l2_value(XDRStruct):
 
     def __repr__(self):
         parts = []
-        parts.append('l2_value(')
+        parts.append('endpoint_value(')
         parts.append('port=')
         parts.append(repr(self.port))
         parts.append(')')
         return ''.join(parts)
 
-class vlan_key(XDRStruct):
-    __slots__ = ['vlan']
+class endpoint_stats(XDRStruct):
+    __slots__ = ['packets', 'bytes']
 
-    def __init__(self, vlan=None):
-        self.vlan = vlan
+    def __init__(self, packets=None, bytes=None):
+        self.packets = packets
+        self.bytes = bytes
 
     @classmethod
     def pack_into(self, packer, obj):
-        packer.pack_uint(obj.vlan)
+        packer.pack_uint(obj.packets)
+        packer.pack_uint(obj.bytes)
 
     @classmethod
     def unpack_from(cls, unpacker):
-        obj = vlan_key()
-        obj.vlan = unpacker.unpack_uint()
+        obj = endpoint_stats()
+        obj.packets = unpacker.unpack_uint()
+        obj.bytes = unpacker.unpack_uint()
         return obj
 
     def __eq__(self, other):
         if type(self) != type(other):
             return False
-        if self.vlan != other.vlan:
+        if self.packets != other.packets:
+            return False
+        if self.bytes != other.bytes:
             return False
         return True
 
     def __repr__(self):
         parts = []
-        parts.append('vlan_key(')
-        parts.append('vlan=')
-        parts.append(repr(self.vlan))
+        parts.append('endpoint_stats(')
+        parts.append('packets=')
+        parts.append(repr(self.packets))
+        parts.append(", ")
+        parts.append('bytes=')
+        parts.append(repr(self.bytes))
         parts.append(')')
         return ''.join(parts)
 
-class vlan_value(XDRStruct):
-    __slots__ = ['port_bitmap']
-
-    def __init__(self, port_bitmap=None):
-        self.port_bitmap = port_bitmap
-
-    @classmethod
-    def pack_into(self, packer, obj):
-        packer.pack_uint(obj.port_bitmap)
-
-    @classmethod
-    def unpack_from(cls, unpacker):
-        obj = vlan_value()
-        obj.port_bitmap = unpacker.unpack_uint()
-        return obj
-
-    def __eq__(self, other):
-        if type(self) != type(other):
-            return False
-        if self.port_bitmap != other.port_bitmap:
-            return False
-        return True
-
-    def __repr__(self):
-        parts = []
-        parts.append('vlan_value(')
-        parts.append('port_bitmap=')
-        parts.append(repr(self.port_bitmap))
-        parts.append(')')
-        return ''.join(parts)
-
-__all__ = ['l2_key', 'l2_value', 'vlan_key', 'vlan_value']
+__all__ = ['endpoint_key', 'endpoint_value', 'endpoint_stats']
