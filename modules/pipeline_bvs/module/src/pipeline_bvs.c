@@ -466,6 +466,7 @@ process_l2(struct ctx *ctx)
     if (!vlan_entry) {
         packet_trace("Packet received on unconfigured vlan %u (bad VLAN)", vlan_vid);
         PIPELINE_STAT(BAD_VLAN);
+        pipeline_add_stats(ctx->stats, &port_counters->rx_bad_vlan_stats_handle);
         mark_drop(ctx);
         process_debug(ctx);
         process_pktin(ctx);
