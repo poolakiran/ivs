@@ -22,12 +22,13 @@
 static struct tcam *my_station_tcam;
 static const of_match_fields_t maximum_mask = {
     .eth_dst = { { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff } },
+    .vlan_vid = 0xffff,
 };
 static const of_match_fields_t minimum_mask = {
 };
 
 static indigo_error_t
-parse_key(of_flow_add_t *obj, struct my_station_key *key, struct my_station_key *mask)
+parse_key(of_flow_add_t *obj, struct my_station_key *key, struct my_station_key *mask, uint16_t *priority)
 {
     of_match_t match;
     if (of_flow_add_match_get(obj, &match) < 0) {
@@ -38,18 +39,41 @@ parse_key(of_flow_add_t *obj, struct my_station_key *key, struct my_station_key 
         return INDIGO_ERROR_BAD_MATCH;
     }
 
-    uint16_t priority;
-    of_flow_add_priority_get(obj, &priority);
-    if (priority != 0) {
-        return INDIGO_ERROR_COMPAT;
-    }
+    of_flow_add_priority_get(obj, priority);
 
     key->mac = match.fields.eth_dst;
     mask->mac = match.masks.eth_dst;
-
-    key->pad = mask->pad = 0;
+    key->vlan_vid = match.fields.vlan_vid;
+    mask->vlan_vid = match.masks.vlan_vid;
 
     return INDIGO_ERROR_NONE;
+}
+
+static indigo_error_t
+parse_value(of_flow_add_t *obj, struct my_station_value *value)
+{
+    int rv;
+    of_list_instruction_t insts;
+    of_object_t inst;
+
+    value->disable_l3 = false;
+
+    of_flow_add_instructions_bind(obj, &insts);
+    OF_LIST_INSTRUCTION_ITER(&insts, &inst, rv) {
+        switch (inst.object_id) {
+        case OF_INSTRUCTION_BSN_DISABLE_L3:
+            value->disable_l3 = true;
+            break;
+        default:
+            AIM_LOG_ERROR("Unexpected instruction %s in my_station table", of_object_id_str[inst.object_id]);
+            goto error;
+        }
+    }
+
+    return INDIGO_ERROR_NONE;
+
+error:
+    return INDIGO_ERROR_BAD_ACTION;
 }
 
 static indigo_error_t
@@ -61,16 +85,23 @@ pipeline_bvs_table_my_station_entry_create(
     struct my_station_entry *entry = aim_zmalloc(sizeof(*entry));
     struct my_station_key key;
     struct my_station_key mask;
+    uint16_t priority;
 
-    rv = parse_key(obj, &key, &mask);
+    rv = parse_key(obj, &key, &mask, &priority);
     if (rv < 0) {
         aim_free(entry);
         return rv;
     }
 
-    AIM_LOG_VERBOSE("Create my_station entry mac=%{mac}/%{mac}", &key.mac, &mask.mac);
+    rv = parse_value(obj, &entry->value);
+    if (rv < 0) {
+        aim_free(entry);
+        return rv;
+    }
 
-    tcam_insert(my_station_tcam, &entry->tcam_entry, &key, &mask, 0);
+    AIM_LOG_VERBOSE("Create my_station entry mac=%{mac}/%{mac} vlan_vid=%u/%#x", &key.mac, &mask.mac, key.vlan_vid, mask.vlan_vid);
+
+    tcam_insert(my_station_tcam, &entry->tcam_entry, &key, &mask, priority);
 
     *entry_priv = entry;
     ind_ovs_barrier_defer_revalidation(cxn_id);
@@ -82,6 +113,17 @@ pipeline_bvs_table_my_station_entry_modify(
     void *table_priv, indigo_cxn_id_t cxn_id, void *entry_priv,
     of_flow_modify_strict_t *obj)
 {
+    struct my_station_entry *entry = entry_priv;
+    struct my_station_value value;
+
+    indigo_error_t rv = parse_value(obj, &value);
+    if (rv < 0) {
+        return rv;
+    }
+
+    entry->value = value;
+
+    ind_ovs_barrier_defer_revalidation(cxn_id);
     return INDIGO_ERROR_NONE;
 }
 
@@ -138,10 +180,10 @@ pipeline_bvs_table_my_station_unregister(void)
 }
 
 struct my_station_entry *
-pipeline_bvs_table_my_station_lookup(const uint8_t *mac)
+pipeline_bvs_table_my_station_lookup(const uint8_t *mac, uint16_t vlan_vid)
 {
     struct my_station_key key = {
-        .pad = 0,
+        .vlan_vid = vlan_vid,
     };
     memcpy(&key.mac, mac, OF_MAC_ADDR_BYTES);
 
@@ -150,10 +192,10 @@ pipeline_bvs_table_my_station_lookup(const uint8_t *mac)
         struct my_station_entry *entry = container_of(tcam_entry, tcam_entry, struct my_station_entry);
         const struct my_station_key *entry_key = tcam_entry->key;
         const struct my_station_key *entry_mask = tcam_entry->mask;
-        packet_trace("Hit my_station entry mac=%{mac}/%{mac}", &entry_key->mac, &entry_mask->mac);
+        packet_trace("Hit my_station entry mac=%{mac}/%{mac} vlan_vid=%u/%#x -> disable_l3=%u", &entry_key->mac, &entry_mask->mac, entry_key->vlan_vid, entry_mask->vlan_vid, entry->value.disable_l3);
         return entry;
     } else {
-        packet_trace("Miss my_station entry mac=%{mac}", &key.mac);
+        packet_trace("Miss my_station entry mac=%{mac} vlan_vid=%u", &key.mac, key.vlan_vid);
         return NULL;
     }
 }
