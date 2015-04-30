@@ -497,6 +497,12 @@ process_l2(struct ctx *ctx)
         return;
     }
 
+    if (!memcmp(ctx->key->ethernet.eth_dst, &zero_mac, OF_MAC_ADDR_BYTES)) {
+        packet_trace("L2 destination zero, discarding");
+        mark_drop(ctx);
+        return;
+    }
+
     /* Source lookup */
     struct l2_entry *src_l2_entry =
         pipeline_bvs_table_l2_lookup(vlan_vid, ctx->key->ethernet.eth_src, false);
