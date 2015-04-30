@@ -22,16 +22,21 @@
 
 struct my_station_key {
     of_mac_addr_t mac;
-    uint16_t pad;
+    uint16_t vlan_vid;
 };
 AIM_STATIC_ASSERT(MY_STATION_KEY_SIZE, sizeof(struct my_station_key) == 8);
 
+struct my_station_value {
+    bool disable_l3;
+};
+
 struct my_station_entry {
     struct tcam_entry tcam_entry;
+    struct my_station_value value;
 };
 
 void pipeline_bvs_table_my_station_register(void);
 void pipeline_bvs_table_my_station_unregister(void);
-struct my_station_entry *pipeline_bvs_table_my_station_lookup(const uint8_t *mac);
+struct my_station_entry *pipeline_bvs_table_my_station_lookup(const uint8_t *mac, uint16_t vlan_vid);
 
 #endif

@@ -580,10 +580,13 @@ process_l2(struct ctx *ctx)
         return;
     }
 
-    if (ctx->key->ethertype == htons(ETH_P_IP) &&
-            pipeline_bvs_table_my_station_lookup(ctx->key->ethernet.eth_dst)) {
-        process_l3(ctx);
-        return;
+    if (ctx->key->ethertype == htons(ETH_P_IP)) {
+        struct my_station_entry *my_station_entry =
+            pipeline_bvs_table_my_station_lookup(ctx->key->ethernet.eth_dst, ctx->internal_vlan_vid);
+        if (my_station_entry && !my_station_entry->value.disable_l3) {
+            process_l3(ctx);
+            return;
+        }
     }
 
     /* Destination lookup */
