@@ -113,55 +113,7 @@ inband_receive_packet(uint8_t *data, unsigned int len, of_port_no_t in_port)
     const uint8_t *pos = header;
     while (inband_lldp_parse_tlv(&pos, &remain, &tlv)) {
         AIM_LOG_TRACE("Found tlv type=%u oui=%u subtype=%u payload_length=%u", tlv.type, tlv.oui, tlv.subtype, tlv.payload_length);
-        if (tlv.type == LLDP_TLV_MANAGEMENT_ADDRESS) {
-            AIM_LOG_TRACE("Found management address TLV");
-
-            if (tlv.payload_length < 9 /* from 802.1ab spec */) {
-                AIM_LOG_WARN("Management address TLV too short");
-                debug_counter_inc(&invalid_management_tlv);
-                continue;
-            }
-
-            int addr_len = tlv.payload[0];
-            int addr_type = tlv.payload[1];
-
-            if (num_controllers >= MAX_INBAND_CONTROLLERS) {
-                AIM_LOG_WARN("Too many controllers in LLDP");
-                debug_counter_inc(&invalid_management_tlv);
-                continue;
-            }
-
-            struct inband_controller *new_controller = &new_controllers[num_new_controllers];
-            memset(new_controller, 0, sizeof(*new_controller));
-
-            if (addr_type == LLDP_ADDRESS_FAMILY_IPV4) {
-                /* Ignore */
-                continue;
-            } else if (addr_type == LLDP_ADDRESS_FAMILY_IPV6) {
-                if (addr_len != sizeof(of_ipv6_t) + 1) {
-                    AIM_LOG_WARN("Invalid IPv6 address length in management address TLV");
-                    debug_counter_inc(&invalid_management_tlv);
-                    continue;
-                }
-
-                char addr_str[64];
-                inet_ntop(AF_INET6, &tlv.payload[2], addr_str, sizeof(addr_str));
-
-                AIM_LOG_VERBOSE("Controller address: %s", addr_str);
-
-                indigo_cxn_params_tcp_over_ipv6_t *proto = &new_controller->protocol_params.tcp_over_ipv6;
-                proto->protocol = INDIGO_CXN_PROTO_TCP_OVER_IPV6;
-                snprintf(proto->controller_ip, sizeof(proto->controller_ip),
-                        "%s%%%s", addr_str, inband_interface_name);
-                proto->controller_port = 6653;
-            } else {
-                AIM_LOG_WARN("Ignoring management address TLV with unsupported address type %u", addr_type);
-                debug_counter_inc(&invalid_management_tlv);
-                continue;
-            }
-
-            num_new_controllers++;
-        } else if (tlv.type == LLDP_TLV_VENDOR && tlv.oui == LLDP_BSN_OUI &&
+        if (tlv.type == LLDP_TLV_VENDOR && tlv.oui == LLDP_BSN_OUI &&
                 tlv.subtype == LLDP_BSN_INBAND_CONTROLLER_ADDR) {
             AIM_LOG_TRACE("Found inband OpenFlow controller address TLV");
 
