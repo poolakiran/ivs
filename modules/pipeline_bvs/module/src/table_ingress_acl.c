@@ -143,6 +143,7 @@ parse_value(of_flow_add_t *obj, struct ingress_acl_value *value)
     of_object_t inst;
 
     value->cpu = false;
+    value->drop = false;
 
     of_flow_add_instructions_bind(obj, &insts);
     OF_LIST_INSTRUCTION_ITER(&insts, &inst, rv) {
