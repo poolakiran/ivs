@@ -86,8 +86,6 @@ static int num_expected_adds, num_expected_removes;
 static const char *controller_ips[1024];
 static int next_controller_id;
 static bool disable_expectations;
-static bool send_mgmt_addr_tlv;
-static bool send_inband_addr_tlv;
 
 static void
 packet_in(uint8_t *data, int length,
@@ -172,21 +170,11 @@ lldp_packet_in(of_port_no_t port,
     offset += sizeof(lldp_prefix);
 
     if (controller1_ip) {
-        if (send_mgmt_addr_tlv) {
-            offset += append_management_address_tlv(data + offset, controller1_ip);
-        }
-        if (send_inband_addr_tlv) {
-            offset += append_inband_controller_tlv(data + offset, controller1_ip);
-        }
+        offset += append_inband_controller_tlv(data + offset, controller1_ip);
     }
 
     if (controller2_ip) {
-        if (send_mgmt_addr_tlv) {
-            offset += append_management_address_tlv(data + offset, controller2_ip);
-        }
-        if (send_inband_addr_tlv) {
-            offset += append_inband_controller_tlv(data + offset, controller2_ip);
-        }
+        offset += append_inband_controller_tlv(data + offset, controller2_ip);
     }
 
     /* End of LLDPDU */
@@ -391,22 +379,10 @@ int aim_main(int argc, char* argv[])
 
     inband_init();
 
-    send_mgmt_addr_tlv = true;
-    send_inband_addr_tlv = false;
     test_basic();
     test_corrupt();
     test_invalid();
     test_hostname_override();
-
-    fprintf(stderr, "Running basic test with inband OpenFlow controller address TLV\n");
-    send_mgmt_addr_tlv = false;
-    send_inband_addr_tlv = true;
-    test_basic();
-
-    fprintf(stderr, "Running basic test with both management address and inband OpenFlow controller address TLVs\n");
-    send_mgmt_addr_tlv = true;
-    send_inband_addr_tlv = true;
-    test_basic();
 
     return 0;
 }
