@@ -206,6 +206,9 @@ populate_host_stats_entries(of_object_t *entries)
 
     /* Distribution version */
     add_file_entry(entries, "distribution version", "/etc/lsb-release");
+
+    /* RedHat version */
+    add_file_entry(entries, "redhat version", "/etc/redhat-release");
 }
 
 static indigo_core_listener_result_t
