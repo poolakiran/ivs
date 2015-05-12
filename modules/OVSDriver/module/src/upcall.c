@@ -114,6 +114,7 @@ static int ind_ovs_num_upcall_threads;
 static struct ind_ovs_upcall_thread *ind_ovs_upcall_threads[MAX_UPCALL_THREADS];
 static int nobody_uid;
 static int sigfd;
+static int shutdown_pipe[2];
 
 DEBUG_COUNTER(kflow_request, "ovsdriver.upcall.kflow_request", "Kernel flow requested by upcall process");
 DEBUG_COUNTER(kflow_request_error, "ovsdriver.upcall.kflow_request_error", "Error on kernel flow request socket");
@@ -123,6 +124,7 @@ DEBUG_COUNTER(respawn_time, "ovsdriver.upcall.respawn_time", "Total time in micr
 SHARED_DEBUG_COUNTER(upcall, "ovsdriver.upcall", "Upcall from the kernel");
 SHARED_DEBUG_COUNTER(wakeup, "ovsdriver.upcall.wakeup", "Upcall process woken up");
 SHARED_DEBUG_COUNTER(upcall_time, "ovsdriver.upcall.time", "Total time in microseconds spent handling upcalls");
+SHARED_DEBUG_COUNTER(kflow_socket_full, "ovsdriver.upcall.kflow_socket_full", "Kernel flow socket full");
 
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC optimize (4)
@@ -143,7 +145,11 @@ ind_ovs_upcall_thread_main(struct ind_ovs_upcall_thread *thread)
             uint64_t start_time = monotonic_us();
             int j;
             for (j = 0; j < n; j++) {
-                ind_ovs_handle_port_upcalls(thread, events[j].data.ptr);
+                if (events[j].data.ptr == shutdown_pipe) {
+                    raise(SIGKILL);
+                } else {
+                    ind_ovs_handle_port_upcalls(thread, events[j].data.ptr);
+                }
             }
             uint64_t elapsed = monotonic_us() - start_time;
             debug_counter_add(&upcall_time, elapsed);
@@ -385,6 +391,7 @@ ind_ovs_upcall_request_kflow(struct ind_ovs_upcall_thread *thread,
     if (written < 0) {
         if (errno == EAGAIN) {
             AIM_LOG_VERBOSE("kflow socket buffer full");
+            debug_counter_inc(&kflow_socket_full);
         } else {
             AIM_LOG_ERROR("Failed to write to kflow socket: %s", strerror(errno));
         }
@@ -549,6 +556,10 @@ ind_ovs_upcall_init(void)
     if (ind_soc_socket_register(sigfd, signalfd_sock_ready, NULL) < 0) {
         AIM_DIE("Failed to register signalfd socket with SocketManager");
     }
+
+    if (pipe(shutdown_pipe) < 0) {
+        AIM_DIE("Failed to create shutdown pipe");
+    }
 }
 
 void
@@ -562,6 +573,8 @@ ind_ovs_upcall_finish(void)
 {
     ind_soc_socket_unregister(sigfd);
     close(sigfd);
+    close(shutdown_pipe[0]);
+    close(shutdown_pipe[1]);
 
     int i, j;
     for (i = 0; i < ind_ovs_num_upcall_threads; i++) {
@@ -666,11 +679,6 @@ ind_ovs_upcall_thread_init(struct ind_ovs_upcall_thread *thread, int parent_pid)
         AIM_DIE("prctl(PR_SET_PDEATHSIG) failed: %s", strerror(errno));
     }
 
-    /* Check if the parent exited before we did PR_SET_PDEATHSIG */
-    if (kill(parent_pid, 0) < 0) {
-        raise(SIGKILL);
-    }
-
     thread->epfd = epoll_create(1);
     if (thread->epfd < 0) {
         AIM_DIE("failed to create epoll set: %s", strerror(errno));
@@ -684,6 +692,12 @@ ind_ovs_upcall_thread_init(struct ind_ovs_upcall_thread *thread, int parent_pid)
     AIM_BITMAP_SET(fds, STDERR_FILENO);
     AIM_BITMAP_SET(fds, thread->kflow_sock_wr);
     AIM_BITMAP_SET(fds, thread->epfd);
+    AIM_BITMAP_SET(fds, shutdown_pipe[0]);
+
+    struct epoll_event evt = { EPOLLIN, { .ptr = shutdown_pipe } };
+    if (epoll_ctl(thread->epfd, EPOLL_CTL_ADD, shutdown_pipe[0], &evt) < 0) {
+        AIM_DIE("failed to add to epoll set: %s", strerror(errno));
+    }
 
     int i;
     for (i = 0; i < IND_OVS_MAX_PORTS; i++) {
