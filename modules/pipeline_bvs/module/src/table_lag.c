@@ -177,11 +177,18 @@ pipeline_bvs_table_lag_select(struct lag_group *lag, uint32_t hash)
 {
     AIM_ASSERT(lag != NULL);
 
-    if (lag->value.num_buckets == 0) {
-        return NULL;
+    /* Starting at a bucket chosen by 'hash', cycle through all buckets and
+     * return the first one with a running port */
+    int i;
+    for (i = 0; i < lag->value.num_buckets; i++) {
+        struct lag_bucket *b = &lag->value.buckets[(hash + i) % lag->value.num_buckets];
+        if (ind_ovs_port_running(b->port_no)) {
+            return b;
+        }
+        packet_trace("skipping down port %u", b->port_no);
     }
 
-    return &lag->value.buckets[hash % lag->value.num_buckets];
+    return NULL;
 }
 
 struct lag_group *
