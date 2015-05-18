@@ -18,6 +18,7 @@
  ****************************************************************/
 
 #include <sys/errno.h>
+#include <unistd.h>
 #include <AIM/aim.h>
 #include <loci/loci.h>
 #include <indigo/indigo.h>
@@ -149,6 +150,12 @@ error:
 }
 
 static bool
+exists(const char *filename)
+{
+    return access(filename, F_OK) == 0;
+}
+
+static bool
 scanfile(const char *path, int expected, const char *fmt, ...)
 {
     FILE *f = fopen(path, "r");
@@ -205,10 +212,14 @@ populate_host_stats_entries(of_object_t *entries)
     add_file_entry(entries, "kernel version", "/proc/version");
 
     /* Distribution version */
-    add_file_entry(entries, "distribution version", "/etc/lsb-release");
+    if (exists("/etc/lsb-release")) {
+        add_file_entry(entries, "distribution version", "/etc/lsb-release");
+    }
 
     /* RedHat version */
-    add_file_entry(entries, "redhat version", "/etc/redhat-release");
+    if (exists("/etc/redhat-release")) {
+        add_file_entry(entries, "redhat version", "/etc/redhat-release");
+    }
 }
 
 static indigo_core_listener_result_t
