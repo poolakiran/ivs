@@ -34,3 +34,4 @@ nicira_dec_ttl
 ^counters.TxBytPerQueue
 ^counters.TxPktPerQueue
 ^pktact.DirectPacketQueue
+^nicira_role.AnyReply
