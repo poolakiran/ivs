@@ -446,6 +446,7 @@ process_l2(struct ctx *ctx)
         } else {
             packet_trace("Using VLAN from packet");
             vlan_vid = tag;
+            internal_priority = VLAN_PCP(ntohs(ctx->key->vlan));
         }
     }
 
@@ -957,10 +958,10 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
                 if (tag != 0) {
                     action_set_vlan_pcp(ctx->actx, ctx->internal_priority);
                 }
+            } else if (tag != 0) {
+                /* Use vlan pcp to decide the skb_priority */
+                ctx->skb_priority = vlan_pcp_to_queue[VLAN_PCP(ntohs(ctx->actx->current_key.vlan))];
             }
-        } else if (tag != 0) {
-            /* Use vlan pcp to decide the skb_priority */
-            ctx->skb_priority = vlan_pcp_to_queue[VLAN_PCP(ntohs(ctx->actx->current_key.vlan))];
         }
     }
 
