@@ -955,7 +955,7 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
                 pipeline_bvs_table_priority_to_queue_lookup(ctx->internal_priority);
             if (prio_to_queue_entry) {
                 ctx->skb_priority = prio_to_queue_entry->value.queue_id;
-                if (tag != 0 && (ctx->internal_priority != VLAN_PCP(ntohs(ctx->actx->current_key.vlan)))) {
+                if (tag != 0) {
                     action_set_vlan_pcp(ctx->actx, ctx->internal_priority);
                 }
             } else if (tag != 0) {
