@@ -41,6 +41,9 @@
 #include <slshared/slshared_config.h>
 #include <slshared/slshared.h>
 #include <net/if.h>
+#include <netlink/netlink.h>
+#include <netlink/addr.h>
+#include <netlink/route/neighbour.h>
 #include "inband_int.h"
 #include "inband_log.h"
 #include "lldp.h"
@@ -55,6 +58,8 @@ struct inband_controller {
 static void synchronize_controllers(
     struct inband_controller *new_controllers,
     int num_new_controllers);
+
+static void add_neighbor_entry(struct inband_controller *ctrl);
 
 /* HACK not in IVS yet */
 bool ind_ovs_uplink_check(of_port_no_t port);
@@ -219,6 +224,8 @@ synchronize_controllers(struct inband_controller *new_controllers, int num_new_c
         }
 
         if (!found) {
+            add_neighbor_entry(new);
+
             indigo_error_t rv;
             AIM_ASSERT(num_controllers < MAX_INBAND_CONTROLLERS);
             if ((rv = indigo_controller_add(&new->protocol_params, &cxn_config_params, &new->id)) < 0) {
@@ -230,6 +237,80 @@ synchronize_controllers(struct inband_controller *new_controllers, int num_new_c
             }
         }
     }
+}
+
+/*
+ * Create a permanent neighbor table entry for the controller
+ *
+ * Assumes that the controller's IPv6 address is constructed according to RFC
+ * 2464, so that it can be directly translated to a MAC.
+ *
+ * This saves us from having to perform neighbor discovery, which is often
+ * flaky.
+ */
+static void
+add_neighbor_entry(struct inband_controller *ctrl)
+{
+    int rv;
+
+    of_ipv6_t ipv6;
+    char ipv6_str[64];
+    strncpy(ipv6_str, ctrl->protocol_params.tcp_over_ipv6.controller_ip, sizeof(ipv6_str));
+    *strchr(ipv6_str, '%') = '\0';
+    if (inet_pton(AF_INET6, ipv6_str, &ipv6) < 1) {
+        AIM_LOG_ERROR("Failed to parse IPv6 address '%s'", ipv6_str);
+        return;
+    }
+
+    if (ipv6.addr[0] != 0xfe || ipv6.addr[1] != 0x80) {
+        AIM_LOG_WARN("Controller address %s is not link-local", ipv6_str);
+        return;
+    }
+
+    /* RFC 2464 section "Stateless Autoconfiguration" */
+    of_mac_addr_t mac;
+    mac.addr[0] = ipv6.addr[8] ^ 2;
+    mac.addr[1] = ipv6.addr[9];
+    mac.addr[2] = ipv6.addr[10];
+    mac.addr[3] = ipv6.addr[13];
+    mac.addr[4] = ipv6.addr[14];
+    mac.addr[5] = ipv6.addr[15];
+
+    struct nl_addr *ipv6_nladdr = nl_addr_build(AF_INET6, &ipv6, OF_IPV6_BYTES);
+    AIM_TRUE_OR_DIE(ipv6_nladdr != NULL);
+
+    struct nl_addr *mac_nladdr = nl_addr_build(AF_LLC, &mac, OF_MAC_ADDR_BYTES);
+    AIM_TRUE_OR_DIE(mac_nladdr != NULL);
+
+    struct rtnl_neigh *neigh = rtnl_neigh_alloc();
+    AIM_TRUE_OR_DIE(neigh != NULL);
+    rtnl_neigh_set_ifindex(neigh, if_nametoindex(inband_interface_name));
+    rtnl_neigh_set_dst(neigh, ipv6_nladdr);
+    rtnl_neigh_set_lladdr(neigh, mac_nladdr);
+    rtnl_neigh_set_state(neigh, rtnl_neigh_str2state("permanent"));
+
+    struct nl_sock *sk = nl_socket_alloc();
+    if (sk == NULL) {
+        AIM_LOG_ERROR("Failed to allocate netlink socket");
+        goto out;
+    }
+
+    if ((rv = nl_connect(sk, NETLINK_ROUTE)) < 0) {
+        AIM_LOG_ERROR("Failed to connect netlink socket: %s", nl_geterror(rv));
+        goto out;
+    }
+
+    if ((rv = rtnl_neigh_add(sk, neigh, NLM_F_CREATE)) < 0) {
+        AIM_LOG_ERROR("Failed to add neighbor entry %s -> %{mac}: %s", ipv6_str, &mac, nl_geterror(rv));
+    } else {
+        AIM_LOG_VERBOSE("Added neighbor entry %s -> %{mac}", ipv6_str, &mac);
+    }
+
+out:
+    nl_socket_free(sk);
+    rtnl_neigh_put(neigh);
+    nl_addr_put(ipv6_nladdr);
+    nl_addr_put(mac_nladdr);
 }
 
 static

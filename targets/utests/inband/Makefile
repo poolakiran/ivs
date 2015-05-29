@@ -31,5 +31,15 @@ DEPENDMODULES := AIM loci indigo PPE IOF debug_counter xbuf slshared OS
 GLOBAL_CFLAGS += -DAIM_CONFIG_INCLUDE_POSIX=1
 GLOBAL_CFLAGS += -DAIM_CONFIG_INCLUDE_MAIN=1
 GLOBAL_CFLAGS += -DAIM_CONFIG_INCLUDE_MODULES_INIT=1
+
+LIBNL_CFLAGS := $(shell pkg-config --cflags libnl-3.0)
+LIBNL_CFLAGS += $(shell pkg-config --cflags --silence-errors libnl-genl-3.0)
+LIBNL_CFLAGS += $(shell pkg-config --cflags --silence-errors libnl-route-3.0)
+LIBNL_LIBS := $(shell pkg-config --libs libnl-3.0)
+LIBNL_LIBS += $(shell pkg-config --libs --silence-errors libnl-genl-3.0)
+LIBNL_LIBS += $(shell pkg-config --libs --silence-errors libnl-route-3.0)
+GLOBAL_CFLAGS += $(LIBNL_CFLAGS)
+GLOBAL_LINK_LIBS += $(LIBNL_LIBS)
+
 OS_MAKE_CONFIG_AUTOSELECT := 1
 include ../make/utestmodule.mk
