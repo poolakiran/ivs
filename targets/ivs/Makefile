@@ -54,7 +54,9 @@ GLOBAL_LINK_LIBS += -ldl
 endif
 
 # Closed source modules
-DEPENDMODULES += pipeline_bvs lpm inband lldpa lacpa arpa router_ip_table icmpa dhcpra nat slshared host_sflow sflowa host_stats cdpa pipeline_bigtap
+DEPENDMODULES += pipeline_bvs lpm inband lldpa lacpa arpa router_ip_table \
+		 icmpa dhcpra nat slshared host_sflow sflowa host_stats cdpa \
+		 pipeline_bigtap version_stats
 
 #
 # Resolve module dependencies
