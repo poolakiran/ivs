@@ -97,6 +97,11 @@ inband_receive_packet(uint8_t *data, unsigned int len, of_port_no_t in_port)
         return;
     }
 
+    if (ppe_header_get(&ppep, PPE_HEADER_8021Q)) {
+        AIM_LOG_VERBOSE("Ignoring tagged packet");
+        return;
+    }
+
     /*
      * Get the start of LLDP header
      */
