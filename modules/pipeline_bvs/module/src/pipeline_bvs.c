@@ -1144,6 +1144,10 @@ static void
 process_pktin(struct ctx *ctx)
 {
     if (ctx->pktin_agent || ctx->pktin_controller) {
+        if ((ctx->original_vlan_vid & 0xffc) == 0xfc0) {
+            packet_trace("Dropping packet-in on fabric-span VLAN");
+            return;
+        }
         uint8_t reason = ctx->pktin_controller ? OF_PACKET_IN_REASON_ACTION : OF_PACKET_IN_REASON_NO_MATCH;
         uint64_t userdata = IVS_PKTIN_USERDATA(reason, ctx->pktin_metadata);
         struct ind_ovs_pktin_socket *pktin_soc = pipeline_bvs_get_pktin_socket(ctx->key->in_port, userdata);
