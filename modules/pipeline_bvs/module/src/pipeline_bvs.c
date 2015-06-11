@@ -1029,6 +1029,22 @@ span(struct ctx *ctx, struct span_group *span)
 
     packet_trace("Selected LAG port %u", lag_bucket->port_no);
 
+    struct ind_ovs_port_counters *port_counters = ind_ovs_port_stats_select(lag_bucket->port_no);
+    AIM_ASSERT(port_counters != NULL);
+
+    if (ctx->key->ethernet.eth_dst[0] & 1) {
+        if (!memcmp(ctx->key->ethernet.eth_dst, broadcast_mac.addr, OF_MAC_ADDR_BYTES)) {
+            /* Increment broadcast port counters */
+            pipeline_add_stats(ctx->stats, &port_counters->tx_broadcast_stats_handle);
+        } else {
+            /* Increment multicast port counters */
+            pipeline_add_stats(ctx->stats, &port_counters->tx_multicast_stats_handle);
+        }
+    } else {
+        /* Increment unicast port counters */
+        pipeline_add_stats(ctx->stats, &port_counters->tx_unicast_stats_handle);
+    }
+
     if (span->value.vlan_vid != VLAN_INVALID) {
         packet_trace("Pushing tag vlan_vid=%u", span->value.vlan_vid);
         action_push_vlan_raw(ctx->actx, span->value.vlan_vid|VLAN_CFI_BIT);
