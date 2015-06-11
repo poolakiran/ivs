@@ -21,7 +21,7 @@ Summary: Indigo Virtual Switch
 Group: System Environment/Daemons
 URL: http://www.bigswitch.com/
 Version: 3.0.0
-Release: beta1%{?dist}
+Release: 1%{?dist}
 
 License: EPL-1.0
 Source: ivs.tar.gz
