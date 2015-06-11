@@ -1,3 +1,9 @@
+ivs (3.0.0) unstable; urgency=low
+
+  * New upstream version.
+
+ -- Rich Lane <rlane@bigswitch.com>  Thu, 11 Jun 2015 12:46:35 -0700
+
 ivs (3.0.0-beta1) unstable; urgency=medium
 
   * New upstream version.
