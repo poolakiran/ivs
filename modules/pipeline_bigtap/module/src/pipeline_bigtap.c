@@ -244,4 +244,5 @@ __pipeline_bigtap_module_init__(void)
 {
     AIM_LOG_STRUCT_REGISTER();
     pipeline_register("bigtap-full-match", &pipeline_bigtap_ops);
+    pipeline_register("bigtap-l3l4", &pipeline_bigtap_ops);
 }
