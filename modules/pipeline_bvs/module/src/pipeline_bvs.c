@@ -150,6 +150,26 @@ port_sampling_rate_set(of_port_no_t port_no, uint32_t sampling_rate,
     return INDIGO_ERROR_NONE;
 }
 
+static void
+increment_tx_port_counters(of_port_no_t port_no, struct ctx *ctx)
+{
+    struct ind_ovs_port_counters *port_counters = ind_ovs_port_stats_select(port_no);
+    AIM_ASSERT(port_counters != NULL);
+
+    if (ctx->key->ethernet.eth_dst[0] & 1) {
+        if (!memcmp(ctx->key->ethernet.eth_dst, broadcast_mac.addr, OF_MAC_ADDR_BYTES)) {
+            /* Increment broadcast port counters */
+            pipeline_add_stats(ctx->stats, &port_counters->tx_broadcast_stats_handle);
+        } else {
+            /* Increment multicast port counters */
+            pipeline_add_stats(ctx->stats, &port_counters->tx_multicast_stats_handle);
+        }
+    } else {
+        /* Increment unicast port counters */
+        pipeline_add_stats(ctx->stats, &port_counters->tx_unicast_stats_handle);
+    }
+}
+
 static indigo_core_listener_result_t
 pipeline_bvs_port_status_handler(of_port_status_t *port_status)
 {
@@ -876,21 +896,7 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
         pipeline_add_stats(ctx->stats, ind_ovs_tx_vlan_stats_select(ctx->internal_vlan_vid));
     }
 
-    struct ind_ovs_port_counters *port_counters = ind_ovs_port_stats_select(out_port);
-    AIM_ASSERT(port_counters != NULL);
-
-    if (ctx->key->ethernet.eth_dst[0] & 1) {
-        if (!memcmp(ctx->key->ethernet.eth_dst, broadcast_mac.addr, OF_MAC_ADDR_BYTES)) {
-            /* Increment broadcast port counters */
-            pipeline_add_stats(ctx->stats, &port_counters->tx_broadcast_stats_handle);
-        } else {
-            /* Increment multicast port counters */
-            pipeline_add_stats(ctx->stats, &port_counters->tx_multicast_stats_handle);
-        }
-    } else {
-        /* Increment unicast port counters */
-        pipeline_add_stats(ctx->stats, &port_counters->tx_unicast_stats_handle);
-    }
+    increment_tx_port_counters(out_port, ctx);
 
     /* Egress VLAN translation */
     uint16_t tag = ctx->internal_vlan_vid;
@@ -1028,6 +1034,8 @@ span(struct ctx *ctx, struct span_group *span)
     }
 
     packet_trace("Selected LAG port %u", lag_bucket->port_no);
+
+    increment_tx_port_counters(lag_bucket->port_no, ctx);
 
     if (span->value.vlan_vid != VLAN_INVALID) {
         packet_trace("Pushing tag vlan_vid=%u", span->value.vlan_vid);
