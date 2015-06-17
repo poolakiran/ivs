@@ -25,6 +25,7 @@
 #include <indigo/of_state_manager.h>
 #include <OFStateManager/ofstatemanager.h>
 #include <version_stats/version_stats.h>
+#include <ivs/ivs.h>
 #include "version_stats_log.h"
 
 static indigo_core_listener_result_t message_listener(indigo_cxn_id_t cxn_id, of_object_t *msg);
@@ -112,6 +113,15 @@ handle_version_stats_request(indigo_cxn_id_t cxn_id, of_object_t *msg)
     of_desc_str_t sw_desc;
     ind_core_sw_desc_get(sw_desc);
     add_entry(&entries, "software", "%s", sw_desc);
+
+    of_desc_str_t hw_desc;
+    ind_core_hw_desc_get(hw_desc);
+    add_entry(&entries, "hardware", "%s", hw_desc);
+
+    add_entry(&entries, "implementation", "ivs");
+    add_entry(&entries, "version", "%s", ivs_version);
+    add_entry(&entries, "build", "%s", ivs_build_id);
+    add_entry(&entries, "os", "%s", ivs_build_os);
 
     indigo_cxn_send_controller_message(cxn_id, reply);
 
