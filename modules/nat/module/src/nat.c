@@ -238,16 +238,14 @@ static void
 nat_container_teardown(struct nat_entry *entry)
 {
     AIM_LOG_VERBOSE("Destroying NAT container %s", entry->key.name);
-    close(entry->netns);
 
     char ext_ifname[IFNAMSIZ+1];
     format_port_name(ext_ifname, entry->value.external_mac);
     char int_ifname[IFNAMSIZ+1];
     format_port_name(int_ifname, entry->value.internal_mac);
 
-    /* The kernel can take over 100ms after close() to delete the interfaces */
-    wait_for_interface_delete(ext_ifname);
-    wait_for_interface_delete(int_ifname);
+    indigo_port_interface_remove(ext_ifname);
+    indigo_port_interface_remove(int_ifname);
 
     /* Receive the vport deleted notifications
      *
@@ -255,8 +253,18 @@ nat_container_teardown(struct nat_entry *entry)
      * without needing to go to the event loop first.
      */
     ind_ovs_handle_multicast();
-}
 
+    /* Closing the netns will delete the veth pairs */
+    close(entry->netns);
+
+    /*
+     * The kernel can take over 100ms after close() to delete the interfaces.
+     * We need to wait until the interfaces are gone so that they can
+     * (potentially) be added again immediately.
+     */
+    wait_for_interface_delete(ext_ifname);
+    wait_for_interface_delete(int_ifname);
+}
 
 /* nat table operations */
 
