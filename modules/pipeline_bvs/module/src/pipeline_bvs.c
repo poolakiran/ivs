@@ -261,6 +261,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_pktin_socket_register();
     pipeline_bvs_table_priority_to_queue_register();
     pipeline_bvs_qos_register();
+    pipeline_bvs_table_fspan_vlan_register();
 }
 
 static void
@@ -302,6 +303,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_port_status_unregister();
     pipeline_bvs_pktin_socket_unregister();
     pipeline_bvs_table_priority_to_queue_unregister();
+    pipeline_bvs_table_fspan_vlan_unregister();
 }
 
 static indigo_error_t
@@ -1152,7 +1154,7 @@ static void
 process_pktin(struct ctx *ctx)
 {
     if (ctx->pktin_agent || ctx->pktin_controller) {
-        if ((ctx->original_vlan_vid & 0xffc) == 0xfc0) {
+        if ((ctx->original_vlan_vid & pipeline_bvs_fspan_vlan_vid_mask) == pipeline_bvs_fspan_vlan_vid) {
             packet_trace("Dropping packet-in on fabric-span VLAN");
             return;
         }
