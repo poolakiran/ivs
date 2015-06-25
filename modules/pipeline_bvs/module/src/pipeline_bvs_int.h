@@ -72,6 +72,7 @@
 #include "stats.h"
 #include "pktin.h"
 #include "table_priority_to_queue.h"
+#include "table_fspan_vlan.h"
 
 #define AIM_LOG_MODULE_NAME pipeline_bvs
 #include <AIM/aim_log.h>
