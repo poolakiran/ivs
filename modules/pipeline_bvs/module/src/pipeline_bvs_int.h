@@ -77,6 +77,7 @@
 #include "table_multicast_vlan.h"
 #include "table_multicast_replication_group.h"
 #include "table_multicast_replication.h"
+#include "table_ipv4_multicast.h"
 
 #define AIM_LOG_MODULE_NAME pipeline_bvs
 #include <AIM/aim_log.h>

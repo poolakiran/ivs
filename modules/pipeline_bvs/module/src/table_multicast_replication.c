@@ -58,7 +58,7 @@ parse_key(of_list_bsn_tlv_t *tlvs, struct multicast_replication_key *key)
 
     if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
         AIM_LOG_ERROR("expected reference key TLV, instead got end of list");
-        return INDIGO_ERROR_PARAM;
+        goto error;
     }
 
     if (tlv.object_id == OF_BSN_TLV_REFERENCE) {
@@ -90,12 +90,12 @@ parse_key(of_list_bsn_tlv_t *tlvs, struct multicast_replication_key *key)
         of_bsn_tlv_vlan_vid_value_get(&tlv, &key->vlan_vid);
     } else {
         AIM_LOG_ERROR("expected vlan_vid key TLV, instead got %s", of_class_name(&tlv));
-        return INDIGO_ERROR_PARAM;
+        goto error;
     }
 
     if (of_list_bsn_tlv_next(tlvs, &tlv) == 0) {
         AIM_LOG_ERROR("expected end of key TLV list, instead got %s", of_class_name(&tlv));
-        return INDIGO_ERROR_PARAM;
+        goto error;
     }
 
     return INDIGO_ERROR_NONE;
