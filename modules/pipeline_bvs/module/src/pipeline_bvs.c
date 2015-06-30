@@ -284,6 +284,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_qos_register();
     pipeline_bvs_table_fspan_vlan_register();
     pipeline_bvs_table_port_block_register();
+    pipeline_bvs_table_multicast_vlan_register();
 }
 
 static void
@@ -327,6 +328,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_priority_to_queue_unregister();
     pipeline_bvs_table_fspan_vlan_unregister();
     pipeline_bvs_table_port_block_unregister();
+    pipeline_bvs_table_multicast_vlan_unregister();
 }
 
 static indigo_error_t
