@@ -17,8 +17,10 @@
  *
  ****************************************************************/
 
+#define _GNU_SOURCE /* for sched_getaffinity */
 #include <sys/errno.h>
 #include <unistd.h>
+#include <sched.h>
 #include <AIM/aim.h>
 #include <loci/loci.h>
 #include <indigo/indigo.h>
@@ -219,6 +221,17 @@ populate_host_stats_entries(of_object_t *entries)
     /* RedHat version */
     if (exists("/etc/redhat-release")) {
         add_file_entry(entries, "redhat version", "/etc/redhat-release");
+    }
+
+    /* Number of CPUs */
+    {
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        if (sched_getaffinity(0, sizeof(cpuset), &cpuset) < 0) {
+            AIM_LOG_ERROR("Failed to retrieve scheduler affinity: %s", strerror(errno));
+        } else {
+            add_entry(entries, "number of CPUs", "%u", CPU_COUNT(&cpuset));
+        }
     }
 }
 
