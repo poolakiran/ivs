@@ -223,14 +223,25 @@ populate_host_stats_entries(of_object_t *entries)
         add_file_entry(entries, "redhat version", "/etc/redhat-release");
     }
 
-    /* Number of CPUs */
     {
+        /* Number of CPUs */
         cpu_set_t cpuset;
-        CPU_ZERO(&cpuset);
+        int num_cpus;
         if (sched_getaffinity(0, sizeof(cpuset), &cpuset) < 0) {
             AIM_LOG_ERROR("Failed to retrieve scheduler affinity: %s", strerror(errno));
+            num_cpus = 1;
         } else {
-            add_entry(entries, "number of CPUs", "%u", CPU_COUNT(&cpuset));
+            num_cpus = CPU_COUNT(&cpuset);
+        }
+
+        add_entry(entries, "number of CPUs", "%u", num_cpus);
+
+        /* Normalized CPU Load */
+        double avg1, avg5, avg15;
+        if (scanfile("/proc/loadavg", 3, "%lf %lf %lf", &avg1, &avg5, &avg15)) {
+            add_entry(entries, "normalized CPU load (1 minute)", "%f", avg1/num_cpus);
+            add_entry(entries, "normalized CPU load (5 minutes)", "%f", avg5/num_cpus);
+            add_entry(entries, "normalized CPU load (15 minutes)", "%f", avg15/num_cpus);
         }
     }
 }
