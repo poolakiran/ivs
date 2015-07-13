@@ -196,6 +196,18 @@ pipeline_bvs_port_status_handler(of_port_status_t *port_status)
         pipeline_bvs_port_pktin_socket_unregister(port_no);
     }
 
+    /* HACK add generation ID property */
+    if (port_status->version >= OF_VERSION_1_4 && pipeline_bvs_table_port_block_get_inuse(port_no)) {
+        of_list_port_desc_prop_t props;
+        of_port_desc_properties_bind(&port_desc, &props);
+
+        of_port_desc_prop_t prop;
+        of_port_desc_prop_bsn_generation_id_init(&prop, props.version, -1 , 1);
+        of_list_port_desc_prop_append_bind(&props, &prop);
+        of_port_desc_prop_bsn_generation_id_generation_id_set(&prop,
+            pipeline_bvs_table_port_block_get_switch_generation_id(port_no));
+    }
+
     return INDIGO_CORE_LISTENER_RESULT_PASS;
 }
 
