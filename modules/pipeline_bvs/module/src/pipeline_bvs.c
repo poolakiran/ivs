@@ -194,6 +194,13 @@ pipeline_bvs_port_status_handler(of_port_status_t *port_status)
         pipeline_bvs_setup_tc(if_name, port_no);
     } else if (reason == OF_PORT_CHANGE_REASON_DELETE) {
         pipeline_bvs_port_pktin_socket_unregister(port_no);
+    } else if (reason == OF_PORT_CHANGE_REASON_MODIFY) {
+        uint32_t state;
+        of_port_desc_state_get(&port_desc, &state);
+        if ((state & OF_PORT_STATE_FLAG_LINK_DOWN) &&
+                pipeline_bvs_table_port_block_get_inuse(port_no)) {
+            pipeline_bvs_table_port_block_block(port_no);
+        }
     }
 
     /* HACK add generation ID property */
