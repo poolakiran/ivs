@@ -63,8 +63,25 @@ parse_value(of_list_bsn_tlv_t *tlvs, struct multicast_vlan_value *value)
     memset(value, 0, sizeof(*value));
 
     if (of_list_bsn_tlv_first(tlvs, &tlv) < 0) {
-        AIM_LOG_ERROR("expected reference value TLV, instead got end of list");
-        return INDIGO_ERROR_PARAM;
+        goto end;
+    }
+
+    if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
+        goto end;
+    }
+
+    if (tlv.object_id == OF_BSN_TLV_IGMP_SNOOPING) {
+        value->igmp_snooping = true;
+        if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
+            goto end;
+        }
+    }
+
+    if (tlv.object_id == OF_BSN_TLV_L2_MULTICAST_LOOKUP) {
+        value->igmp_snooping = true;
+        if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
+            goto end;
+        }
     }
 
     if (tlv.object_id == OF_BSN_TLV_REFERENCE) {
@@ -82,26 +99,7 @@ parse_value(of_list_bsn_tlv_t *tlvs, struct multicast_vlan_value *value)
             AIM_LOG_ERROR("unsupported gentable reference in multicast_vlan table");
             goto error;
         }
-    } else {
-        AIM_LOG_ERROR("expected reference value TLV, instead got %s", of_class_name(&tlv));
-        goto error;
-    }
 
-    /* Optional TLVs */
-
-    if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
-        goto end;
-    }
-
-    if (tlv.object_id == OF_BSN_TLV_IGMP_SNOOPING) {
-        value->igmp_snooping = true;
-        if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
-            goto end;
-        }
-    }
-
-    if (tlv.object_id == OF_BSN_TLV_L2_MULTICAST_LOOKUP) {
-        value->igmp_snooping = true;
         if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
             goto end;
         }
