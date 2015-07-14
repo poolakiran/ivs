@@ -170,6 +170,7 @@ extern enum pipeline_bvs_version version;
 extern uint16_t pipeline_bvs_table_lag_id;
 extern uint16_t pipeline_bvs_table_span_id;
 extern uint16_t pipeline_bvs_table_ecmp_id;
+extern uint16_t pipeline_bvs_table_port_block_id;
 
 /* Utility functions */
 

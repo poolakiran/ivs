@@ -39,12 +39,14 @@ static struct port_block_entry port_block_entries[PORT_BLOCK_TABLE_SIZE];
 
 static indigo_core_gentable_t *port_block_table;
 static const indigo_core_gentable_ops_t port_block_ops;
+uint16_t pipeline_bvs_table_port_block_id;
 
 void
 pipeline_bvs_table_port_block_register(void)
 {
     indigo_core_gentable_register("port_block", &port_block_ops, NULL, PORT_BLOCK_TABLE_SIZE, 256,
                                   &port_block_table);
+    pipeline_bvs_table_port_block_id = indigo_core_gentable_id(port_block_table);
 }
 
 void

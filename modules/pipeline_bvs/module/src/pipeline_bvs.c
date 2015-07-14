@@ -94,6 +94,8 @@ gentable_sort_key(uint16_t table_id)
         return -999;
     } else if (table_id == pipeline_bvs_table_span_id) {
         return -998;
+    } else if (table_id == pipeline_bvs_table_port_block_id) {
+        return 1000;
     } else {
         return 0;
     }
