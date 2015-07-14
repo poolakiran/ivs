@@ -20,7 +20,7 @@ Name: ivs
 Summary: Indigo Virtual Switch
 Group: System Environment/Daemons
 URL: http://www.bigswitch.com/
-Version: 3.0.0
+Version: 3.1.0
 Release: 1%{?dist}
 
 License: EPL-1.0

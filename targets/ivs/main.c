@@ -78,7 +78,7 @@ ivs_loci_logger(loci_log_level_t level,
                 const char *fname, const char *file, int line,
                 const char *format, ...);
 
-const char *ivs_version = "3.0.0";
+const char *ivs_version = "3.1.0";
 const char *ivs_build_id = AIM_STRINGIFY(BUILD_ID);
 const char *ivs_build_os = AIM_STRINGIFY(BUILD_OS);
 
