@@ -165,6 +165,7 @@ indigo_error_t ind_ovs_pktin(of_port_no_t in_port, uint8_t *data,
                              struct ind_ovs_parsed_key *pkey);
 void ind_ovs_handle_multicast(void);
 bool ind_ovs_port_running(of_port_no_t port_no);
+void ind_ovs_port_set_generation_id(uint32_t port, uint64_t switch_generation_id);
 
 const char *ivs_version, *ivs_build_id, *ivs_build_os;
 

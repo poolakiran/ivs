@@ -998,6 +998,13 @@ port_desc_set(of_port_desc_t *of_port_desc, uint32_t port_no)
                 AIM_DIE("unexpected error appending to port_desc");
             }
         }
+
+        of_port_desc_prop_bsn_generation_id_init(&prop, props.version, -1, 1);
+        if (of_list_port_desc_prop_append_bind(&props, &prop) < 0) {
+            AIM_DIE("unexpected error appending to port_desc");
+        }
+        of_port_desc_prop_bsn_generation_id_generation_id_set(
+            &prop, port->generation_id);
     }
 }
 
@@ -1158,4 +1165,13 @@ ind_ovs_port_running(of_port_no_t port_no)
 {
     struct ind_ovs_port *port = ind_ovs_port_lookup(port_no);
     return port && port->ifflags & IFF_RUNNING;
+}
+
+void
+ind_ovs_port_set_generation_id(uint32_t port_no, uint64_t generation_id)
+{
+    struct ind_ovs_port *port = ind_ovs_port_lookup(port_no);
+    if (port) {
+        port->generation_id = generation_id;
+    }
 }
