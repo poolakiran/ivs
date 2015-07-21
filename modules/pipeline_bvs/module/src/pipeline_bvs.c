@@ -94,6 +94,8 @@ gentable_sort_key(uint16_t table_id)
         return -999;
     } else if (table_id == pipeline_bvs_table_span_id) {
         return -998;
+    } else if (table_id == pipeline_bvs_table_port_block_id) {
+        return 1000;
     } else {
         return 0;
     }
@@ -194,6 +196,25 @@ pipeline_bvs_port_status_handler(of_port_status_t *port_status)
         pipeline_bvs_setup_tc(if_name, port_no);
     } else if (reason == OF_PORT_CHANGE_REASON_DELETE) {
         pipeline_bvs_port_pktin_socket_unregister(port_no);
+    } else if (reason == OF_PORT_CHANGE_REASON_MODIFY) {
+        uint32_t state;
+        of_port_desc_state_get(&port_desc, &state);
+        if ((state & OF_PORT_STATE_FLAG_LINK_DOWN) &&
+                pipeline_bvs_table_port_block_get_inuse(port_no)) {
+            pipeline_bvs_table_port_block_block(port_no);
+        }
+    }
+
+    /* HACK add generation ID property */
+    if (port_status->version >= OF_VERSION_1_4 && pipeline_bvs_table_port_block_get_inuse(port_no)) {
+        of_list_port_desc_prop_t props;
+        of_port_desc_properties_bind(&port_desc, &props);
+
+        of_port_desc_prop_t prop;
+        of_port_desc_prop_bsn_generation_id_init(&prop, props.version, -1 , 1);
+        of_list_port_desc_prop_append_bind(&props, &prop);
+        of_port_desc_prop_bsn_generation_id_generation_id_set(&prop,
+            pipeline_bvs_table_port_block_get_switch_generation_id(port_no));
     }
 
     return INDIGO_CORE_LISTENER_RESULT_PASS;
@@ -262,6 +283,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_priority_to_queue_register();
     pipeline_bvs_qos_register();
     pipeline_bvs_table_fspan_vlan_register();
+    pipeline_bvs_table_port_block_register();
 }
 
 static void
@@ -304,6 +326,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_pktin_socket_unregister();
     pipeline_bvs_table_priority_to_queue_unregister();
     pipeline_bvs_table_fspan_vlan_unregister();
+    pipeline_bvs_table_port_block_unregister();
 }
 
 static indigo_error_t

@@ -182,10 +182,15 @@ pipeline_bvs_table_lag_select(struct lag_group *lag, uint32_t hash)
     int i;
     for (i = 0; i < lag->value.num_buckets; i++) {
         struct lag_bucket *b = &lag->value.buckets[(hash + i) % lag->value.num_buckets];
-        if (ind_ovs_port_running(b->port_no)) {
-            return b;
+        if (!ind_ovs_port_running(b->port_no)) {
+            packet_trace("skipping down port %u", b->port_no);
+            continue;
         }
-        packet_trace("skipping down port %u", b->port_no);
+        if (!pipeline_bvs_table_port_block_check(b->port_no)) {
+            packet_trace("skipping blocked port %u", b->port_no);
+            continue;
+        }
+        return b;
     }
 
     return NULL;
