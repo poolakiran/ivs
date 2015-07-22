@@ -106,26 +106,33 @@ error:
 }
 
 static indigo_error_t
-parse_value(of_list_bsn_tlv_t *tlvs, struct multicast_replication_value *value)
+parse_value(of_list_bsn_tlv_t *tlvs, struct multicast_replication_value *value, uint16_t vlan_vid)
 {
     of_object_t tlv;
     memset(value, 0, sizeof(*value));
 
-    if (of_list_bsn_tlv_first(tlvs, &tlv) < 0) {
-        /* eth_src TLV is optional */
-        return INDIGO_ERROR_NONE;
-    }
-
-    if (tlv.object_id == OF_BSN_TLV_ETH_SRC) {
-        of_bsn_tlv_eth_src_value_get(&tlv, &value->new_eth_src);
+    if (vlan_vid == VLAN_INVALID) {
+        if (of_list_bsn_tlv_first(tlvs, &tlv) == 0) {
+            AIM_LOG_ERROR("expected end of value TLV list, instead got %s", of_class_name(&tlv));
+            return INDIGO_ERROR_NONE;
+        }
     } else {
-        AIM_LOG_ERROR("expected eth_src value TLV, instead got %s", of_class_name(&tlv));
-        return INDIGO_ERROR_PARAM;
-    }
+        if (of_list_bsn_tlv_first(tlvs, &tlv) < 0) {
+            AIM_LOG_ERROR("expected eth_src value TLV, instead got end of list");
+            return INDIGO_ERROR_PARAM;
+        }
 
-    if (of_list_bsn_tlv_next(tlvs, &tlv) == 0) {
-        AIM_LOG_ERROR("expected end of value TLV list, instead got %s", of_class_name(&tlv));
-        return INDIGO_ERROR_PARAM;
+        if (tlv.object_id == OF_BSN_TLV_ETH_SRC) {
+            of_bsn_tlv_eth_src_value_get(&tlv, &value->new_eth_src);
+        } else {
+            AIM_LOG_ERROR("expected eth_src value TLV, instead got %s", of_class_name(&tlv));
+            return INDIGO_ERROR_PARAM;
+        }
+
+        if (of_list_bsn_tlv_next(tlvs, &tlv) == 0) {
+            AIM_LOG_ERROR("expected end of value TLV list, instead got %s", of_class_name(&tlv));
+            return INDIGO_ERROR_PARAM;
+        }
     }
 
     return INDIGO_ERROR_NONE;
@@ -156,7 +163,7 @@ multicast_replication_add(indigo_cxn_id_t cxn_id, void *table_priv, of_list_bsn_
         return rv;
     }
 
-    if ((rv = parse_value(value_tlvs, &value)) < 0) {
+    if ((rv = parse_value(value_tlvs, &value, key.vlan_vid)) < 0) {
         return rv;
     }
 
@@ -179,7 +186,7 @@ multicast_replication_modify(indigo_cxn_id_t cxn_id, void *table_priv, void *ent
     struct multicast_replication_value new_value;
     struct multicast_replication_entry *entry = entry_priv;
 
-    if ((rv = parse_value(value_tlvs, &new_value)) < 0) {
+    if ((rv = parse_value(value_tlvs, &new_value, entry->key.vlan_vid)) < 0) {
         return rv;
     }
 
