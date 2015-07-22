@@ -78,7 +78,7 @@ parse_value(of_list_bsn_tlv_t *tlvs, struct multicast_vlan_value *value)
     }
 
     if (tlv.object_id == OF_BSN_TLV_L2_MULTICAST_LOOKUP) {
-        value->igmp_snooping = true;
+        value->l2_multicast_lookup = true;
         if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
             goto end;
         }
