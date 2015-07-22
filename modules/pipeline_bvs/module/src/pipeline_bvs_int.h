@@ -74,6 +74,10 @@
 #include "table_priority_to_queue.h"
 #include "table_fspan_vlan.h"
 #include "table_port_block.h"
+#include "table_multicast_vlan.h"
+#include "table_multicast_replication_group.h"
+#include "table_multicast_replication.h"
+#include "table_ipv4_multicast.h"
 
 #define AIM_LOG_MODULE_NAME pipeline_bvs
 #include <AIM/aim_log.h>
@@ -171,6 +175,7 @@ extern uint16_t pipeline_bvs_table_lag_id;
 extern uint16_t pipeline_bvs_table_span_id;
 extern uint16_t pipeline_bvs_table_ecmp_id;
 extern uint16_t pipeline_bvs_table_port_block_id;
+extern uint16_t pipeline_bvs_table_multicast_replication_group_id;
 
 /* Utility functions */
 

@@ -94,6 +94,8 @@ gentable_sort_key(uint16_t table_id)
         return -999;
     } else if (table_id == pipeline_bvs_table_span_id) {
         return -998;
+    } else if (table_id == pipeline_bvs_table_multicast_replication_group_id) {
+        return -997;
     } else if (table_id == pipeline_bvs_table_port_block_id) {
         return 1000;
     } else {
@@ -284,6 +286,10 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_qos_register();
     pipeline_bvs_table_fspan_vlan_register();
     pipeline_bvs_table_port_block_register();
+    pipeline_bvs_table_multicast_vlan_register();
+    pipeline_bvs_table_multicast_replication_group_register();
+    pipeline_bvs_table_multicast_replication_register();
+    pipeline_bvs_table_ipv4_multicast_register();
 }
 
 static void
@@ -327,6 +333,10 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_priority_to_queue_unregister();
     pipeline_bvs_table_fspan_vlan_unregister();
     pipeline_bvs_table_port_block_unregister();
+    pipeline_bvs_table_multicast_vlan_unregister();
+    pipeline_bvs_table_ipv4_multicast_unregister();
+    pipeline_bvs_table_multicast_replication_unregister();
+    pipeline_bvs_table_multicast_replication_group_unregister();
 }
 
 static indigo_error_t
