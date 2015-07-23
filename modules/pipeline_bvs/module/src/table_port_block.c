@@ -224,6 +224,7 @@ pipeline_bvs_table_port_block_block(uint32_t port)
     lo++;
     hi = murmur_round(hi, port);
     entry->switch_generation_id = (((uint64_t)hi) << 32) | lo;
+    ind_ovs_port_set_generation_id(port, entry->switch_generation_id);
     AIM_LOG_INFO("Blocking port %u, switch generation id 0x%"PRIx64, port, entry->switch_generation_id);
 }
 
