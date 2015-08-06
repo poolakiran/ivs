@@ -64,7 +64,6 @@ static void add_neighbor_entry(struct inband_controller *ctrl);
 /* HACK not in IVS yet */
 bool ind_ovs_uplink_check(of_port_no_t port);
 
-static void send_lldp_reply(of_port_no_t port_no);
 static void retarget_logger(void);
 static void get_port_name(of_port_no_t port, indigo_port_name_t port_name);
 
@@ -172,7 +171,7 @@ inband_receive_packet(uint8_t *data, unsigned int len, of_port_no_t in_port)
 
     synchronize_controllers(new_controllers, num_new_controllers);
 
-    send_lldp_reply(in_port);
+    inband_send_lldp(in_port);
 
     retarget_logger();
 }
@@ -318,8 +317,8 @@ out:
     nl_addr_put(mac_nladdr);
 }
 
-static
-void send_lldp_reply(of_port_no_t port_no)
+void
+inband_send_lldp(of_port_no_t port_no)
 {
     struct lldp_builder builder;
     inband_lldp_builder_init(&builder);

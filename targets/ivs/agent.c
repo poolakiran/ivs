@@ -10,6 +10,17 @@
 #include <host_stats/host_stats.h>
 #include <version_stats/version_stats.h>
 #include <cdpa/cdpa.h>
+#include <inband/inband.h>
+#include <SocketManager/socketmanager.h>
+
+static void
+lldp_timer(void *cookie)
+{
+    of_port_no_t port_no = ind_ovs_uplink_select();
+    if (port_no != OF_PORT_DEST_NONE) {
+        inband_send_lldp(port_no);
+    }
+}
 
 void
 ivs_agent_init(void)
@@ -50,4 +61,6 @@ ivs_agent_init(void)
     if (cdpa_init() < 0) {
         AIM_DIE("Failed to initialize CDP Agent module");
     }
+
+    ind_soc_timer_event_register(lldp_timer, NULL, 15000);
 }
