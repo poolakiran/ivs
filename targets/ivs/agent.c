@@ -62,5 +62,5 @@ ivs_agent_init(void)
         AIM_DIE("Failed to initialize CDP Agent module");
     }
 
-    ind_soc_timer_event_register(lldp_timer, NULL, 15000);
+    ind_soc_timer_event_register(lldp_timer, NULL, 10000);
 }
