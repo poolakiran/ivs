@@ -85,6 +85,7 @@ parse_value(of_flow_add_t *obj, struct l3_cidr_route_value *value)
     of_list_instruction_t insts;
     of_object_t inst;
 
+    value->next_hop.type = NEXT_HOP_TYPE_NULL;
     value->cpu = false;
 
     of_flow_add_instructions_bind(obj, &insts);
