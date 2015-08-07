@@ -818,7 +818,7 @@ process_l3(struct ctx *ctx)
     } else if (next_hop->type == NEXT_HOP_TYPE_LAG_NOREWRITE) {
         packet_trace("next-hop: lag=%s", lag_name(next_hop->lag));
     } else {
-        AIM_DIE("Unexpected next hop type");
+        AIM_DIE("Unexpected next hop type %d", next_hop->type);
     }
 
     if (next_hop->type == NEXT_HOP_TYPE_LAG) {
