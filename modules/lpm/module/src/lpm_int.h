@@ -34,7 +34,7 @@
  * Number of entries to allocate at creation. The trie will grow up to the
  * maximum size.
  */
-#define LPM_TRIE_INITIAL_ALLOCATION 1
+#define LPM_TRIE_INITIAL_ALLOCATION 2
 
 /*
  * lpm trie entry.

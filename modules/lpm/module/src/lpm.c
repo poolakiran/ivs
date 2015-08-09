@@ -255,7 +255,7 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
         return -1;
     }
 
-    if (lpm_trie->size*2 >= lpm_trie->allocated) {
+    if (lpm_trie->size*2 + 2 > lpm_trie->allocated) {
         AIM_LOG_TRACE("Growing lpm trie to %d entries", lpm_trie->allocated * 2);
         lpm_trie->allocated *= 2;
         lpm_trie->lpm_trie_entries =
