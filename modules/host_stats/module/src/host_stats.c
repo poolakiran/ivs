@@ -203,10 +203,15 @@ populate_host_stats_entries(of_object_t *entries)
 
     /* Memory */
     {
-        long unsigned int total, free;
-        if (scanfile("/proc/meminfo", 2, "MemTotal: %lu kB\nMemFree: %lu kB\n", &total, &free)) {
+        long unsigned int total, free, cached;
+        if (scanfile("/proc/meminfo", 3,
+                "MemTotal: %lu kB\n"
+                "MemFree: %lu kB\n"
+                "Buffers: %*lu kB\n"
+                "Cached: %lu kB\n",
+                &total, &free, &cached)) {
             add_entry(entries, "memory total", "%lu", total);
-            add_entry(entries, "memory free", "%lu", free);
+            add_entry(entries, "memory free", "%lu", free + cached);
         }
     }
 
