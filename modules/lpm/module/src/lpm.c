@@ -203,10 +203,11 @@ lpm_trie_create(void)
     struct lpm_trie *lpm_trie = aim_zmalloc(sizeof(struct lpm_trie));
 
     lpm_trie->lpm_trie_entry_allocator = slot_allocator_create(LPM_TRIE_ENTRY_COUNT);
-    lpm_trie->lpm_trie_entries = aim_malloc(LPM_TRIE_ENTRY_COUNT *
+    lpm_trie->lpm_trie_entries = aim_malloc(LPM_TRIE_INITIAL_ALLOCATION *
                                             sizeof(struct lpm_trie_entry));
     lpm_trie->root = SLOT_INVALID;
     lpm_trie->size = 0;
+    lpm_trie->allocated = LPM_TRIE_INITIAL_ALLOCATION;
 
     return lpm_trie;
 }
@@ -252,6 +253,13 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
     if (lpm_trie->size == LPM_TRIE_ENTRY_COUNT/2) {
         AIM_LOG_ERROR("Attempted to insert a entry in a full lpm trie");
         return -1;
+    }
+
+    if (lpm_trie->size*2 + 2 > lpm_trie->allocated) {
+        AIM_LOG_TRACE("Growing lpm trie to %d entries", lpm_trie->allocated * 2);
+        lpm_trie->allocated *= 2;
+        lpm_trie->lpm_trie_entries =
+            aim_realloc(lpm_trie->lpm_trie_entries, lpm_trie->allocated * sizeof(struct lpm_trie_entry));
     }
 
     /*

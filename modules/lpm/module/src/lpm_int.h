@@ -31,6 +31,12 @@
 #define LPM_TRIE_ENTRY_COUNT 32000
 
 /*
+ * Number of entries to allocate at creation. The trie will grow up to the
+ * maximum size.
+ */
+#define LPM_TRIE_INITIAL_ALLOCATION 2
+
+/*
  * lpm trie entry.
  */
 struct lpm_trie_entry {
@@ -50,6 +56,7 @@ struct lpm_trie {
     struct lpm_trie_entry *lpm_trie_entries;
     uint32_t root;
     uint32_t size;
+    uint32_t allocated;
 };
 
 #endif /* __LPM_INT_H__ */
