@@ -838,7 +838,7 @@ aim_main(int argc, char* argv[])
     ind_core_mfr_desc_set(mfr_desc);
 
     of_desc_str_t sw_desc = "";
-    snprintf(sw_desc, sizeof(sw_desc), "ivs %s %s %s", ivs_version,
+    snprintf(sw_desc, sizeof(sw_desc), "Switch Light Virtual %s %s %s", ivs_version,
              ivs_build_id, ivs_build_os);
     ind_core_sw_desc_set(sw_desc);
 
