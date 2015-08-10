@@ -180,6 +180,67 @@ scanfile(const char *path, int expected, const char *fmt, ...)
     return count == expected;
 }
 
+static bool
+get_memory_stats(long unsigned int *r_total, long unsigned int *r_free)
+{
+    const char *path = "/proc/meminfo";
+    FILE *f = fopen(path, "r");
+    if (f == NULL) {
+        AIM_LOG_ERROR("Failed to open %s: %s", path, strerror(errno));
+        return false;
+    }
+
+    char line[256];
+    long unsigned int mem_total = -1;
+    long unsigned int mem_free = -1;
+    long unsigned int mem_cached = -1;
+    long unsigned int mem_available = -1;
+
+    while (!feof(f)) {
+        if (!fgets(line, sizeof(line), f)) {
+            break;
+        }
+
+        char name[64];
+        long unsigned int value;
+
+        int ret = sscanf(line, "%64[^:]: %lu kB", name, &value);
+        if (ret != 2) {
+            continue;
+        }
+
+        if (!strcmp(name, "MemTotal")) {
+            mem_total = value;
+        } else if (!strcmp(name, "MemFree")) {
+            mem_free = value;
+        } else if (!strcmp(name, "Cached")) {
+            mem_cached = value;
+        } else if (!strcmp(name, "MemAvailable")) {
+            mem_available = value;
+        }
+    }
+
+    fclose(f);
+
+    if (mem_total == -1) {
+        AIM_LOG_ERROR("Could not find MemTotal in %s", path);
+        return false;
+    }
+
+    *r_total = mem_total;
+
+    if (mem_available != -1) {
+        *r_free = mem_available;
+    } else if (mem_free != -1 && mem_cached != -1) {
+        *r_free = mem_free + mem_cached;
+    } else {
+        AIM_LOG_ERROR("Could not find MemFree and MemCached in %s", path);
+        return false;
+    }
+
+    return true;
+}
+
 static void
 populate_host_stats_entries(of_object_t *entries)
 {
@@ -203,15 +264,10 @@ populate_host_stats_entries(of_object_t *entries)
 
     /* Memory */
     {
-        long unsigned int total, free, cached;
-        if (scanfile("/proc/meminfo", 3,
-                "MemTotal: %lu kB\n"
-                "MemFree: %lu kB\n"
-                "Buffers: %*lu kB\n"
-                "Cached: %lu kB\n",
-                &total, &free, &cached)) {
-            add_entry(entries, "memory total", "%lu", total);
-            add_entry(entries, "memory free", "%lu", free + cached);
+        long unsigned int mem_total, mem_free;
+        if (get_memory_stats(&mem_total, &mem_free)) {
+            add_entry(entries, "memory total", "%lu", mem_total);
+            add_entry(entries, "memory free", "%lu", mem_free);
         }
     }
 
