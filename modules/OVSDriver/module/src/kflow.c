@@ -151,6 +151,31 @@ ind_ovs_kflow_add(const struct nlattr *key)
         return INDIGO_ERROR_NONE;
     }
 
+    /*
+     * HACK do not insert kflows for uplink LLDPs (BVS-4051)
+     *
+     * This avoids an interaction between hitless upgrade and inband
+     * management.
+     *
+     * IVS created kernel flows for the LLDPs from the leaf switches
+     * with an action to send them to userspace. This action contains
+     * the netlink PID identifying the socket to send the packets to.
+     * Hitless upgrade preserves the kernel flows until the controller
+     * does the first VFT sync. So, the LLDPs were being sent to a
+     * socket that no longer exists. Therefore IVS didn't get the
+     * inband controller IP, it never did a VFT sync, and the kernel
+     * flows were never revalidated.
+     *
+     * We avoid this problem by not installing kernel flows for LLDPs
+     * from the leaf. This is not a performance issue because these kflows
+     * would normally expire anyway before the next LLDP arrived.
+     */
+    if (ind_ovs_inband_vlan != VLAN_INVALID &&
+            ind_ovs_uplink_check(pkey.in_port) &&
+            pkey.ethertype == htons(0x88cc)) {
+        return INDIGO_ERROR_NONE;
+    }
+
     struct ind_ovs_parsed_key mask;
     memset(&mask, 0, sizeof(mask));
 
