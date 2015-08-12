@@ -19,6 +19,9 @@
 
 #include "ovs_driver_int.h"
 #include <indigo/of_state_manager.h>
+#include <SocketManager/socketmanager.h>
+
+static void hitless_failsafe_timer(void *cookie);
 
 /*
  * Take over management of the kernel flowtable
@@ -42,6 +45,7 @@ handle_takeover(indigo_cxn_id_t cxn_id, of_object_t *msg)
 {
     if (ind_ovs_hitless) {
         AIM_LOG_INFO("Received takeover message");
+        ind_soc_timer_event_unregister(hitless_failsafe_timer, NULL);
         ind_ovs_kflow_flush();
         ind_ovs_hitless = false;
     } else {
@@ -62,8 +66,24 @@ message_listener(indigo_cxn_id_t cxn_id, of_object_t *msg)
     }
 }
 
+/*
+ * We didn't connect to the controller within 30s. This can be caused
+ * by kernel flows that blackhole inband management packets. We've
+ * been ignoring new flows for too long, so flush the kernel flowtable
+ * and hope that this gets us connected to the controller.
+ */
+static void
+hitless_failsafe_timer(void *cookie)
+{
+    AIM_LOG_WARN("Hitless restart failed, flushing kernel flowtable");
+    ind_soc_timer_event_unregister(hitless_failsafe_timer, NULL);
+    ind_ovs_kflow_flush();
+    ind_ovs_hitless = false;
+}
+
 void
 ind_ovs_hitless_init(void)
 {
     indigo_core_message_listener_register(message_listener);
+    ind_soc_timer_event_register(hitless_failsafe_timer, NULL, 30000);
 }
