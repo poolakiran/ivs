@@ -78,6 +78,9 @@ ivs_loci_logger(loci_log_level_t level,
                 const char *fname, const char *file, int line,
                 const char *format, ...);
 
+static void
+logger(void *cookie, aim_log_flag_t flag, const char *str);
+
 const char *ivs_version = "3.1.0";
 const char *ivs_build_id = AIM_STRINGIFY(BUILD_ID);
 const char *ivs_build_os = AIM_STRINGIFY(BUILD_OS);
@@ -591,10 +594,12 @@ aim_main(int argc, char* argv[])
     }
 
     if (use_syslog) {
-        aim_log_pvs_set_all(aim_pvs_syslog_open("ivs", LOG_NDELAY, LOG_DAEMON));
+        openlog("ivs", LOG_NDELAY, LOG_DAEMON);
     }
 
     create_pidfile();
+
+    aim_logf_set_all("logger", logger, NULL);
 
     AIM_LOG_MSG("Starting ivs %s (%s %s) pid %d", ivs_version, ivs_build_id, ivs_build_os, getpid());
 
@@ -929,4 +934,49 @@ ivs_loci_logger(loci_log_level_t level,
     va_end(ap);
 
     return 0;
+}
+
+static int
+aim_log_flag_to_syslog_priority(aim_log_flag_t flag)
+{
+    switch (flag) {
+    case AIM_LOG_FLAG_SYSLOG_EMERG: return LOG_EMERG;
+    case AIM_LOG_FLAG_SYSLOG_ALERT: return LOG_ALERT;
+    case AIM_LOG_FLAG_SYSLOG_CRIT: return LOG_CRIT;
+    case AIM_LOG_FLAG_SYSLOG_ERROR: return LOG_ERR;
+    case AIM_LOG_FLAG_SYSLOG_WARN: return LOG_WARNING;
+    case AIM_LOG_FLAG_SYSLOG_NOTICE: return LOG_NOTICE;
+    case AIM_LOG_FLAG_SYSLOG_INFO: return LOG_INFO;
+    case AIM_LOG_FLAG_SYSLOG_DEBUG: return LOG_DEBUG;
+    default: return -1;
+    }
+}
+
+static void
+logger(void *cookie, aim_log_flag_t flag, const char *str)
+{
+    /*
+     * Log to stderr
+     *
+     * When running from init this goes to:
+     * Ubuntu: /var/log/upstart/ivs.log
+     * RHEL/CentOS: systemd journal
+     */
+    aim_pvs_logf(&aim_pvs_stderr, flag, str);
+
+    /*
+     * Send a syslog message to any inband controllers
+     */
+    inband_log(flag, str);
+
+    /*
+     * Send to local syslog if enabled
+     */
+    if (use_syslog) {
+        int priority = aim_log_flag_to_syslog_priority(flag);
+        if (priority >= 0) {
+            const char *msg = str + 22; /* HACK skip timestamp */
+            syslog(priority, "%s", msg);
+        }
+    }
 }

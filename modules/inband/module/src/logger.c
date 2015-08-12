@@ -80,12 +80,14 @@ syslog_severity(aim_log_flag_t flag)
     }
 }
 
-static void
-logger(void *cookie, aim_log_flag_t flag, const char *str)
+void
+inband_log(aim_log_flag_t flag, const char *str)
 {
     static char buf[1024];
 
-    fputs(str, stderr);
+    if (num_targets == 0) {
+        return;
+    }
 
     /* Don't send trace and verbose logs to the controller */
     if (((1 << flag) & REMOTE_LOG_LEVELS) == 0) {
@@ -155,8 +157,6 @@ inband_logger_post_fork(void)
 void
 inband_logger_init(void)
 {
-    aim_logf_set_all("logger", logger, NULL);
-
     /* Ratelimit to 10 log/s, burst size 10 */
     aim_ratelimiter_init(&ratelimiter, 100*1000, 10, NULL);
 }
