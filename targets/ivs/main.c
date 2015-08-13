@@ -411,9 +411,11 @@ crash_handler(int signum)
 
     char name[16] = { 0 };
     prctl(PR_GET_NAME, name);
-    AIM_LOG_ERROR("%.16s %s %s killed by signal %d (%s)",
-                  name, ivs_build_id, ivs_build_os,
-                  signum, strsignal(signum));
+    AIM_SYSLOG_ERROR(
+        "ivs <version> (<build> <os>) killed by signal <signal> (<signal name>)",
+        "The virtual switch has been unexpectedly killed.",
+        "ivs %s (%s %s) killed by signal %d (%s)",
+        ivs_version, ivs_build_id, ivs_build_os, signum, strsignal(signum));
 
     /*
      * Log a backtrace
@@ -601,7 +603,11 @@ aim_main(int argc, char* argv[])
 
     aim_logf_set_all("logger", logger, NULL);
 
-    AIM_LOG_MSG("Starting ivs %s (%s %s) pid %d", ivs_version, ivs_build_id, ivs_build_os, getpid());
+    AIM_SYSLOG_INFO(
+        "Starting ivs <version> (<build> <os>) pid <pid>",
+        "The virtual switch is starting up.",
+        "Starting ivs %s (%s %s) pid %d",
+        ivs_version, ivs_build_id, ivs_build_os, getpid());
 
     shared_debug_counter_init();
 
