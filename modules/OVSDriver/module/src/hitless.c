@@ -85,5 +85,8 @@ void
 ind_ovs_hitless_init(void)
 {
     indigo_core_message_listener_register(message_listener);
-    ind_soc_timer_event_register(hitless_failsafe_timer, NULL, 30000);
+
+    if (ind_ovs_hitless) {
+        ind_soc_timer_event_register(hitless_failsafe_timer, NULL, 30000);
+    }
 }
