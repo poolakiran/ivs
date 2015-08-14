@@ -118,7 +118,7 @@ handle_version_stats_request(indigo_cxn_id_t cxn_id, of_object_t *msg)
     ind_core_hw_desc_get(hw_desc);
     add_entry(&entries, "hardware", "%s", hw_desc);
 
-    add_entry(&entries, "implementation", "ivs");
+    add_entry(&entries, "implementation", "Switch Light Virtual");
     add_entry(&entries, "version", "%s", ivs_version);
     add_entry(&entries, "build", "%s", ivs_build_id);
     add_entry(&entries, "os", "%s", ivs_build_os);
