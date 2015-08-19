@@ -34,6 +34,7 @@ static void process_debug(struct ctx *ctx);
 static void process_egress(struct ctx *ctx, uint32_t out_port, bool l3);
 static bool check_vlan_membership(struct vlan_entry *vlan_entry, uint32_t in_port, bool *tagged);
 static void flood_vlan(struct ctx *ctx);
+static bool check_flood(struct ctx *ctx, struct lag_group *lag);
 static void span(struct ctx *ctx, struct span_group *span);
 static struct debug_key make_debug_key(struct ctx *ctx);
 static struct vlan_acl_key make_vlan_acl_key(struct ctx *ctx);
@@ -915,6 +916,11 @@ process_multicast(struct ctx *ctx)
 
         packet_trace("L2 multicast replication to LAG %s", replication->key.lag->key.name);
 
+        if (!check_flood(ctx, replication->key.lag)) {
+            packet_trace("LAG %s is not eligible for flooding", replication->key.lag->key.name);
+            continue;
+        }
+
         struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(replication->key.lag, ctx->hash);
         if (lag_bucket == NULL) {
             packet_trace("empty LAG");
@@ -943,6 +949,11 @@ process_multicast(struct ctx *ctx)
         }
 
         packet_trace("L3 multicast replication to VLAN %u LAG %s", replication->key.vlan_vid, replication->key.lag->key.name);
+
+        if (!check_flood(ctx, replication->key.lag)) {
+            packet_trace("LAG %s is not eligible for flooding", replication->key.lag->key.name);
+            continue;
+        }
 
         AIM_ASSERT(replication->key.vlan_vid != VLAN_INVALID);
         ctx->internal_vlan_vid = replication->key.vlan_vid;
@@ -1184,6 +1195,25 @@ flood_vlan(struct ctx *ctx)
 
         process_egress(ctx, lag_bucket->port_no, false);
     }
+}
+
+static bool
+check_flood(struct ctx *ctx, struct lag_group *lag)
+{
+    struct flood_key key = { .lag_id = ctx->ingress_lag_id };
+    struct flood_entry *entry = pipeline_bvs_table_flood_lookup(&key);
+    if (entry == NULL) {
+        return false;
+    }
+
+    int i;
+    for (i = 0; i < entry->value.num_lags; i++) {
+        if (lag == entry->value.lags[i]) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 static void
