@@ -8,9 +8,6 @@ standard
 ^cdpa.CdpRxRequest
 ^l3.PktOutCidrRouteTrap
 ^l3.PktOutHostRouteTrap
-^mtest.multicast_l2only
-^mtest.multicast_l3only
-^mtest.multicast_l2l3
 
 # Physical switch specific
 ^priority_to_queue_table.VlanPriority
