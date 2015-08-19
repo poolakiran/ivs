@@ -220,5 +220,14 @@ struct ipv4_multicast_entry *
 pipeline_bvs_table_ipv4_multicast_lookup(uint16_t vlan_vid, uint32_t vrf, uint32_t ipv4)
 {
     struct ipv4_multicast_key key = { .vlan_vid = vlan_vid, .pad = 0, .vrf = vrf, .ipv4 = ipv4 };
-    return ipv4_multicast_hashtable_first(ipv4_multicast_hashtable, &key);
+    struct ipv4_multicast_entry *entry =
+        ipv4_multicast_hashtable_first(ipv4_multicast_hashtable, &key);
+    if (entry) {
+        packet_trace("Hit ipv4_multicast entry vlan_vid=%u vrf=%u ipv4=%08x",
+                     entry->key.vlan_vid, entry->key.vrf, entry->key.ipv4);
+    } else {
+        packet_trace("Miss ipv4_multicast entry vlan_vid=%u vrf=%u ipv4=%08x",
+                     vlan_vid, vrf, ipv4);
+    }
+    return entry;
 }

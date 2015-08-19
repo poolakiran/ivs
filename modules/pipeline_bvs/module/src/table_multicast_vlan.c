@@ -66,10 +66,6 @@ parse_value(of_list_bsn_tlv_t *tlvs, struct multicast_vlan_value *value)
         goto end;
     }
 
-    if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
-        goto end;
-    }
-
     if (tlv.object_id == OF_BSN_TLV_IGMP_SNOOPING) {
         value->igmp_snooping = true;
         if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
@@ -214,5 +210,14 @@ struct multicast_vlan_entry *
 pipeline_bvs_table_multicast_vlan_lookup(uint16_t vlan_vid)
 {
     struct multicast_vlan_key key = { .vlan_vid = vlan_vid };
-    return multicast_vlan_hashtable_first(multicast_vlan_hashtable, &key);
+    struct multicast_vlan_entry *entry =
+        multicast_vlan_hashtable_first(multicast_vlan_hashtable, &key);
+    if (entry) {
+        packet_trace("Hit multicast_vlan entry vlan_vid=%u -> igmp_snooping=%u l2_multicast_lookup=%u default_replication_group=%s",
+                     entry->key.vlan_vid, entry->value.igmp_snooping, entry->value.l2_multicast_lookup,
+                     entry->value.default_replication_group ? entry->value.default_replication_group->key.name : "(none)");
+    } else {
+        packet_trace("Miss multicast_vlan entry vlan_vid=%u", vlan_vid);
+    }
+    return entry;
 }

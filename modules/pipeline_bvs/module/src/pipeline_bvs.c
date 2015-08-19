@@ -29,6 +29,7 @@ static const of_mac_addr_t zero_mac = { { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } }
 
 static void process_l2(struct ctx *ctx);
 static void process_l3(struct ctx *ctx);
+static void process_multicast(struct ctx *ctx);
 static void process_debug(struct ctx *ctx);
 static void process_egress(struct ctx *ctx, uint32_t out_port, bool l3);
 static bool check_vlan_membership(struct vlan_entry *vlan_entry, uint32_t in_port, bool *tagged);
@@ -633,7 +634,11 @@ process_l2(struct ctx *ctx)
             return;
         }
 
-        flood_vlan(ctx);
+        if (!memcmp(ctx->key->ethernet.eth_dst, &broadcast_mac, OF_MAC_ADDR_BYTES)) {
+            flood_vlan(ctx);
+        } else {
+            process_multicast(ctx);
+        }
 
         return;
     }
@@ -845,6 +850,78 @@ process_l3(struct ctx *ctx)
     packet_trace("selected LAG port %u", lag_bucket->port_no);
 
     process_egress(ctx, lag_bucket->port_no, true);
+}
+
+static void
+process_multicast(struct ctx *ctx)
+{
+    packet_trace("Entering multicast processing");
+
+    if ((ntohl(ctx->key->ipv4.ipv4_dst) & 0xffffff00) == 0xe0000000) {
+        packet_trace("Reserved multicast IP, flooding");
+        flood_vlan(ctx);
+        return;
+    }
+
+    struct multicast_vlan_entry *multicast_vlan_entry =
+        pipeline_bvs_table_multicast_vlan_lookup(ctx->internal_vlan_vid);
+
+    struct multicast_replication_group_entry *replication_group = NULL;
+
+    if (multicast_vlan_entry) {
+        if (!multicast_vlan_entry->value.igmp_snooping) {
+            packet_trace("IGMP snooping disabled on VLAN, flooding");
+            flood_vlan(ctx);
+            return;
+        }
+
+        replication_group = multicast_vlan_entry->value.default_replication_group;
+        if (replication_group) {
+            packet_trace("Default replication group is %s", replication_group->key.name);
+        } else {
+            packet_trace("No default replication group");
+        }
+    }
+
+    // TODO L3 lookup
+    struct ipv4_multicast_entry *ipv4_multicast_entry =
+        pipeline_bvs_table_ipv4_multicast_lookup(
+            ctx->internal_vlan_vid, 0, ntohl(ctx->key->ipv4.ipv4_dst));
+
+    if (ipv4_multicast_entry) {
+        replication_group = ipv4_multicast_entry->value.multicast_replication_group;
+    }
+
+    if (!replication_group) {
+        packet_trace("No multicast replication group found");
+        /* ctx->drop = true ? */
+        return;
+    }
+
+    struct list_links *cur;
+    LIST_FOREACH(&replication_group->members, cur) {
+        struct multicast_replication_entry *replication =
+            container_of(cur, links, struct multicast_replication_entry);
+
+        packet_trace("Replicating to VLAN %u LAG %s", replication->key.vlan_vid, replication->key.lag->key.name);
+
+        /* TODO set VLAN */
+
+        if (replication->l3) {
+            /* TODO set eth_src */
+        }
+
+        struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(replication->key.lag, ctx->hash);
+        if (lag_bucket == NULL) {
+            packet_trace("empty LAG");
+            PIPELINE_STAT(EMPTY_LAG);
+            continue;
+        }
+
+        packet_trace("selected LAG port %u", lag_bucket->port_no);
+
+        process_egress(ctx, lag_bucket->port_no, replication->l3);
+    }
 }
 
 static void
