@@ -883,10 +883,15 @@ process_multicast(struct ctx *ctx)
         }
     }
 
-    // TODO L3 lookup
-    struct ipv4_multicast_entry *ipv4_multicast_entry =
-        pipeline_bvs_table_ipv4_multicast_lookup(
+    struct ipv4_multicast_entry *ipv4_multicast_entry;
+
+    if (multicast_vlan_entry && multicast_vlan_entry->value.l2_multicast_lookup) {
+        ipv4_multicast_entry = pipeline_bvs_table_ipv4_multicast_lookup(
             ctx->internal_vlan_vid, 0, ntohl(ctx->key->ipv4.ipv4_dst));
+    } else {
+        ipv4_multicast_entry = pipeline_bvs_table_ipv4_multicast_lookup(
+            0, ctx->vrf, ntohl(ctx->key->ipv4.ipv4_dst));
+    }
 
     if (ipv4_multicast_entry) {
         replication_group = ipv4_multicast_entry->value.multicast_replication_group;
@@ -898,18 +903,17 @@ process_multicast(struct ctx *ctx)
         return;
     }
 
+    /* L2 replication */
     struct list_links *cur;
     LIST_FOREACH(&replication_group->members, cur) {
         struct multicast_replication_entry *replication =
             container_of(cur, links, struct multicast_replication_entry);
 
-        packet_trace("Replicating to VLAN %u LAG %s", replication->key.vlan_vid, replication->key.lag->key.name);
-
-        /* TODO set VLAN */
-
         if (replication->l3) {
-            /* TODO set eth_src */
+            continue;
         }
+
+        packet_trace("L2 multicast replication to LAG %s", replication->key.lag->key.name);
 
         struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(replication->key.lag, ctx->hash);
         if (lag_bucket == NULL) {
@@ -920,7 +924,52 @@ process_multicast(struct ctx *ctx)
 
         packet_trace("selected LAG port %u", lag_bucket->port_no);
 
-        process_egress(ctx, lag_bucket->port_no, replication->l3);
+        process_egress(ctx, lag_bucket->port_no, false);
+    }
+
+    /* L3 replication */
+    uint16_t orig_internal_vlan_vid = ctx->internal_vlan_vid;
+
+    /* TODO check TTL */
+    action_set_ipv4_ttl(ctx->actx, ctx->key->ipv4.ipv4_ttl - 1);
+    ctx->key->ipv4.ipv4_ttl--;
+
+    LIST_FOREACH(&replication_group->members, cur) {
+        struct multicast_replication_entry *replication =
+            container_of(cur, links, struct multicast_replication_entry);
+
+        if (!replication->l3) {
+            continue;
+        }
+
+        packet_trace("L3 multicast replication to VLAN %u LAG %s", replication->key.vlan_vid, replication->key.lag->key.name);
+
+        AIM_ASSERT(replication->key.vlan_vid != VLAN_INVALID);
+        ctx->internal_vlan_vid = replication->key.vlan_vid;
+        action_set_eth_src(ctx->actx, replication->value.new_eth_src);
+
+        struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(replication->key.lag, ctx->hash);
+        if (lag_bucket == NULL) {
+            packet_trace("empty LAG");
+            PIPELINE_STAT(EMPTY_LAG);
+            continue;
+        }
+
+        packet_trace("selected LAG port %u", lag_bucket->port_no);
+
+        struct port_entry *dst_port_entry = pipeline_bvs_table_port_lookup(lag_bucket->port_no);
+        if (!dst_port_entry) {
+            continue;
+        }
+
+        if (dst_port_entry->value.lag_id != OF_GROUP_ANY &&
+                dst_port_entry->value.ingress_lag == ctx->ingress_lag &&
+                replication->key.vlan_vid == orig_internal_vlan_vid) {
+            packet_trace("skipping ingress VLAN/LAG %u/%s", orig_internal_vlan_vid, lag_name(ctx->ingress_lag));
+            continue;
+        }
+
+        process_egress(ctx, lag_bucket->port_no, true);
     }
 }
 
