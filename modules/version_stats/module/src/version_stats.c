@@ -122,6 +122,9 @@ handle_version_stats_request(indigo_cxn_id_t cxn_id, of_object_t *msg)
     add_entry(&entries, "version", "%s", ivs_version);
     add_entry(&entries, "build", "%s", ivs_build_id);
     add_entry(&entries, "os", "%s", ivs_build_os);
+    add_entry(&entries, "existence", "virtual");
+    add_entry(&entries, "switch-product-id", "SWL-VX-BCF");
+    add_entry(&entries, "switch-patch", "0");
 
     indigo_cxn_send_controller_message(cxn_id, reply);
 
