@@ -188,6 +188,9 @@ pipeline_bvs_table_vlan_entry_delete(
 {
     struct vlan_entry *entry = entry_priv;
 
+    stats_clear(ind_ovs_rx_vlan_stats_select(entry->key.vlan_vid));
+    stats_clear(ind_ovs_tx_vlan_stats_select(entry->key.vlan_vid));
+
     bighash_remove(vlan_hashtable, &entry->hash_entry);
 
     ind_ovs_barrier_defer_revalidation(cxn_id);
