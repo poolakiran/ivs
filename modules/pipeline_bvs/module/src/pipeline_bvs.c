@@ -858,12 +858,6 @@ process_multicast(struct ctx *ctx)
 {
     packet_trace("Entering multicast processing");
 
-    if ((ntohl(ctx->key->ipv4.ipv4_dst) & 0xffffff00) == 0xe0000000) {
-        packet_trace("Reserved multicast IP, flooding");
-        flood_vlan(ctx);
-        return;
-    }
-
     struct multicast_vlan_entry *multicast_vlan_entry =
         pipeline_bvs_table_multicast_vlan_lookup(ctx->internal_vlan_vid);
 
@@ -876,12 +870,26 @@ process_multicast(struct ctx *ctx)
             return;
         }
 
+        if (ctx->key->ipv4.ipv4_proto == 2) {
+            packet_trace("Trapping IGMP packet");
+            mark_drop(ctx);
+            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_PDU);
+            process_pktin(ctx);
+            return;
+        }
+
         replication_group = multicast_vlan_entry->value.default_replication_group;
         if (replication_group) {
             packet_trace("Default replication group is %s", replication_group->key.name);
         } else {
             packet_trace("No default replication group");
         }
+    }
+
+    if ((ntohl(ctx->key->ipv4.ipv4_dst) & 0xffffff00) == 0xe0000000) {
+        packet_trace("Reserved multicast IP, flooding");
+        flood_vlan(ctx);
+        return;
     }
 
     struct ipv4_multicast_entry *ipv4_multicast_entry;
