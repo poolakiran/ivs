@@ -884,6 +884,10 @@ process_multicast(struct ctx *ctx)
         } else {
             packet_trace("No default replication group");
         }
+    } else {
+        packet_trace("Missed in multicast_vlan table, flooding");
+        flood_vlan(ctx);
+        return;
     }
 
     if ((ntohl(ctx->key->ipv4.ipv4_dst) & 0xffffff00) == 0xe0000000) {
