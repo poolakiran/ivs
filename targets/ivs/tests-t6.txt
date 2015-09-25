@@ -13,3 +13,5 @@ standard
 ^priority_to_queue_table.VlanPriority
 ^priority_to_queue_table.VlanPriorityOverPortPriority
 ^priority_to_queue_table.VlanPriorityOverVlanXlatePriority
+^pktin.PVST_Flood
+^pktin.STP
