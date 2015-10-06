@@ -241,6 +241,9 @@ const char *ind_ovs_cmd_str(int family, uint8_t cmd);
 /* Log Netlink messages in human readable from */
 void ind_ovs_dump_msg(const struct nlmsghdr *nlh);
 
+/* Always log the message regardless of the loglevel */
+void ind_ovs_dump_msg_force(const struct nlmsghdr *nlh);
+
 /* Utility functions */
 uint32_t get_entropy(void);
 uint64_t monotonic_us(void);

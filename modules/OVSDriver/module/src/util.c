@@ -136,10 +136,28 @@ ind_ovs_transact_nofree(struct nl_msg *msg)
         err = 0;
     }
 
+    static unsigned int ratelimited = 0;
+    static bool first = true;
+    static aim_ratelimiter_t ratelimiter;
+    if (first) {
+        aim_ratelimiter_init(&ratelimiter, 1000*1000, 2, NULL);
+        first = false;
+    }
+
     if (err < 0) {
         debug_counter_inc(&netlink_error);
-        LOG_WARN("Transaction failed (%s): %s",
-                 ind_ovs_cmd_str(family, cmd), strerror(-err));
+        if (!aim_ratelimiter_limit(&ratelimiter, monotonic_us())) {
+            AIM_LOG_WARN("Transaction failed (%s): %s",
+                         ind_ovs_cmd_str(family, cmd), strerror(-err));
+            ind_ovs_dump_msg_force(nlh);
+
+            if (ratelimited) {
+                AIM_LOG_WARN("%u other netlink transactions failed", ratelimited);
+                ratelimited = 0;
+            }
+        } else {
+            ratelimited++;
+        }
         return sys2indigoerr(-err);
     }
 
