@@ -214,7 +214,6 @@ ind_ovs_kflow_add(const struct nlattr *key)
     kflow->actions_len = nla_len(actions);
 
     if (ind_ovs_transact(msg) < 0) {
-        AIM_LOG_ERROR("Failed to insert kernel flow");
         debug_counter_inc(&add_kernel_failed);
         aim_free(kflow->actions);
         aim_free(kflow);

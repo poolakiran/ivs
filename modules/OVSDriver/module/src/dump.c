@@ -444,6 +444,19 @@ ind_ovs_dump_msg(const struct nlmsghdr *nlh)
 }
 
 void
+ind_ovs_dump_msg_force(const struct nlmsghdr *nlh)
+{
+    bool was_verbose = AIM_BIT_GET(AIM_LOG_STRUCT.common_flags, AIM_LOG_FLAG_VERBOSE);
+    if (!was_verbose) {
+        AIM_BIT_SET(AIM_LOG_STRUCT.common_flags, AIM_LOG_FLAG_VERBOSE, true);
+    }
+    ind_ovs_dump_msg(nlh);
+    if (!was_verbose) {
+        AIM_BIT_SET(AIM_LOG_STRUCT.common_flags, AIM_LOG_FLAG_VERBOSE, false);
+    }
+}
+
+void
 ind_ovs_dump_key(const struct nlattr *key)
 {
     indent++;
