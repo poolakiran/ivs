@@ -48,7 +48,8 @@
     stat(DEBUG_REDIRECT) \
     stat(DEBUG_DROP) \
     stat(EGRESS_BAD_VLAN) \
-    stat(PACKET_OF_DEATH)
+    stat(PACKET_OF_DEATH) \
+    stat(PIM_OFFLOAD)
 
 enum pipeline_bvs_stats {
 #define stat(name) PIPELINE_BVS_STATS_ ## name,

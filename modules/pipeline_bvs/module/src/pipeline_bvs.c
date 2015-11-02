@@ -626,6 +626,14 @@ process_l2(struct ctx *ctx)
         }
     }
 
+    /* PIM offload */
+    if (ctx->key->ethertype == htons(0x0800) && ctx->key->ipv4.ipv4_proto == 103 &&
+            ctx->key->ipv4.ipv4_dst == htonl(0xe000000d)) {
+        packet_trace("sending PIM packet to agent");
+        PIPELINE_STAT(PIM_OFFLOAD);
+        mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_PIM);
+    }
+
     /* Check for broadcast/multicast */
     if (ctx->key->ethernet.eth_dst[0] & 1) {
         process_debug(ctx);
