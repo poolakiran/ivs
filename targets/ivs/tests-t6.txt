@@ -15,3 +15,4 @@ standard
 ^priority_to_queue_table.VlanPriorityOverVlanXlatePriority
 ^pktin.PVST_Flood
 ^pktin.STP
+^storm_control
