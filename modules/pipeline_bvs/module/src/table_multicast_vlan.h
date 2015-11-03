@@ -29,7 +29,7 @@ AIM_STATIC_ASSERT(MULTICAST_VLAN_KEY_SIZE, sizeof(struct multicast_vlan_key) == 
 
 struct multicast_vlan_value {
     bool igmp_snooping;
-    bool l2_multicast_lookup;
+    uint32_t multicast_interface_id;
     struct multicast_replication_group_entry *default_replication_group;
 };
 

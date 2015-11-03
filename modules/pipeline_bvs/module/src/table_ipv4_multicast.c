@@ -38,14 +38,14 @@ parse_key(of_list_bsn_tlv_t *tlvs, struct ipv4_multicast_key *key)
     memset(key, 0, sizeof(*key));
 
     if (of_list_bsn_tlv_first(tlvs, &tlv) < 0) {
-        AIM_LOG_ERROR("expected vlan_vid key TLV, instead got end of list");
+        AIM_LOG_ERROR("expected multicast_interface_id key TLV, instead got end of list");
         return INDIGO_ERROR_PARAM;
     }
 
-    if (tlv.object_id == OF_BSN_TLV_VLAN_VID) {
-        of_bsn_tlv_vlan_vid_value_get(&tlv, &key->vlan_vid);
+    if (tlv.object_id == OF_BSN_TLV_MULTICAST_INTERFACE_ID) {
+        of_bsn_tlv_multicast_interface_id_value_get(&tlv, &key->multicast_interface_id);
     } else {
-        AIM_LOG_ERROR("expected vlan_vid key TLV, instead got %s", of_class_name(&tlv));
+        AIM_LOG_ERROR("expected multicast_interface_id key TLV, instead got %s", of_class_name(&tlv));
         return INDIGO_ERROR_PARAM;
     }
 
@@ -217,17 +217,17 @@ pipeline_bvs_table_ipv4_multicast_unregister(void)
 }
 
 struct ipv4_multicast_entry *
-pipeline_bvs_table_ipv4_multicast_lookup(uint16_t vlan_vid, uint32_t vrf, uint32_t ipv4)
+pipeline_bvs_table_ipv4_multicast_lookup(uint16_t multicast_interface_id, uint32_t vrf, uint32_t ipv4)
 {
-    struct ipv4_multicast_key key = { .vlan_vid = vlan_vid, .pad = 0, .vrf = vrf, .ipv4 = ipv4 };
+    struct ipv4_multicast_key key = { .multicast_interface_id = multicast_interface_id, .vrf = vrf, .ipv4 = ipv4 };
     struct ipv4_multicast_entry *entry =
         ipv4_multicast_hashtable_first(ipv4_multicast_hashtable, &key);
     if (entry) {
-        packet_trace("Hit ipv4_multicast entry vlan_vid=%u vrf=%u ipv4=%08x",
-                     entry->key.vlan_vid, entry->key.vrf, entry->key.ipv4);
+        packet_trace("Hit ipv4_multicast entry multicast_interface_id=%u vrf=%u ipv4=%08x",
+                     entry->key.multicast_interface_id, entry->key.vrf, entry->key.ipv4);
     } else {
-        packet_trace("Miss ipv4_multicast entry vlan_vid=%u vrf=%u ipv4=%08x",
-                     vlan_vid, vrf, ipv4);
+        packet_trace("Miss ipv4_multicast entry multicast_interface_id=%u vrf=%u ipv4=%08x",
+                     multicast_interface_id, vrf, ipv4);
     }
     return entry;
 }

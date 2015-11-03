@@ -23,8 +23,7 @@
 struct multicast_replication_group;
 
 struct ipv4_multicast_key {
-    uint16_t vlan_vid;
-    uint16_t pad;
+    uint32_t multicast_interface_id;
     uint32_t vrf;
     uint32_t ipv4;
 };
