@@ -8,6 +8,8 @@ standard
 ^cdpa.CdpRxRequest
 ^l3.PktOutCidrRouteTrap
 ^l3.PktOutHostRouteTrap
+^igmpa.ExpectedPimHelloDrop
+^igmpa.UnexpectedPimHelloToController
 
 # Physical switch specific
 ^priority_to_queue_table.VlanPriority
