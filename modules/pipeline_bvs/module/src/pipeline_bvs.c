@@ -940,7 +940,8 @@ process_multicast(struct ctx *ctx)
     }
 
     uint16_t orig_internal_vlan_vid = ctx->internal_vlan_vid;
-    of_mac_addr_t orig_eth_src = *(of_mac_addr_t *)ctx->key->ethernet.eth_src;
+    of_mac_addr_t orig_eth_src;
+    memcpy(&orig_eth_src, ctx->key->ethernet.eth_src, ETH_ALEN);
 
     struct list_links *cur;
     LIST_FOREACH(&replication_group->members, cur) {
