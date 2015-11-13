@@ -239,7 +239,9 @@ pipeline_bvs_pktin_socket_register()
     }
 
     for (port_info = port_list; port_info; port_info = port_info->next) {
-        pipeline_bvs_port_pktin_socket_register(port_info->of_port);
+        if (port_info->of_port <= SLSHARED_CONFIG_OF_PORT_MAX) {
+            pipeline_bvs_port_pktin_socket_register(port_info->of_port);
+        }
     }
 
     indigo_port_interface_list_destroy(port_list);
