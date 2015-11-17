@@ -899,7 +899,7 @@ process_multicast(struct ctx *ctx)
         if (ctx->key->ipv4.ipv4_proto == 2) {
             packet_trace("Trapping IGMP packet");
             mark_drop(ctx);
-            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_PDU);
+            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_IGMP);
             process_pktin(ctx);
             return;
         }
