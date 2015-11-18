@@ -27,6 +27,7 @@ struct debug_key {
     of_mac_addr_t eth_dst;
     uint16_t eth_type;
     uint16_t vlan_vid;
+    uint32_t vrf;
     uint32_t ipv4_src;
     uint32_t ipv4_dst;
     uint8_t ip_proto;
@@ -35,7 +36,7 @@ struct debug_key {
     uint16_t tp_dst;
     uint16_t tcp_flags;
 };
-AIM_STATIC_ASSERT(DEBUG_KEY_SIZE, sizeof(struct debug_key) == 40);
+AIM_STATIC_ASSERT(DEBUG_KEY_SIZE, sizeof(struct debug_key) == 44);
 
 struct debug_value {
     struct span_group *span; /* NULL if unused */
