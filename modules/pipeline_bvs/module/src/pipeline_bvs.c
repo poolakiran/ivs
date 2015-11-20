@@ -1279,6 +1279,7 @@ make_debug_key(struct ctx *ctx)
         .in_port = ctx->key->in_port,
         .eth_type = ntohs(ctx->key->ethertype),
         .vlan_vid = ctx->internal_vlan_vid,
+        .vrf = ctx->vrf,
         .ipv4_src = ntohl(ctx->key->ipv4.ipv4_src),
         .ipv4_dst = ntohl(ctx->key->ipv4.ipv4_dst),
         .ip_proto = ctx->key->ipv4.ipv4_proto,
