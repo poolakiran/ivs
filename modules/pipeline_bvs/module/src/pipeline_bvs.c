@@ -628,14 +628,6 @@ process_l2(struct ctx *ctx)
         }
     }
 
-    /* PIM offload */
-    if (ctx->key->ethertype == htons(0x0800) && ctx->key->ipv4.ipv4_proto == 103 &&
-            ctx->key->ipv4.ipv4_dst == htonl(0xe000000d)) {
-        packet_trace("sending PIM packet to agent");
-        PIPELINE_STAT(PIM_OFFLOAD);
-        mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_PIM);
-    }
-
     /* Check for broadcast/multicast */
     if (ctx->key->ethernet.eth_dst[0] & 1) {
         process_debug(ctx);
@@ -888,51 +880,61 @@ process_multicast(struct ctx *ctx)
 
     struct multicast_vlan_entry *multicast_vlan_entry =
         pipeline_bvs_table_multicast_vlan_lookup(ctx->internal_vlan_vid);
+    struct port_multicast_entry *port_multicast_entry =
+        pipeline_bvs_table_port_multicast_lookup(ctx->key->in_port);
 
     struct multicast_replication_group_entry *replication_group = NULL;
+    bool igmp_snooping = multicast_vlan_entry && multicast_vlan_entry->value.igmp_snooping &&
+        port_multicast_entry && port_multicast_entry->value.igmp_snooping;
 
-    if (multicast_vlan_entry) {
-        if (!multicast_vlan_entry->value.igmp_snooping) {
-            packet_trace("IGMP snooping disabled on VLAN, flooding");
-            flood_vlan(ctx);
-            return;
-        }
-
-        if (ctx->key->ipv4.ipv4_proto == 2) {
-            packet_trace("Trapping IGMP packet");
-            mark_drop(ctx);
-            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_IGMP);
-            process_pktin(ctx);
-            return;
-        }
-
-        replication_group = multicast_vlan_entry->value.default_replication_group;
-        if (replication_group) {
-            packet_trace("Default replication group is %s", replication_group->key.name);
-        } else {
-            packet_trace("No default replication group");
-        }
-    } else {
+    if (!multicast_vlan_entry) {
         packet_trace("Missed in multicast_vlan table, flooding");
         flood_vlan(ctx);
         return;
     }
 
+    if (igmp_snooping && ctx->key->ipv4.ipv4_proto == 2) {
+        packet_trace("Trapping IGMP packet");
+        mark_drop(ctx);
+        mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_IGMP);
+        process_pktin(ctx);
+        return;
+    }
+
     if ((ntohl(ctx->key->ipv4.ipv4_dst) & 0xffffff00) == 0xe0000000) {
+        if (igmp_snooping && ctx->key->ipv4.ipv4_proto == 103 && ntohl(ctx->key->ipv4.ipv4_dst) == 0xe000000d) {
+            packet_trace("Copying PIM packet to the CPU");
+            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_PIM);
+            process_pktin(ctx);
+        } else if (igmp_snooping) {
+            packet_trace("Copying reserved multicast IP packet to the CPU");
+            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_MC_RESERVED);
+            process_pktin(ctx);
+        }
         packet_trace("Reserved multicast IP, flooding");
         flood_vlan(ctx);
         return;
     }
 
+    if (!multicast_vlan_entry->value.igmp_snooping) {
+        packet_trace("IGMP snooping disabled, flooding");
+        flood_vlan(ctx);
+        return;
+    }
 
-    if (multicast_vlan_entry) {
-        struct ipv4_multicast_entry *ipv4_multicast_entry =
-            ipv4_multicast_entry = pipeline_bvs_table_ipv4_multicast_lookup(
-                multicast_vlan_entry->value.multicast_interface_id,
-                ctx->vrf, ntohl(ctx->key->ipv4.ipv4_dst));
-        if (ipv4_multicast_entry) {
-            replication_group = ipv4_multicast_entry->value.multicast_replication_group;
-        }
+    replication_group = multicast_vlan_entry->value.default_replication_group;
+    if (replication_group) {
+        packet_trace("Default replication group is %s", replication_group->key.name);
+    } else {
+        packet_trace("No default replication group");
+    }
+
+    struct ipv4_multicast_entry *ipv4_multicast_entry =
+        ipv4_multicast_entry = pipeline_bvs_table_ipv4_multicast_lookup(
+            multicast_vlan_entry->value.multicast_interface_id,
+            ctx->vrf, ntohl(ctx->key->ipv4.ipv4_dst));
+    if (ipv4_multicast_entry) {
+        replication_group = ipv4_multicast_entry->value.multicast_replication_group;
     }
 
     if (!replication_group) {
