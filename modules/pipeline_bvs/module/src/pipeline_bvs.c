@@ -294,6 +294,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_multicast_replication_group_register();
     pipeline_bvs_table_multicast_replication_register();
     pipeline_bvs_table_ipv4_multicast_register();
+    pipeline_bvs_table_port_multicast_register();
 }
 
 static void
@@ -341,6 +342,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_ipv4_multicast_unregister();
     pipeline_bvs_table_multicast_replication_unregister();
     pipeline_bvs_table_multicast_replication_group_unregister();
+    pipeline_bvs_table_port_multicast_unregister();
 }
 
 static indigo_error_t
