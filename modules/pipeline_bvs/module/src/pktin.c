@@ -238,6 +238,8 @@ pipeline_bvs_pktin_socket_register()
         return;
     }
 
+    pipeline_bvs_port_pktin_socket_register(0);
+
     for (port_info = port_list; port_info; port_info = port_info->next) {
         if (port_info->of_port <= SLSHARED_CONFIG_OF_PORT_MAX) {
             pipeline_bvs_port_pktin_socket_register(port_info->of_port);
