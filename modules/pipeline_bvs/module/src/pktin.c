@@ -80,6 +80,10 @@ pipeline_bvs_get_pktin_socket(of_port_no_t port_no, uint64_t userdata)
     AIM_ASSERT(port_no <= SLSHARED_CONFIG_OF_PORT_MAX,
                "Port %u out of range", port_no);
 
+    if (port_no > SLSHARED_CONFIG_OF_PORT_MAX || !port_pktin_soc[port_no].in_use) {
+        port_no = 0;
+    }
+
     return &port_pktin_soc[port_no].pktin_soc;
 }
 
