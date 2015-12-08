@@ -80,6 +80,10 @@ pipeline_bvs_get_pktin_socket(of_port_no_t port_no, uint64_t userdata)
     AIM_ASSERT(port_no <= SLSHARED_CONFIG_OF_PORT_MAX,
                "Port %u out of range", port_no);
 
+    if (port_no > SLSHARED_CONFIG_OF_PORT_MAX || !port_pktin_soc[port_no].in_use) {
+        port_no = 0;
+    }
+
     return &port_pktin_soc[port_no].pktin_soc;
 }
 
@@ -237,6 +241,8 @@ pipeline_bvs_pktin_socket_register()
         AIM_LOG_ERROR("Failed to retrieve port list");
         return;
     }
+
+    pipeline_bvs_port_pktin_socket_register(0);
 
     for (port_info = port_list; port_info; port_info = port_info->next) {
         if (port_info->of_port <= SLSHARED_CONFIG_OF_PORT_MAX) {
