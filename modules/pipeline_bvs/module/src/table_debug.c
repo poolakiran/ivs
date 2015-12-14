@@ -247,6 +247,10 @@ cleanup_value(struct debug_value *value)
     if (value->span != NULL) {
         pipeline_bvs_table_span_release(value->span);
     }
+
+    if (value->lag != NULL) {
+        pipeline_bvs_table_lag_release(value->lag);
+    }
 }
 
 static indigo_error_t
