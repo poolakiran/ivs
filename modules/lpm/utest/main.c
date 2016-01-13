@@ -368,6 +368,24 @@ test_mixed()
     lpm_trie_destroy(lpm_trie);
 }
 
+static void
+test_churn()
+{
+    lpm_trie = lpm_trie_create();
+
+    for (int i = 0; i < 100; i++) {
+        for (int j = 0; j < 32; j++) {
+            lpm_trie_insert(lpm_trie, j<<8, 24, (void *)1);
+        }
+        for (int j = 0; j < 32; j++) {
+            lpm_trie_remove(lpm_trie, j<<8, 24);
+        }
+    }
+
+    assert(lpm_trie_is_empty(lpm_trie) == true);
+    lpm_trie_destroy(lpm_trie);
+}
+
 int aim_main(int argc, char* argv[])
 {
     (void) argc;
@@ -376,6 +394,7 @@ int aim_main(int argc, char* argv[])
     test_basic();
     test_random();
     test_mixed();
+    test_churn();
 
     return 0;
 }
