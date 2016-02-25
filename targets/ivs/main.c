@@ -113,6 +113,7 @@ static char *openflow_version = NULL;
 static char *pipeline = NULL;
 static char pidfile_path[PATH_MAX];
 static bool hitless;
+static char *certificate_path;
 
 static int count_char(const char *str, char c)
 {
@@ -200,6 +201,7 @@ parse_options(int argc, char **argv)
             OPT_INBAND_VLAN,
             OPT_INTERNAL_PORT,
             OPT_HITLESS,
+            OPT_CERTIFICATE,
         };
 
         static struct option long_options[] = {
@@ -215,6 +217,7 @@ parse_options(int argc, char **argv)
             {"inband-vlan", required_argument, 0,  OPT_INBAND_VLAN },
             {"internal-port", required_argument, 0, OPT_INTERNAL_PORT },
             {"hitless",     no_argument,       0, OPT_HITLESS },
+            {"certificate", required_argument, 0, OPT_CERTIFICATE },
             {"help",        no_argument,       0,  'h' },
             {"version",     no_argument,       0,  OPT_VERSION },
             /* Undocumented options */
@@ -302,6 +305,10 @@ parse_options(int argc, char **argv)
             hitless = true;
             break;
 
+        case OPT_CERTIFICATE:
+            certificate_path = optarg;
+            break;
+
         case 'h':
         case '?':
             printf("ivs: Indigo Virtual Switch\n");
@@ -320,6 +327,7 @@ parse_options(int argc, char **argv)
             printf("  --inband-vlan=VLAN          Enable in-band management on the specified VLAN\n");
             printf("  --internal-port=NAME        Create a port with the given name connected to the datapath\n");
             printf("  --hitless                   Preserve kernel flows until controller pushes configuration\n");
+            printf("  --certificate=PATH          Read SSL certificates from PATH\n");
             printf("  -h,--help                   Display this help message and exit\n");
             printf("  --version                   Display version information and exit\n");
             exit(c == 'h' ? 0 : 1);
@@ -690,6 +698,27 @@ aim_main(int argc, char* argv[])
 
     if (dpid) {
         indigo_core_dpid_set(dpid);
+    }
+
+    if (certificate_path) {
+        if (access(certificate_path, F_OK) < 0) {
+            AIM_LOG_WARN("Certificate path %s does not exist", certificate_path);
+        } else {
+            AIM_LOG_INFO("Reading certificates from %s", certificate_path);
+            char *cipher_list = "HIGH";
+            char switch_priv_key[INDIGO_TLS_CFG_PARAM_LEN];
+            char switch_cert[INDIGO_TLS_CFG_PARAM_LEN];
+            char ca_cert[INDIGO_TLS_CFG_PARAM_LEN];
+            snprintf(switch_priv_key, sizeof(switch_priv_key), "%s/ivs.key", certificate_path);
+            snprintf(switch_cert, sizeof(switch_cert), "%s/ivs.cert", certificate_path);
+            snprintf(ca_cert, sizeof(ca_cert), "%s/ca.cert", certificate_path);
+            char *suffix = NULL;
+            rv = indigo_cxn_config_tls(cipher_list, ca_cert, switch_cert, switch_priv_key, suffix);
+            if (rv < 0) {
+                AIM_LOG_FATAL("Failed to enable TLS");
+                return 1;
+            }
+        }
     }
 
     /* Enable all modules */
