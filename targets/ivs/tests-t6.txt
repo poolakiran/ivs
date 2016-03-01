@@ -18,3 +18,4 @@ standard
 ^pktin.PVST_Flood
 ^pktin.STP
 ^storm_control
+^macblaster
