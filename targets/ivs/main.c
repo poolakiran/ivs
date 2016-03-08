@@ -718,6 +718,7 @@ aim_main(int argc, char* argv[])
                 AIM_LOG_FATAL("Failed to enable TLS");
                 return 1;
             }
+            inband_enable_tls();
         }
     }
 

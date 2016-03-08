@@ -27,5 +27,6 @@ void inband_init(void);
 void inband_receive_packet(uint8_t *data, unsigned int len, of_port_no_t in_port);
 void inband_send_lldp(of_port_no_t port_no);
 void inband_log(aim_log_flag_t flag, const char *str);
+void inband_enable_tls(void);
 
 #endif /* INBAND_H */

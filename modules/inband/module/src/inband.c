@@ -70,6 +70,7 @@ static void get_port_name(of_port_no_t port, indigo_port_name_t port_name);
 static struct inband_controller controllers[MAX_INBAND_CONTROLLERS];
 static int num_controllers = 0;
 static const char *inband_interface_name = "inband";
+static bool inband_tls_enabled;
 
 /* Copied from IVS main.c */
 static indigo_cxn_config_params_t cxn_config_params = {
@@ -147,7 +148,11 @@ inband_receive_packet(uint8_t *data, unsigned int len, of_port_no_t in_port)
             AIM_LOG_VERBOSE("Controller address: %s", addr_str);
 
             indigo_cxn_params_tcp_over_ipv6_t *proto = &new_controller->protocol_params.tcp_over_ipv6;
-            proto->protocol = INDIGO_CXN_PROTO_TCP_OVER_IPV6;
+            if (inband_tls_enabled) {
+                proto->protocol = INDIGO_CXN_PROTO_TLS_OVER_IPV6;
+            } else {
+                proto->protocol = INDIGO_CXN_PROTO_TCP_OVER_IPV6;
+            }
             snprintf(proto->controller_ip, sizeof(proto->controller_ip),
                     "%s%%%s", addr_str, inband_interface_name);
             proto->controller_port = 6653;
@@ -448,6 +453,12 @@ inband_init(void)
     inband_lldp_init();
 
     inband_logger_init();
+}
+
+void
+inband_enable_tls(void)
+{
+    inband_tls_enabled = true;
 }
 
 void
