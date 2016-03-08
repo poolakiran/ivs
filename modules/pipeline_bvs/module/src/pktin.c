@@ -127,6 +127,8 @@ process_port_pktin(uint8_t *data, unsigned int len,
      *
      * Echo requests/traceroute destined to VRouter will be
      * consumed by the ICMP agent on the switch.
+     * But L3 destination miss needs to be processed
+     * before ICMP Echo requests.
      *
      * If these pktin's also have ttl expired, we dont need to respond
      * with icmp ttl expired msg to the original source,
@@ -146,6 +148,8 @@ process_port_pktin(uint8_t *data, unsigned int len,
     } else if (ppe_header_get(&ppep, PPE_HEADER_ARP)) {
         bool check_source = (metadata & OFP_BSN_PKTIN_FLAG_ARP) != 0;
         result = arpa_receive_packet(&ppep, pkey->in_port, check_source);
+    } else if (metadata & OFP_BSN_PKTIN_FLAG_L3_MISS) {
+        result = icmpa_send(&ppep, pkey->in_port, 3, 0);
     } else if (ppe_header_get(&ppep, PPE_HEADER_ICMP)) {
         result = icmpa_reply(&ppep, pkey->in_port);
     } else if (ppe_header_get(&ppep, PPE_HEADER_UDP) &&
@@ -184,11 +188,9 @@ process_port_pktin(uint8_t *data, unsigned int len,
 
     /*
      * Packet-in's passed by ICMP agent should later be
-     * checked for ttl expired/network unreachable reasons
+     * checked for ttl expired reason
      */
-    if (metadata & OFP_BSN_PKTIN_FLAG_L3_MISS) {
-        result = icmpa_send(&ppep, pkey->in_port, 3, 0);
-    } else if (metadata & OFP_BSN_PKTIN_FLAG_TTL_EXPIRED) {
+    if (metadata & OFP_BSN_PKTIN_FLAG_TTL_EXPIRED) {
         result = icmpa_send(&ppep, pkey->in_port, 11, 0);
     }
 
