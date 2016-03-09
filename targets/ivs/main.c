@@ -327,7 +327,7 @@ parse_options(int argc, char **argv)
             printf("  --inband-vlan=VLAN          Enable in-band management on the specified VLAN\n");
             printf("  --internal-port=NAME        Create a port with the given name connected to the datapath\n");
             printf("  --hitless                   Preserve kernel flows until controller pushes configuration\n");
-            printf("  --certificate=PATH          Read SSL certificates from PATH\n");
+            printf("  --certificate=PATH          Read SSL certificates and private key from PATH\n");
             printf("  -h,--help                   Display this help message and exit\n");
             printf("  --version                   Display version information and exit\n");
             exit(c == 'h' ? 0 : 1);
