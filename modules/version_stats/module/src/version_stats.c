@@ -120,8 +120,13 @@ handle_version_stats_request(indigo_cxn_id_t cxn_id, of_object_t *msg)
 
     const char *ivs_patch = "0";
     const char *switch_product_id = "SWL-VX-BCF";
+    const char *implementation = "Switch Light Virtual";
 
-    add_entry(&entries, "implementation", "Switch Light Virtual");
+    if (getenv("IVS_IMPLEMENTATION")) {
+        implementation = getenv("IVS_IMPLEMENTATION");
+    }
+
+    add_entry(&entries, "implementation", implementation);
     add_entry(&entries, "product-id", "BCF");
     add_entry(&entries, "version", "%s", ivs_version);
     add_entry(&entries, "switch-patch", ivs_patch);
@@ -130,6 +135,10 @@ handle_version_stats_request(indigo_cxn_id_t cxn_id, of_object_t *msg)
     add_entry(&entries, "build", "%s", ivs_build_id);
     add_entry(&entries, "release-id", "%s-%s(%s),%s,%s", switch_product_id, ivs_version, ivs_patch, ivs_build_os, ivs_build_id);
     add_entry(&entries, "os", "%s", ivs_build_os);
+
+    if (getenv("IVS_ASIC")) {
+        add_entry(&entries, "asic", "%s", getenv("IVS_ASIC"));
+    }
 
     indigo_cxn_send_controller_message(cxn_id, reply);
 
