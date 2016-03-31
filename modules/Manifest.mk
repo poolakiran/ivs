@@ -40,3 +40,5 @@ host_stats_BASEDIR := $(BASEDIR)/host_stats
 shared_debug_counter_BASEDIR := $(BASEDIR)/shared_debug_counter
 packet_trace_BASEDIR := $(BASEDIR)/packet_trace
 version_stats_BASEDIR := $(BASEDIR)/version_stats
+mgmt_interface_stats_BASEDIR := $(BASEDIR)/mgmt_interface_stats
+mgmt_interface_stats_BASEDIR := $(BASEDIR)/mgmt_interface_stats
