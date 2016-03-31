@@ -13,6 +13,7 @@
 #include <inband/inband.h>
 #include <SocketManager/socketmanager.h>
 #include <igmpa/igmpa.h>
+#include <mgmt_interface_stats/mgmt_interface_stats.h>
 
 static void
 lldp_timer(void *cookie)
@@ -58,6 +59,7 @@ ivs_agent_init(void)
 
     host_stats_init();
     version_stats_init();
+    mgmt_interface_stats_init();
 
     if (cdpa_init() < 0) {
         AIM_DIE("Failed to initialize CDP Agent module");
