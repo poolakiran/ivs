@@ -17,5 +17,6 @@ standard
 ^priority_to_queue_table.VlanPriorityOverVlanXlatePriority
 ^pktin.PVST_Flood
 ^pktin.STP
+^pktin.BSN_link_local_MAC
 ^storm_control
 ^macblaster
