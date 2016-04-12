@@ -395,7 +395,8 @@ retarget_logger(void)
     for (i = 0; i < num_controllers; i++) {
         struct inband_controller *controller = &controllers[i];
         indigo_cxn_params_tcp_over_ipv6_t *proto = &controller->protocol_params.tcp_over_ipv6;
-        if (proto->protocol == INDIGO_CXN_PROTO_TCP_OVER_IPV6) {
+        if (proto->protocol == INDIGO_CXN_PROTO_TCP_OVER_IPV6 ||
+                proto->protocol == INDIGO_CXN_PROTO_TLS_OVER_IPV6) {
             char ip[64];
             strncpy(ip, proto->controller_ip, sizeof(ip));
             *strchr(ip, '%') = '\0';
