@@ -20,3 +20,5 @@ standard
 ^pktin.BSN_link_local_MAC
 ^storm_control
 ^macblaster
+^lag_member_auto_add
+^mgmt_intf_stats
