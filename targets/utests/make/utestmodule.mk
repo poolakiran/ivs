@@ -57,6 +57,7 @@ HARNESS:=valgrind --leak-check=full --show-reachable=yes --suppressions=$(INDIGO
 endif
 
 GLOBAL_CFLAGS += -DOF_WIRE_BUFFER_DEBUG
+GLOBAL_LINK_LIBS += -lpthread
 
 
 # By Convention
