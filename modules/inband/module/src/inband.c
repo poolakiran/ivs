@@ -49,6 +49,7 @@
 #include "lldp.h"
 
 #define MAX_INBAND_CONTROLLERS 4
+#define STATIC_NEIGHBOR false
 
 struct inband_controller {
     indigo_controller_id_t id;
@@ -233,7 +234,9 @@ synchronize_controllers(struct inband_controller *new_controllers, int num_new_c
         }
 
         if (!found) {
-            add_neighbor_entry(new);
+            if (STATIC_NEIGHBOR) {
+                add_neighbor_entry(new);
+            }
 
             indigo_error_t rv;
             AIM_ASSERT(num_controllers < MAX_INBAND_CONTROLLERS);
