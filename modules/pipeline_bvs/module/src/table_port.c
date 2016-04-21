@@ -39,7 +39,7 @@ static struct port_entry local_entry = {
         .lag_id = OF_GROUP_ANY,
         .ingress_port_group_id = 0,
         .egr_port_group_id = 0,
-        .vlan_xlate_port_group_id = 0,
+        .vlan_xlate_port_group_id = -1,
         .disable_src_mac_check = true,
         .arp_offload = false,
         .dhcp_offload = false,
@@ -74,7 +74,7 @@ parse_value(of_flow_add_t *obj, struct port_value *value)
     value->lag_id = OF_GROUP_ANY;
     value->ingress_port_group_id = 0;
     value->egr_port_group_id = 0;
-    value->vlan_xlate_port_group_id = 0;
+    value->vlan_xlate_port_group_id = -1;
     value->default_vlan_vid = 0;
     value->disable_src_mac_check = false;
     value->arp_offload = false;
