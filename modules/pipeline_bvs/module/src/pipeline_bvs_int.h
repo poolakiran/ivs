@@ -79,6 +79,7 @@
 #include "table_multicast_replication.h"
 #include "table_ipv4_multicast.h"
 #include "table_port_multicast.h"
+#include "table_vlan_xlate2.h"
 
 #define AIM_LOG_MODULE_NAME pipeline_bvs
 #include <AIM/aim_log.h>

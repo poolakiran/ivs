@@ -295,6 +295,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_multicast_replication_register();
     pipeline_bvs_table_ipv4_multicast_register();
     pipeline_bvs_table_port_multicast_register();
+    pipeline_bvs_table_vlan_xlate2_register();
 }
 
 static void
@@ -343,6 +344,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_multicast_replication_unregister();
     pipeline_bvs_table_multicast_replication_group_unregister();
     pipeline_bvs_table_port_multicast_unregister();
+    pipeline_bvs_table_vlan_xlate2_unregister();
 }
 
 static indigo_error_t
@@ -490,13 +492,25 @@ process_l2(struct ctx *ctx)
         action_set_vlan_vid(ctx->actx, vlan_vid);
         internal_priority = port_entry->value.internal_priority;
     } else {
-        struct vlan_xlate_entry *vlan_xlate_entry =
-            pipeline_bvs_table_vlan_xlate_lookup(port_entry->value.vlan_xlate_port_group_id, tag);
+        struct vlan_xlate_entry *vlan_xlate_entry = NULL;
+        struct vlan_xlate2_entry *vlan_xlate2_entry = NULL;
+
+        if (port_entry->value.vlan_xlate_port_group_id != -1) {
+            vlan_xlate_entry = pipeline_bvs_table_vlan_xlate_lookup(port_entry->value.vlan_xlate_port_group_id, tag);
+        } else {
+            vlan_xlate2_entry = pipeline_bvs_table_vlan_xlate2_lookup(port_entry->value.ingress_lag, tag);
+        }
+
         if (vlan_xlate_entry) {
             packet_trace("Using VLAN from vlan_xlate");
             vlan_vid = vlan_xlate_entry->value.new_vlan_vid;
             action_set_vlan_vid(ctx->actx, vlan_vid);
             internal_priority = vlan_xlate_entry->value.internal_priority;
+        } else if (vlan_xlate2_entry) {
+            packet_trace("Using VLAN from vlan_xlate2");
+            vlan_vid = vlan_xlate2_entry->value.new_vlan_vid;
+            action_set_vlan_vid(ctx->actx, vlan_vid);
+            internal_priority = vlan_xlate2_entry->value.internal_priority;
         } else if (port_entry->value.require_vlan_xlate) {
             packet_trace("vlan_xlate required and missed, dropping");
             PIPELINE_STAT(VLAN_XLATE_MISS);
@@ -1110,8 +1124,12 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
     if (!out_port_tagged) {
         tag = 0;
     } else {
-        struct egr_vlan_xlate_entry *egr_vlan_xlate_entry =
-            pipeline_bvs_table_egr_vlan_xlate_lookup(dst_port_entry->value.vlan_xlate_port_group_id, ctx->internal_vlan_vid);
+        struct egr_vlan_xlate_entry *egr_vlan_xlate_entry = NULL;
+        if (dst_port_entry->value.vlan_xlate_port_group_id != -1) {
+            egr_vlan_xlate_entry = pipeline_bvs_table_egr_vlan_xlate_lookup(dst_port_entry->value.vlan_xlate_port_group_id, 0, ctx->internal_vlan_vid);
+        } else {
+            egr_vlan_xlate_entry = pipeline_bvs_table_egr_vlan_xlate_lookup(0, out_port, ctx->internal_vlan_vid);
+        }
         if (egr_vlan_xlate_entry) {
             tag = egr_vlan_xlate_entry->value.new_vlan_vid;
         }
