@@ -60,6 +60,18 @@ vlan_xlate2_parse_key(of_list_bsn_tlv_t *tlvs, struct vlan_xlate2_key *key)
         goto error;
     }
 
+    if (tlv.object_id == OF_BSN_TLV_VLAN_VID) {
+        of_bsn_tlv_vlan_vid_value_get(&tlv, &key->vlan_vid);
+    } else {
+        AIM_LOG_ERROR("expected vlan key TLV, instead got %s", of_object_id_str[tlv.object_id]);
+        goto error;
+    }
+
+    if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
+        AIM_LOG_ERROR("unexpected end of key list");
+        goto error;
+    }
+
     if (tlv.object_id == OF_BSN_TLV_REFERENCE) {
         uint16_t table_id;
         of_object_t ref_key;
@@ -77,18 +89,6 @@ vlan_xlate2_parse_key(of_list_bsn_tlv_t *tlvs, struct vlan_xlate2_key *key)
         }
     } else {
         AIM_LOG_ERROR("expected reference key TLV, instead got %s", of_object_id_str[tlv.object_id]);
-        goto error;
-    }
-
-    if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
-        AIM_LOG_ERROR("unexpected end of key list");
-        goto error;
-    }
-
-    if (tlv.object_id == OF_BSN_TLV_VLAN_VID) {
-        of_bsn_tlv_vlan_vid_value_get(&tlv, &key->vlan_vid);
-    } else {
-        AIM_LOG_ERROR("expected vlan key TLV, instead got %s", of_object_id_str[tlv.object_id]);
         goto error;
     }
 
