@@ -1124,8 +1124,12 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
     if (!out_port_tagged) {
         tag = 0;
     } else {
-        struct egr_vlan_xlate_entry *egr_vlan_xlate_entry =
-            pipeline_bvs_table_egr_vlan_xlate_lookup(dst_port_entry->value.vlan_xlate_port_group_id, ctx->internal_vlan_vid);
+        struct egr_vlan_xlate_entry *egr_vlan_xlate_entry = NULL;
+        if (dst_port_entry->value.vlan_xlate_port_group_id != -1) {
+            egr_vlan_xlate_entry = pipeline_bvs_table_egr_vlan_xlate_lookup(dst_port_entry->value.vlan_xlate_port_group_id, 0, ctx->internal_vlan_vid);
+        } else {
+            egr_vlan_xlate_entry = pipeline_bvs_table_egr_vlan_xlate_lookup(0, out_port, ctx->internal_vlan_vid);
+        }
         if (egr_vlan_xlate_entry) {
             tag = egr_vlan_xlate_entry->value.new_vlan_vid;
         }
