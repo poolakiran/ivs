@@ -35,7 +35,7 @@ void
 pipeline_bvs_table_vlan_xlate2_register(void)
 {
     vlan_xlate2_hashtable = bighash_table_create(1024);
-    indigo_core_gentable_register("vlan_xlate", &vlan_xlate2_ops, NULL, 1024, 256,
+    indigo_core_gentable_register("vlan_xlate2", &vlan_xlate2_ops, NULL, 1024, 256,
                                   &vlan_xlate2_table);
 }
 
