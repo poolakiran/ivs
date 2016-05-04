@@ -22,3 +22,5 @@ standard
 ^macblaster
 ^lag_member_auto_add
 ^mgmt_intf_stats
+^port_dcbx
+^internal_priority_to_pcp
