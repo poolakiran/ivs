@@ -64,6 +64,7 @@ DEBUG_COUNTER(modify_nonexistent, "ovsdriver.vport.modify_nonexistent", "Receive
 DEBUG_COUNTER(modify, "ovsdriver.vport.modify", "Received port modify notification");
 DEBUG_COUNTER(modify_notify_failed, "ovsdriver.vport.modify_notify_failed", "Failed to notify controller of modified port");
 DEBUG_COUNTER(link_change, "ovsdriver.vport.link_change", "Received link change notification");
+DEBUG_COUNTER(resync, "ovsdriver.vport.resync", "Needed to resync netlink cache");
 
 /*
  * Truncate the object to its initial length.
@@ -1078,9 +1079,35 @@ link_change_cb(struct nl_cache *cache,
 }
 
 static void
+resync_link_cache(void)
+{
+    int err = nl_cache_resync(route_cache_refill_sock, link_cache, link_change_cb, NULL);
+    if (err < 0) {
+        AIM_LOG_ERROR("Netlink resync failed: %s", nl_geterror(err));
+    }
+}
+
+static void
+resync_link_cache_timer(void *arg)
+{
+    ind_soc_timer_event_unregister(resync_link_cache_timer, NULL);
+    resync_link_cache();
+}
+
+static void
 route_cache_mngr_socket_cb(void)
 {
-    nl_cache_mngr_data_ready(route_cache_mngr);
+    int err = nl_cache_mngr_data_ready(route_cache_mngr);
+    if (err == -NLE_NOMEM) {
+        debug_counter_inc(&resync);
+        resync_link_cache();
+        if (ind_soc_timer_event_register(
+                resync_link_cache_timer, NULL, 1373) < 0) {
+            AIM_LOG_ERROR("Failed to register link cache resync timer");
+        }
+    } else if (err < 0) {
+        AIM_LOG_ERROR("Netlink cache error: %s", nl_geterror(err));
+    }
 }
 
 void
