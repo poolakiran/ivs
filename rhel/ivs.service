@@ -8,6 +8,7 @@ EnvironmentFile=-/etc/sysconfig/ivs
 ExecStartPre=/usr/sbin/modprobe -q openvswitch
 ExecStartPre=/usr/bin/systemctl reset-failed ivs
 ExecStart=/usr/sbin/ivs --syslog $DAEMON_ARGS
+ExecStartPost=/bin/bash -c "if [ -x /etc/sysconfig/network-scripts/assign-ivs-ip ]; then /etc/sysconfig/network-scripts/assign-ivs-ip; fi;"
 Restart=always
 StartLimitInterval=60s
 StartLimitBurst=3
