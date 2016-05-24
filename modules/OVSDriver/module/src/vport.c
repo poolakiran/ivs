@@ -1221,3 +1221,14 @@ ind_ovs_port_set_generation_id(uint32_t port_no, uint64_t generation_id)
         port->generation_id = generation_id;
     }
 }
+
+/* stub for queue descriptions; just reply with no entries */
+indigo_error_t
+indigo_port_queue_desc_get(of_queue_desc_stats_request_t *queue_desc_request,
+                           of_queue_desc_stats_reply_t **queue_desc_reply)
+{
+    *queue_desc_reply =
+        of_queue_desc_stats_reply_new(queue_desc_request->version);
+
+    return INDIGO_ERROR_NONE;
+}
