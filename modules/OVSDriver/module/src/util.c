@@ -227,13 +227,6 @@ sys2indigoerr(int err)
     }
 }
 
-#ifndef NL_CAPABILITY_NL_CONNECT_RETRY_GENERATE_PORT_ON_ADDRINUSE
-#define NL_CAPABILITY_NL_CONNECT_RETRY_GENERATE_PORT_ON_ADDRINUSE 4
-#endif
-
-int AIM_COMPILER_ATTR_WEAK
-nl_has_capability(int capability);
-
 struct nl_sock *
 ind_ovs_create_nlsock(void)
 {
@@ -251,46 +244,11 @@ ind_ovs_create_nlsock(void)
         return NULL;
     }
 
-    if (!nl_has_capability || !nl_has_capability(NL_CAPABILITY_NL_CONNECT_RETRY_GENERATE_PORT_ON_ADDRINUSE)) {
-        /* See HACK below. This marks the PID as being allocated by us */
-        nl_socket_set_local_port(sk, nl_socket_get_local_port(sk));
-    }
-
     nl_socket_disable_auto_ack(sk);
 
     nl_socket_set_nonblocking(sk);
 
     return sk;
-}
-
-/*
- * HACK
- *
- * libnl (as of 3.2.21) uses a bitmap to keep track of allocated netlink PIDs.
- * When a socket is freed in the main process its PID is marked as free and the
- * next netlink socket created may reuse that PID. This is a problem when
- * upcall processes still have references to the old socket. The kernel will
- * fail the bind() call for the new socket because the PID is in use.
- *
- * The kernel will assign a unique PID if we pass 0 in the call to bind().
- * This hack overrides the bind function with one that sets the PID to 0.
- */
-int
-bind(int fd, __CONST_SOCKADDR_ARG addr, socklen_t len)
-{
-    if (!nl_has_capability || !nl_has_capability(NL_CAPABILITY_NL_CONNECT_RETRY_GENERATE_PORT_ON_ADDRINUSE)) {
-        if (addr.__sockaddr__->sa_family == AF_NETLINK) {
-            struct sockaddr_nl *sa = (struct sockaddr_nl *)addr.__sockaddr__;
-            sa->nl_pid = 0;
-        }
-    }
-    typedef int (*bind_f)(int fd, __CONST_SOCKADDR_ARG addr, socklen_t len);
-    static bind_f real_bind = NULL;
-    if (real_bind == NULL) {
-        real_bind = dlsym(RTLD_NEXT, "bind");
-        AIM_ASSERT(real_bind != NULL);
-    }
-    return real_bind(fd, addr, len);
 }
 
 /*
