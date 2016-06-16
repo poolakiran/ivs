@@ -59,6 +59,13 @@ install -p -D -m 0644 targets/ivs/ivs.8 \
         $RPM_BUILD_ROOT/usr/share/man/man8/ivs.8
 install -p -D -m 0644 targets/ivs-ctl/ivs-ctl.8 \
         $RPM_BUILD_ROOT/usr/share/man/man8/ivs-ctl.8
+install -d -m 755 $RPM_BUILD_ROOT/etc/sysconfig/network-scripts
+install -p -D -m 755 rhel/assign-ivs-ip \
+        $RPM_BUILD_ROOT/etc/sysconfig/network-scripts/assign-ivs-ip
+install -p -D -m 755 rhel/ifup-ivs \
+        $RPM_BUILD_ROOT/etc/sysconfig/network-scripts/ifup-ivs
+install -p -D -m 755 rhel/ifdown-ivs \
+        $RPM_BUILD_ROOT/etc/sysconfig/network-scripts/ifdown-ivs
 
 gzip $RPM_BUILD_ROOT/usr/share/man/man8/ivs.8
 gzip $RPM_BUILD_ROOT/usr/share/man/man8/ivs-ctl.8
@@ -90,6 +97,9 @@ systemctl start ivs.service
 %{_unitdir}/ivs.service
 /usr/sbin/ivs
 /usr/sbin/ivs-ctl
+/etc/sysconfig/network-scripts/assign-ivs-ip
+/etc/sysconfig/network-scripts/ifup-ivs
+/etc/sysconfig/network-scripts/ifdown-ivs
 %doc /usr/share/man/man8/ivs.8.gz
 %doc /usr/share/man/man8/ivs-ctl.8.gz
 
