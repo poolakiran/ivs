@@ -24,3 +24,4 @@ standard
 ^mgmt_intf_stats
 ^port_dcbx
 ^internal_priority_to_pcp
+^shutdown_all_interfaces
