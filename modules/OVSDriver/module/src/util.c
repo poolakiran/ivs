@@ -249,7 +249,6 @@ allocate_nl_pid()
     memset(&snl, 0, sizeof(snl));
     snl.nl_family = AF_NETLINK;
     snl.nl_pid = 0;
-    snl.nl_groups = -1;
 
     int fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
     if (fd < 0) {
