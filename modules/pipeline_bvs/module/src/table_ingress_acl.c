@@ -62,11 +62,6 @@ parse_key(of_flow_add_t *obj, struct ingress_acl_key *key,
         if (match.masks.ip_proto != 0xff) {
             return INDIGO_ERROR_BAD_MATCH;
         }
-
-        if (match.fields.ip_proto != IPPROTO_TCP &&
-                match.fields.ip_proto != IPPROTO_UDP) {
-            return INDIGO_ERROR_BAD_MATCH;
-        }
     }
 
     if (match.fields.ip_proto != IPPROTO_TCP) {
