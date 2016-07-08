@@ -53,6 +53,7 @@ ipv6_to_key(const char *ip_str)
 }
 
 #ifndef DEBUG
+#define LPM64_TRIE_ENTRY_OBJECT(lpm64_trie, slot) &((lpm64_trie)->lpm64_trie_entries[slot])
 static char ip_str[INET6_ADDRSTRLEN];
 static char *
 key_to_ipv6(uint64_t ip)

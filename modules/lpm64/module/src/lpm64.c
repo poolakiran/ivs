@@ -18,7 +18,7 @@
  ****************************************************************/
 
 /*
- * See the comments in lpm6464.h for a high level description.
+ * See the comments in lpm64.h for a high level description.
  */
 
 #include <AIM/aim.h>
@@ -50,10 +50,11 @@ is_bit_set(uint64_t key, int i)
 static uint64_t
 netmask(int prefix)
 {
-    if (prefix == 0)
-        return(~((uint64_t) -1));
-    else
+    if (prefix) {
         return(~((1ULL << (64 - prefix)) - 1));
+    }
+
+    return 0;
 }
 
 /*

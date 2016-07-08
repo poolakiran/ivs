@@ -49,6 +49,7 @@ convert_ip(const char *ip_str)
 }
 
 #ifndef DEBUG
+#define LPM_TRIE_ENTRY_OBJECT(lpm_trie, slot) &((lpm_trie)->lpm_trie_entries[slot])
 static char ip_str[INET_ADDRSTRLEN];
 static char *
 get_ip(uint32_t ip)
