@@ -1,6 +1,6 @@
 /****************************************************************
  *
- *        Copyright 2014, Big Switch Networks, Inc.
+ *        Copyright 2014-2016, Big Switch Networks, Inc.
  *
  * Licensed under the Eclipse Public License, Version 1.0 (the
  * "License"); you may not use this file except in compliance
@@ -20,15 +20,24 @@
 #include "pipeline_bvs_int.h"
 #include <linux/if_ether.h>
 #include <lpm/lpm.h>
+#include <lpm64/lpm64.h>
+#include <endian.h>
 
 #define MAX_VRF 1024
 
 static void cleanup_value(struct l3_cidr_route_value *value);
 
-static const of_match_fields_t maximum_mask = {
+static const of_match_fields_t ipv4_maximum_mask = {
     .bsn_vrf = 0xffffffff,
     .eth_type = 0xffff,
     .ipv4_dst = 0xffffffff,
+};
+static const of_match_fields_t ipv6_maximum_mask = {
+    .bsn_vrf = 0xffffffff,
+    .eth_type = 0xffff,
+    /* IPv6 CIDR routes will be qualified only on IPv6 routing prefix
+     * and subnet id */
+    .ipv6_dst = { { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, } },
 };
 static const of_match_fields_t minimum_mask = {
     .bsn_vrf = 0xffffffff,
@@ -36,6 +45,7 @@ static const of_match_fields_t minimum_mask = {
 };
 
 static struct lpm_trie *lpm_tries[MAX_VRF];
+static struct lpm64_trie *lpm64_tries[MAX_VRF];
 
 static indigo_error_t
 parse_key(of_flow_add_t *obj, struct l3_cidr_route_key *key)
@@ -45,26 +55,55 @@ parse_key(of_flow_add_t *obj, struct l3_cidr_route_key *key)
         return INDIGO_ERROR_BAD_MATCH;
     }
 
-    if (!pipeline_bvs_check_tcam_mask(&match.masks, &minimum_mask, &maximum_mask)) {
-        return INDIGO_ERROR_BAD_MATCH;
-    }
-
-    if (match.fields.eth_type != ETH_P_IP) {
-        return INDIGO_ERROR_BAD_MATCH;
-    }
-
     uint16_t priority;
     of_flow_add_priority_get(obj, &priority);
 
-    if (priority == 0) {
-        /* Avoid shifting by the field width */
-        if (match.masks.ipv4_dst != 0) {
+    switch (match.fields.eth_type) {
+    case ETH_P_IP:
+        if (!pipeline_bvs_check_tcam_mask(&match.masks,
+                                          &minimum_mask,
+                                          &ipv4_maximum_mask)) {
             return INDIGO_ERROR_BAD_MATCH;
         }
-    } else {
-        if (match.masks.ipv4_dst != (0xffffffff << (32 - priority))) {
+
+        if (priority == 0) {
+            /* Avoid shifting by the field width */
+            if (match.masks.ipv4_dst != 0) {
+                return INDIGO_ERROR_BAD_MATCH;
+            }
+        } else {
+            if (match.masks.ipv4_dst != (0xffffffff << (32 - priority))) {
+                return INDIGO_ERROR_BAD_MATCH;
+            }
+        }
+
+        key->ipv4 = match.fields.ipv4_dst;
+        break;
+
+    case ETH_P_IPV6:
+        if (!pipeline_bvs_check_tcam_mask(&match.masks,
+                                          &minimum_mask,
+                                          &ipv6_maximum_mask)) {
             return INDIGO_ERROR_BAD_MATCH;
         }
+
+        if (priority == 0) {
+            /* Avoid shifting by the field width */
+            if (*((uint64_t *)&match.masks.ipv6_dst) != 0) {
+                return INDIGO_ERROR_BAD_MATCH;
+            }
+        } else {
+            uint64_t ipv6_mask = be64toh(*((uint64_t *)&match.masks.ipv6_dst));
+            if (ipv6_mask != (-1ULL << (64 - priority))) {
+                return INDIGO_ERROR_BAD_MATCH;
+            }
+        }
+
+        key->ipv6 = match.fields.ipv6_dst;
+        break;
+
+    default:
+        return INDIGO_ERROR_BAD_MATCH;
     }
 
     key->vrf = match.fields.bsn_vrf;
@@ -72,8 +111,9 @@ parse_key(of_flow_add_t *obj, struct l3_cidr_route_key *key)
         return INDIGO_ERROR_BAD_MATCH;
     }
 
-    key->ipv4 = match.fields.ipv4_dst;
     key->mask_len = priority;
+    key->eth_type = match.fields.eth_type;
+    key->pad = 0;
 
     return INDIGO_ERROR_NONE;
 }
@@ -167,23 +207,56 @@ cleanup_value(struct l3_cidr_route_value *value)
 static indigo_error_t
 l3_cidr_route_insert(struct l3_cidr_route_entry *entry)
 {
-    if (lpm_tries[entry->key.vrf] == NULL) {
-        lpm_tries[entry->key.vrf] = lpm_trie_create();
+    switch (entry->key.eth_type) {
+    case ETH_P_IP:
+        if (lpm_tries[entry->key.vrf] == NULL) {
+            lpm_tries[entry->key.vrf] = lpm_trie_create();
+        }
+
+        return lpm_trie_insert(lpm_tries[entry->key.vrf], entry->key.ipv4,
+                               entry->key.mask_len, entry);
+    case ETH_P_IPV6:
+        if (lpm64_tries[entry->key.vrf] == NULL) {
+            lpm64_tries[entry->key.vrf] = lpm64_trie_create();
+        }
+
+        return lpm64_trie_insert(lpm64_tries[entry->key.vrf],
+                                 be64toh(*(uint64_t *)&entry->key.ipv6),
+                                 entry->key.mask_len, entry);
+    default:
+        return INDIGO_ERROR_NOT_SUPPORTED;
     }
 
-    return lpm_trie_insert(lpm_tries[entry->key.vrf], entry->key.ipv4,
-                           entry->key.mask_len, entry);
+    return INDIGO_ERROR_NONE;
 }
 
 static void
 l3_cidr_route_remove(struct l3_cidr_route_entry *entry)
 {
-    lpm_trie_remove(lpm_tries[entry->key.vrf], entry->key.ipv4,
-                    entry->key.mask_len);
+    switch (entry->key.eth_type) {
+    case ETH_P_IP:
+        lpm_trie_remove(lpm_tries[entry->key.vrf], entry->key.ipv4,
+                        entry->key.mask_len);
 
-    if (lpm_trie_is_empty(lpm_tries[entry->key.vrf])) {
-        lpm_trie_destroy(lpm_tries[entry->key.vrf]);
-        lpm_tries[entry->key.vrf] = NULL;
+        if (lpm_trie_is_empty(lpm_tries[entry->key.vrf])) {
+            lpm_trie_destroy(lpm_tries[entry->key.vrf]);
+            lpm_tries[entry->key.vrf] = NULL;
+        }
+        break;
+
+    case ETH_P_IPV6:
+        lpm64_trie_remove(lpm64_tries[entry->key.vrf],
+                          be64toh(*(uint64_t *)&entry->key.ipv6),
+                          entry->key.mask_len);
+
+        if (lpm64_trie_is_empty(lpm64_tries[entry->key.vrf])) {
+            lpm64_trie_destroy(lpm64_tries[entry->key.vrf]);
+            lpm64_tries[entry->key.vrf] = NULL;
+        }
+        break;
+
+    default:
+        break;
     }
 }
 
@@ -297,7 +370,7 @@ pipeline_bvs_table_l3_cidr_route_unregister(void)
 }
 
 struct l3_cidr_route_entry *
-pipeline_bvs_table_l3_cidr_route_lookup(uint32_t vrf, uint32_t ipv4)
+pipeline_bvs_table_l3_cidr_route_ipv4_lookup(uint32_t vrf, uint32_t ipv4)
 {
     struct l3_cidr_route_entry *entry = NULL;
     if (lpm_tries[vrf]) {
@@ -311,6 +384,26 @@ pipeline_bvs_table_l3_cidr_route_lookup(uint32_t vrf, uint32_t ipv4)
                      &entry->value.next_hop, entry->value.cpu);
     } else {
         packet_trace("Miss l3_cidr_route entry vrf=%u ipv4=%{ipv4a}", vrf, ntohl(ipv4));
+    }
+
+    return entry;
+}
+
+struct l3_cidr_route_entry *
+pipeline_bvs_table_l3_cidr_route_ipv6_lookup(uint32_t vrf, uint32_t *ipv6)
+{
+    struct l3_cidr_route_entry *entry = NULL;
+    if (lpm64_tries[vrf]) {
+        entry = lpm64_trie_search(lpm64_tries[vrf], be64toh(*(uint64_t *)ipv6));
+    }
+
+    if (entry) {
+        packet_trace("Hit l3_cidr_route entry vrf=%u ipv6=%{ipv6a}/%u"
+                     " -> next_hop=%{next_hop} cpu=%d",
+                     entry->key.vrf, &entry->key.ipv6, entry->key.mask_len,
+                     &entry->value.next_hop, entry->value.cpu);
+    } else {
+        packet_trace("Miss l3_cidr_route entry vrf=%u ipv6=%{ipv6a}", vrf, ipv6);
     }
 
     return entry;

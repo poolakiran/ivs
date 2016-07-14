@@ -1,6 +1,6 @@
 /****************************************************************
  *
- *        Copyright 2014, Big Switch Networks, Inc.
+ *        Copyright 2014-2016, Big Switch Networks, Inc.
  *
  * Licensed under the Eclipse Public License, Version 1.0 (the
  * "License"); you may not use this file except in compliance
@@ -28,24 +28,52 @@
 static void cleanup_value(struct l3_host_route_value *value);
 
 static bighash_table_t *l3_host_route_hashtable;
-static const of_match_fields_t required_mask = {
+static const of_match_fields_t ipv4_required_mask = {
     .bsn_vrf = 0xffffffff,
     .eth_type = 0xffff,
     .ipv4_dst = 0xffffffff,
+};
+static const of_match_fields_t ipv6_required_mask = {
+    .bsn_vrf = 0xffffffff,
+    .eth_type = 0xffff,
+    .ipv6_dst = { { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff } },
 };
 
 static indigo_error_t
 parse_key(of_flow_add_t *obj, struct l3_host_route_key *key)
 {
     of_match_t match;
+
     if (of_flow_add_match_get(obj, &match) < 0) {
         return INDIGO_ERROR_BAD_MATCH;
     }
-    if (memcmp(&match.masks, &required_mask, sizeof(of_match_fields_t))) {
+
+    switch (match.fields.eth_type) {
+    case ETH_P_IP:
+        if (memcmp(&match.masks, &ipv4_required_mask, sizeof(of_match_fields_t))) {
+            return INDIGO_ERROR_BAD_MATCH;
+        }
+
+        key->ipv4 = match.fields.ipv4_dst;
+        break;
+
+    case ETH_P_IPV6:
+        if (memcmp(&match.masks, &ipv6_required_mask, sizeof(of_match_fields_t))) {
+            return INDIGO_ERROR_BAD_MATCH;
+        }
+
+        key->ipv6 = match.fields.ipv6_dst;
+        break;
+
+    default:
         return INDIGO_ERROR_BAD_MATCH;
     }
+
     key->vrf = match.fields.bsn_vrf;
-    key->ipv4 = match.fields.ipv4_dst;
+    key->eth_type = match.fields.eth_type;
+    key->pad = 0;
+
     return INDIGO_ERROR_NONE;
 }
 
@@ -241,9 +269,14 @@ pipeline_bvs_table_l3_host_route_unregister(void)
 }
 
 struct l3_host_route_entry *
-pipeline_bvs_table_l3_host_route_lookup(uint32_t vrf, uint32_t ipv4)
+pipeline_bvs_table_l3_host_route_ipv4_lookup(uint32_t vrf, uint32_t ipv4)
 {
-    struct l3_host_route_key key = { .vrf=vrf, .ipv4 = ntohl(ipv4) };
+    struct l3_host_route_key key = {
+        .eth_type = ETH_P_IP,
+        .pad = 0,
+        .vrf=vrf,
+        .ipv4 = ntohl(ipv4)
+    };
     struct l3_host_route_entry *entry = l3_host_route_hashtable_first(l3_host_route_hashtable, &key);
     if (entry) {
         packet_trace("Hit l3_host_route entry vrf=%u ip=%{ipv4a} -> next_hop=%{next_hop} cpu=%d",
@@ -252,6 +285,29 @@ pipeline_bvs_table_l3_host_route_lookup(uint32_t vrf, uint32_t ipv4)
     } else {
         packet_trace("Miss l3_host_route entry vrf=%u ip=%{ipv4a}",
                         key.vrf, key.ipv4);
+    }
+    return entry;
+}
+
+struct l3_host_route_entry *
+pipeline_bvs_table_l3_host_route_ipv6_lookup(uint32_t vrf, uint32_t *ipv6)
+{
+    struct l3_host_route_key key = {
+        .eth_type = ETH_P_IPV6,
+        .pad = 0,
+        .vrf=vrf,
+    };
+
+    memcpy(&key.ipv6, ipv6, sizeof(key.ipv6));
+
+    struct l3_host_route_entry *entry = l3_host_route_hashtable_first(l3_host_route_hashtable, &key);
+    if (entry) {
+        packet_trace("Hit l3_host_route entry vrf=%u ip=%{ipv6a} -> next_hop=%{next_hop} cpu=%d",
+                     entry->key.vrf, &entry->key.ipv6,
+                     &entry->value.next_hop, entry->value.cpu);
+    } else {
+        packet_trace("Miss l3_host_route entry vrf=%u ipv6=%{ipv6a}",
+                     key.vrf, &key.ipv6);
     }
     return entry;
 }

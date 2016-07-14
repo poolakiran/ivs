@@ -1,6 +1,6 @@
 /****************************************************************
  *
- *        Copyright 2015, Big Switch Networks, Inc.
+ *        Copyright 2015-2016, Big Switch Networks, Inc.
  *
  * Licensed under the Eclipse Public License, Version 1.0 (the
  * "License"); you may not use this file except in compliance
@@ -49,7 +49,8 @@
     stat(DEBUG_DROP) \
     stat(EGRESS_BAD_VLAN) \
     stat(PACKET_OF_DEATH) \
-    stat(PIM_OFFLOAD)
+    stat(PIM_OFFLOAD) \
+    stat(ICMPV6_OFFLOAD)
 
 enum pipeline_bvs_stats {
 #define stat(name) PIPELINE_BVS_STATS_ ## name,
