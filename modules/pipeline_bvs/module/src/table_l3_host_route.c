@@ -185,9 +185,15 @@ pipeline_bvs_table_l3_host_route_entry_create(
 
     l3_host_route_hashtable_insert(l3_host_route_hashtable, entry);
 
-    AIM_LOG_VERBOSE("Create l3_host_route entry vrf=%u ip=%{ipv4a} -> next_hop=%{next_hop} cpu=%d",
-                    entry->key.vrf, entry->key.ipv4,
-                    &entry->value.next_hop, entry->value.cpu);
+    if (entry->key.eth_type == ETH_P_IP) {
+        AIM_LOG_VERBOSE("Create l3_host_route entry vrf=%u ipv4=%{ipv4a} -> next_hop=%{next_hop} cpu=%d",
+                        entry->key.vrf, entry->key.ipv4,
+                        &entry->value.next_hop, entry->value.cpu);
+    } else {
+        AIM_LOG_VERBOSE("Create l3_host_route entry vrf=%u ipv6=%{ipv6a} -> next_hop=%{next_hop} cpu=%d",
+                        entry->key.vrf, &entry->key.ipv6,
+                        &entry->value.next_hop, entry->value.cpu);
+    }
 
     *entry_priv = entry;
     ind_ovs_barrier_defer_revalidation(cxn_id);
@@ -271,13 +277,15 @@ pipeline_bvs_table_l3_host_route_unregister(void)
 struct l3_host_route_entry *
 pipeline_bvs_table_l3_host_route_ipv4_lookup(uint32_t vrf, uint32_t ipv4)
 {
-    struct l3_host_route_key key = {
-        .eth_type = ETH_P_IP,
-        .pad = 0,
-        .vrf=vrf,
-        .ipv4 = ntohl(ipv4)
-    };
-    struct l3_host_route_entry *entry = l3_host_route_hashtable_first(l3_host_route_hashtable, &key);
+    struct l3_host_route_entry *entry;
+    struct l3_host_route_key key;
+    AIM_ZERO(key);
+    key.eth_type = ETH_P_IP,
+    key.pad = 0,
+    key.vrf=vrf,
+    key.ipv4 = ntohl(ipv4);
+
+    entry = l3_host_route_hashtable_first(l3_host_route_hashtable, &key);
     if (entry) {
         packet_trace("Hit l3_host_route entry vrf=%u ip=%{ipv4a} -> next_hop=%{next_hop} cpu=%d",
                         entry->key.vrf, entry->key.ipv4,

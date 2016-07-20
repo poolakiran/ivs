@@ -26,6 +26,7 @@
 #define MAX_VRF 1024
 
 static void cleanup_value(struct l3_cidr_route_value *value);
+static uint64_t ipv6_network_prefix(void *ipv6);
 
 static const of_match_fields_t ipv4_maximum_mask = {
     .bsn_vrf = 0xffffffff,
@@ -93,7 +94,7 @@ parse_key(of_flow_add_t *obj, struct l3_cidr_route_key *key)
                 return INDIGO_ERROR_BAD_MATCH;
             }
         } else {
-            uint64_t ipv6_mask = be64toh(*((uint64_t *)&match.masks.ipv6_dst));
+            uint64_t ipv6_mask = ipv6_network_prefix(&match.masks.ipv6_dst);
             if (ipv6_mask != (-1ULL << (64 - priority))) {
                 return INDIGO_ERROR_BAD_MATCH;
             }
@@ -113,7 +114,6 @@ parse_key(of_flow_add_t *obj, struct l3_cidr_route_key *key)
 
     key->mask_len = priority;
     key->eth_type = match.fields.eth_type;
-    key->pad = 0;
 
     return INDIGO_ERROR_NONE;
 }
@@ -204,6 +204,12 @@ cleanup_value(struct l3_cidr_route_value *value)
     pipeline_bvs_cleanup_next_hop(&value->next_hop);
 }
 
+static uint64_t
+ipv6_network_prefix(void *ipv6)
+{
+    return be64toh(*(uint64_t *)ipv6);
+}
+
 static indigo_error_t
 l3_cidr_route_insert(struct l3_cidr_route_entry *entry)
 {
@@ -221,7 +227,7 @@ l3_cidr_route_insert(struct l3_cidr_route_entry *entry)
         }
 
         return lpm64_trie_insert(lpm64_tries[entry->key.vrf],
-                                 be64toh(*(uint64_t *)&entry->key.ipv6),
+                                 ipv6_network_prefix(&entry->key.ipv6),
                                  entry->key.mask_len, entry);
     default:
         return INDIGO_ERROR_NOT_SUPPORTED;
@@ -246,7 +252,7 @@ l3_cidr_route_remove(struct l3_cidr_route_entry *entry)
 
     case ETH_P_IPV6:
         lpm64_trie_remove(lpm64_tries[entry->key.vrf],
-                          be64toh(*(uint64_t *)&entry->key.ipv6),
+                          ipv6_network_prefix(&entry->key.ipv6),
                           entry->key.mask_len);
 
         if (lpm64_trie_is_empty(lpm64_tries[entry->key.vrf])) {
@@ -280,10 +286,17 @@ pipeline_bvs_table_l3_cidr_route_entry_create(
         return rv;
     }
 
-    AIM_LOG_VERBOSE("Create l3_cidr_route entry vrf=%u ipv4=%{ipv4a}/%u"
-                    " -> next_hop=%{next_hop} cpu=%d",
-                    entry->key.vrf, entry->key.ipv4, entry->key.mask_len,
-                    &entry->value.next_hop, entry->value.cpu);
+    if (entry->key.eth_type == ETH_P_IP) {
+        AIM_LOG_VERBOSE("Create l3_cidr_route entry vrf=%u ipv4=%{ipv4a}/%u"
+                        " -> next_hop=%{next_hop} cpu=%d",
+                        entry->key.vrf, entry->key.ipv4, entry->key.mask_len,
+                        &entry->value.next_hop, entry->value.cpu);
+    } else {
+        AIM_LOG_VERBOSE("Create l3_cidr_route entry vrf=%u ipv6=%{ipv6a}/%u"
+                        " -> next_hop=%{next_hop} cpu=%d",
+                        entry->key.vrf, &entry->key.ipv6, entry->key.mask_len,
+                        &entry->value.next_hop, entry->value.cpu);
+    }
 
     rv = l3_cidr_route_insert(entry);
 
@@ -394,7 +407,7 @@ pipeline_bvs_table_l3_cidr_route_ipv6_lookup(uint32_t vrf, uint32_t *ipv6)
 {
     struct l3_cidr_route_entry *entry = NULL;
     if (lpm64_tries[vrf]) {
-        entry = lpm64_trie_search(lpm64_tries[vrf], be64toh(*(uint64_t *)ipv6));
+        entry = lpm64_trie_search(lpm64_tries[vrf], ipv6_network_prefix(ipv6));
     }
 
     if (entry) {

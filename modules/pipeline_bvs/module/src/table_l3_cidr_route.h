@@ -22,7 +22,6 @@
 
 struct l3_cidr_route_key {
     uint16_t eth_type;
-    uint16_t pad;
     uint32_t vrf;
     union {
         uint32_t ipv4;
