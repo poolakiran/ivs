@@ -1,6 +1,6 @@
 /****************************************************************
  *
- *        Copyright 2014, Big Switch Networks, Inc.
+ *        Copyright 2014-2016, Big Switch Networks, Inc.
  *
  * Licensed under the Eclipse Public License, Version 1.0 (the
  * "License"); you may not use this file except in compliance
@@ -21,8 +21,12 @@
 #define TABLE_L3_CIDR_ROUTE_H
 
 struct l3_cidr_route_key {
+    uint16_t eth_type;
     uint32_t vrf;
-    uint32_t ipv4;
+    union {
+        uint32_t ipv4;
+        of_ipv6_t ipv6;
+    };
     uint8_t mask_len;
 };
 
@@ -38,6 +42,7 @@ struct l3_cidr_route_entry {
 
 void pipeline_bvs_table_l3_cidr_route_register(void);
 void pipeline_bvs_table_l3_cidr_route_unregister(void);
-struct l3_cidr_route_entry *pipeline_bvs_table_l3_cidr_route_lookup(uint32_t vrf, uint32_t ipv4);
+struct l3_cidr_route_entry *pipeline_bvs_table_l3_cidr_route_ipv4_lookup(uint32_t vrf, uint32_t ipv4);
+struct l3_cidr_route_entry *pipeline_bvs_table_l3_cidr_route_ipv6_lookup(uint32_t vrf, uint32_t *ipv6);
 
 #endif

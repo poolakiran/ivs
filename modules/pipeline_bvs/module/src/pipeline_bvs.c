@@ -1,6 +1,6 @@
 /****************************************************************
  *
- *        Copyright 2013, Big Switch Networks, Inc.
+ *        Copyright 2013-2016, Big Switch Networks, Inc.
  *
  * Licensed under the Eclipse Public License, Version 1.0 (the
  * "License"); you may not use this file except in compliance
@@ -642,6 +642,13 @@ process_l2(struct ctx *ctx)
         }
     }
 
+    /* ICMPv6 offload */
+    if (ctx->key->ethertype == htons(ETH_P_IPV6) && ctx->key->ipv6.ipv6_proto == 58) {
+        packet_trace("sending ICMPV6 packet to agent");
+        PIPELINE_STAT(ICMPV6_OFFLOAD);
+        mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_ICMPV6);
+    }
+
     /* Check for broadcast/multicast */
     if (ctx->key->ethernet.eth_dst[0] & 1) {
         process_debug(ctx);
@@ -666,7 +673,7 @@ process_l2(struct ctx *ctx)
         return;
     }
 
-    if (ctx->key->ethertype == htons(ETH_P_IP)) {
+    if (ctx->key->ethertype == htons(ETH_P_IP) || ctx->key->ethertype == htons(ETH_P_IPV6)) {
         struct my_station_entry *my_station_entry =
             pipeline_bvs_table_my_station_lookup(ctx->key->ethernet.eth_dst, ctx->internal_vlan_vid);
         if (my_station_entry && !my_station_entry->value.disable_l3) {
@@ -732,7 +739,13 @@ process_l3(struct ctx *ctx)
     bool l3_cpu = false;
     bool acl_cpu = false;
     bool drop = false;
-    bool bad_ttl = ctx->key->ipv4.ipv4_ttl <= 1;
+    bool bad_ttl = false;
+
+    if (ctx->key->ethertype == htons(ETH_P_IPV6)) {
+        bad_ttl = ctx->key->ipv6.ipv6_hlimit <= 1;
+    } else {
+        bad_ttl = ctx->key->ipv4.ipv4_ttl <= 1;
+    }
 
     PIPELINE_STAT(L3);
 
@@ -745,14 +758,26 @@ process_l3(struct ctx *ctx)
         process_pktin(ctx);
         return;
     } else {
-        struct l3_host_route_entry *l3_host_route_entry =
-            pipeline_bvs_table_l3_host_route_lookup(ctx->vrf, ctx->key->ipv4.ipv4_dst);
+        struct l3_host_route_entry *l3_host_route_entry;
+
+        if (ctx->key->ethertype == htons(ETH_P_IPV6)) {
+            l3_host_route_entry = pipeline_bvs_table_l3_host_route_ipv6_lookup(ctx->vrf, ctx->key->ipv6.ipv6_dst);
+        } else {
+            l3_host_route_entry = pipeline_bvs_table_l3_host_route_ipv4_lookup(ctx->vrf, ctx->key->ipv4.ipv4_dst);
+        }
+
         if (l3_host_route_entry != NULL) {
             next_hop = &l3_host_route_entry->value.next_hop;
             l3_cpu = l3_host_route_entry->value.cpu;
         } else {
-            struct l3_cidr_route_entry *l3_cidr_route_entry =
-                pipeline_bvs_table_l3_cidr_route_lookup(ctx->vrf, ctx->key->ipv4.ipv4_dst);
+            struct l3_cidr_route_entry *l3_cidr_route_entry;
+
+            if (ctx->key->ethertype == htons(ETH_P_IPV6)) {
+                l3_cidr_route_entry = pipeline_bvs_table_l3_cidr_route_ipv6_lookup(ctx->vrf, ctx->key->ipv6.ipv6_dst);
+            } else {
+                l3_cidr_route_entry = pipeline_bvs_table_l3_cidr_route_ipv4_lookup(ctx->vrf, ctx->key->ipv4.ipv4_dst);
+            }
+
             if (l3_cidr_route_entry != NULL) {
                 next_hop = &l3_cidr_route_entry->value.next_hop;
                 l3_cpu = l3_cidr_route_entry->value.cpu;
@@ -848,8 +873,13 @@ process_l3(struct ctx *ctx)
         action_set_vlan_vid(ctx->actx, ctx->internal_vlan_vid);
         action_set_eth_src(ctx->actx, next_hop->new_eth_src);
         action_set_eth_dst(ctx->actx, next_hop->new_eth_dst);
-        action_set_ipv4_ttl(ctx->actx, ctx->key->ipv4.ipv4_ttl - 1);
-        ctx->key->ipv4.ipv4_ttl--;
+        if (ctx->key->ethertype == htons(ETH_P_IPV6)) {
+            action_set_ipv6_ttl(ctx->actx, ctx->key->ipv6.ipv6_hlimit - 1);
+            ctx->key->ipv6.ipv6_hlimit--;
+        } else {
+            action_set_ipv4_ttl(ctx->actx, ctx->key->ipv4.ipv4_ttl - 1);
+            ctx->key->ipv4.ipv4_ttl--;
+        }
         memcpy(ctx->key->ethernet.eth_dst, &next_hop->new_eth_dst.addr, OF_MAC_ADDR_BYTES);
     }
 
@@ -1493,7 +1523,10 @@ trace_packet_headers(struct ctx *ctx)
         packet_trace("  ipv4_src %{ipv4a} ipv4_dst %{ipv4a} ip_proto %u ip_tos %u ip_ttl %u ip_frag %u",
                      ntohl(key->ipv4.ipv4_src), ntohl(key->ipv4.ipv4_dst), key->ipv4.ipv4_proto, key->ipv4.ipv4_tos, key->ipv4.ipv4_ttl, key->ipv4.ipv4_frag);
     }
-    /* TODO ipv6 */
+    if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_IPV6)) {
+        packet_trace("  ipv6_src %{ipv6a} ipv6_dst %{ipv6a} ipv6_label %u ipv6_proto %u ipv6_tclass %u ipv6_hlimit %u ipv6_frag %u",
+                     &key->ipv6.ipv6_src, &key->ipv6.ipv6_dst, key->ipv6.ipv6_label, key->ipv6.ipv6_proto, key->ipv6.ipv6_tclass, key->ipv6.ipv6_hlimit, key->ipv6.ipv6_frag);
+    }
     if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_TCP)) {
         packet_trace("  tcp_src %u tcp_dst %u", ntohs(key->tcp.tcp_src), ntohs(key->tcp.tcp_dst));
     }
@@ -1503,7 +1536,9 @@ trace_packet_headers(struct ctx *ctx)
     if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_ICMP)) {
         packet_trace("  icmp_type %u icmp_code %u", key->icmp.icmp_type, key->icmp.icmp_code);
     }
-    /* TODO icmpv6 */
+    if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_ICMPV6)) {
+        packet_trace("  icmpv6_type %u icmpv6_code %u", key->icmpv6.icmpv6_type, key->icmpv6.icmpv6_code);
+    }
     if (ATTR_BITMAP_TEST(key->populated, OVS_KEY_ATTR_ARP)) {
         packet_trace("  arp_op %u arp_spa %{ipv4a} arp_tpa %{ipv4a} arp_sha %{mac} arp_tha %{mac}",
                      ntohs(key->arp.arp_op), ntohl(key->arp.arp_sip), ntohl(key->arp.arp_tip),
