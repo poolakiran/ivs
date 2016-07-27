@@ -56,7 +56,8 @@ endif
 # Closed source modules
 DEPENDMODULES += pipeline_bvs lpm inband lldpa lacpa arpa router_ip_table \
 		 icmpa dhcpra nat slshared host_sflow sflowa host_stats cdpa \
-		 pipeline_bigtap version_stats igmpa mgmt_interface_stats lpm64
+		 pipeline_bigtap version_stats igmpa mgmt_interface_stats lpm64 \
+		 icmpv6
 
 #
 # Resolve module dependencies
