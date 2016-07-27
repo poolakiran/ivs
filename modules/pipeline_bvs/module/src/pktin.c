@@ -151,7 +151,8 @@ process_port_pktin(uint8_t *data, unsigned int len,
     } else if (ppe_header_get(&ppep, PPE_HEADER_ARP)) {
         bool check_source = (metadata & OFP_BSN_PKTIN_FLAG_ARP) != 0;
         result = arpa_receive_packet(&ppep, pkey->in_port, check_source);
-    } else if (metadata & OFP_BSN_PKTIN_FLAG_L3_MISS) {
+    } else if (ppe_header_get(&ppep, PPE_HEADER_IP4) &&
+            (metadata & OFP_BSN_PKTIN_FLAG_L3_MISS)) {
         result = icmpa_send(&ppep, pkey->in_port, 3, 0);
     } else if (ppe_header_get(&ppep, PPE_HEADER_ICMP)) {
         result = icmpa_reply(&ppep, pkey->in_port);
@@ -193,7 +194,8 @@ process_port_pktin(uint8_t *data, unsigned int len,
      * Packet-in's passed by ICMP agent should later be
      * checked for ttl expired reason
      */
-    if (metadata & OFP_BSN_PKTIN_FLAG_TTL_EXPIRED) {
+    if (ppe_header_get(&ppep, PPE_HEADER_IP4) &&
+            (metadata & OFP_BSN_PKTIN_FLAG_TTL_EXPIRED)) {
         result = icmpa_send(&ppep, pkey->in_port, 11, 0);
     }
 
