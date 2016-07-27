@@ -644,9 +644,11 @@ process_l2(struct ctx *ctx)
 
     /* ICMPv6 offload */
     if (ctx->key->ethertype == htons(ETH_P_IPV6) && ctx->key->ipv6.ipv6_proto == 58) {
-        packet_trace("sending ICMPV6 packet to agent");
-        PIPELINE_STAT(ICMPV6_OFFLOAD);
-        mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_ICMPV6);
+        if (port_entry->value.arp_offload) {
+            packet_trace("sending ICMPV6 packet to agent");
+            PIPELINE_STAT(ICMPV6_OFFLOAD);
+            mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_ICMPV6);
+        }
     }
 
     /* Check for broadcast/multicast */
