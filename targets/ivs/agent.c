@@ -14,6 +14,7 @@
 #include <SocketManager/socketmanager.h>
 #include <igmpa/igmpa.h>
 #include <mgmt_interface_stats/mgmt_interface_stats.h>
+#include <icmpv6/icmpv6.h>
 
 static void
 lldp_timer(void *cookie)
@@ -69,5 +70,9 @@ ivs_agent_init(void)
 
     if (igmpa_init() < 0) {
         AIM_DIE("Failed to initialize IGMP Agent module");
+    }
+
+    if (icmpv6_init() < 0) {
+        AIM_DIE("Failed to initialize ICMPV6 Agent module");
     }
 }

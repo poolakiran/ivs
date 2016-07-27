@@ -29,6 +29,7 @@
 #include <router_ip_table/router_ip_table.h>
 #include <indigo/port_manager.h>
 #include <igmpa/igmpa.h>
+#include <icmpv6/icmpv6.h>
 
 DEBUG_COUNTER(pktin, "pipeline_bvs.pktin",
               "Received packet-in message from the kernel");
@@ -145,6 +146,8 @@ process_port_pktin(uint8_t *data, unsigned int len,
         result = dhcpra_receive_packet(&ppep, pkey->in_port);
     } else if (ppe_header_get(&ppep, PPE_HEADER_IGMP)) {
         result = igmpa_receive_pkt(&ppep, pkey->in_port);
+    } else if (ppe_header_get(&ppep, PPE_HEADER_ICMPV6)) {
+        result = icmpv6_receive_packet(&ppep, pkey->in_port);
     } else if (ppe_header_get(&ppep, PPE_HEADER_ARP)) {
         bool check_source = (metadata & OFP_BSN_PKTIN_FLAG_ARP) != 0;
         result = arpa_receive_packet(&ppep, pkey->in_port, check_source);
