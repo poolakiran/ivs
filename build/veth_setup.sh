@@ -24,6 +24,8 @@ for I in `seq 0 $(($N-1))`; do
     B="veth$(($I*2+1))"
     if ! ip link show $A &> /dev/null; then
         ip link add name $A type veth peer name $B
+        sysctl net.ipv6.conf.$A.disable_ipv6=1
+        sysctl net.ipv6.conf.$B.disable_ipv6=1
         ip link set dev $A up
         ip link set dev $B up
     fi
