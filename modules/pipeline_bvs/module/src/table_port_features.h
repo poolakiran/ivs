@@ -23,7 +23,7 @@
 struct port_features_key {
     uint32_t port_no;
 };
-AIM_STATIC_ASSERT(PORT_MULTICAST_KEY_SIZE, sizeof(struct port_features_key) == 4);
+AIM_STATIC_ASSERT(PORT_FEATURES_KEY_SIZE, sizeof(struct port_features_key) == 4);
 
 struct port_features_value {
     bool ndp_offload;
