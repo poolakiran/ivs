@@ -296,6 +296,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_ipv4_multicast_register();
     pipeline_bvs_table_port_multicast_register();
     pipeline_bvs_table_vlan_xlate2_register();
+    pipeline_bvs_table_port_features_register();
 }
 
 static void
@@ -345,6 +346,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_multicast_replication_group_unregister();
     pipeline_bvs_table_port_multicast_unregister();
     pipeline_bvs_table_vlan_xlate2_unregister();
+    pipeline_bvs_table_port_features_unregister();
 }
 
 static indigo_error_t
@@ -643,8 +645,12 @@ process_l2(struct ctx *ctx)
     }
 
     /* ICMPv6 offload */
+    struct port_features_entry *port_features_entry =
+        pipeline_bvs_table_port_features_lookup(ctx->key->in_port);
+    bool ndp_offload = port_features_entry && port_features_entry->value.ndp_offload;
+
     if (ctx->key->ethertype == htons(ETH_P_IPV6) && ctx->key->ipv6.ipv6_proto == 58) {
-        if (port_entry->value.arp_offload) {
+        if (ndp_offload) {
             packet_trace("sending ICMPV6 packet to agent");
             PIPELINE_STAT(ICMPV6_OFFLOAD);
             mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_ICMPV6);
