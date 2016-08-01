@@ -10,6 +10,7 @@ standard
 ^l3.PktOutHostRouteTrap
 ^igmpa.ExpectedPimHelloDrop
 ^igmpa.UnexpectedPimHelloToController
+^debug_ipv6
 
 # Physical switch specific
 ^priority_to_queue_table.VlanPriority
