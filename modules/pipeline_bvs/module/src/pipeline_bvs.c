@@ -1382,19 +1382,26 @@ make_vlan_acl_key(struct ctx *ctx)
 static struct ingress_acl_key
 make_ingress_acl_key(struct ctx *ctx)
 {
-    struct ingress_acl_key key = {
-        .in_port = ctx->key->in_port,
-        .vlan_vid = ctx->internal_vlan_vid,
-        .ip_proto = ctx->key->ipv4.ipv4_proto,
-        .pad = 0,
-        .vrf = ctx->vrf,
-        .l3_interface_class_id = ctx->l3_interface_class_id,
-        .l3_src_class_id = ctx->l3_src_class_id,
-        .ipv4_src = ntohl(ctx->key->ipv4.ipv4_src),
-        .ipv4_dst = ntohl(ctx->key->ipv4.ipv4_dst),
-        .tcp_flags = 0,
-        .pad2 = 0,
-    };
+    struct ingress_acl_key key;
+
+    AIM_ZERO(key);
+
+    key.in_port = ctx->key->in_port;
+    key.eth_type = ntohs(ctx->key->ethertype);
+    key.vlan_vid = ctx->internal_vlan_vid;
+    key.vrf = ctx->vrf;
+    key.l3_interface_class_id = ctx->l3_interface_class_id;
+    key.l3_src_class_id = ctx->l3_src_class_id;
+
+    if (key.eth_type == ETH_P_IPV6) {
+        key.ip_proto = ctx->key->ipv6.ipv6_proto;
+        memcpy(&key.ipv6_src, &ctx->key->ipv6.ipv6_src, sizeof(key.ipv6_src));
+        memcpy(&key.ipv6_dst, &ctx->key->ipv6.ipv6_dst, sizeof(key.ipv6_dst));
+    } else {
+        key.ipv4_src = ntohl(ctx->key->ipv4.ipv4_src);
+        key.ipv4_dst = ntohl(ctx->key->ipv4.ipv4_dst);
+        key.ip_proto = ctx->key->ipv4.ipv4_proto;
+    }
 
     if (key.ip_proto == IPPROTO_TCP) {
         key.tp_src = ntohs(ctx->key->tcp.tcp_src);
