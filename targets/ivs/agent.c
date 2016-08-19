@@ -15,6 +15,7 @@
 #include <igmpa/igmpa.h>
 #include <mgmt_interface_stats/mgmt_interface_stats.h>
 #include <icmpv6/icmpv6.h>
+#include <common_tables/common_tables.h>
 
 static void
 lldp_timer(void *cookie)
@@ -28,6 +29,10 @@ lldp_timer(void *cookie)
 void
 ivs_agent_init(void)
 {
+    if (common_tables_init() < 0) {
+        AIM_DIE("Failed to initialize Common Tables Agent module");
+    }
+
     if (lacpa_init() < 0) {
         AIM_DIE("Failed to initialize LACP Agent module");
     }

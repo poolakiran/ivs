@@ -22,20 +22,27 @@
 
 struct ingress_acl_key {
     uint32_t in_port;
+    uint16_t eth_type;
     uint16_t vlan_vid;
     uint8_t ip_proto;
-    uint8_t pad;
+    uint8_t pad[3];
     uint32_t vrf;
     uint32_t l3_interface_class_id;
     uint32_t l3_src_class_id;
-    uint32_t ipv4_src;
-    uint32_t ipv4_dst;
+    union {
+        uint32_t ipv4_src;
+        of_ipv6_t ipv6_src;
+    };
+    union {
+        uint32_t ipv4_dst;
+        of_ipv6_t ipv6_dst;
+    };
     uint16_t tp_src;
     uint16_t tp_dst;
     uint16_t tcp_flags;
     uint16_t pad2;
 };
-AIM_STATIC_ASSERT(INGRESS_ACL_KEY_SIZE, sizeof(struct ingress_acl_key) == 36);
+AIM_STATIC_ASSERT(INGRESS_ACL_KEY_SIZE, sizeof(struct ingress_acl_key) == 64);
 
 struct ingress_acl_value {
     struct next_hop next_hop;
