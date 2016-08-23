@@ -185,6 +185,10 @@ process_port_pktin(uint8_t *data, unsigned int len,
             }
         } else if (ppe_header_get(&ppep, PPE_HEADER_IP6)) {
 
+            /*
+             * Check if dest IP is Vrouter IP is done in the
+             * icmpv6_handler_error function in ICMPV6 agent.
+             */
             if (is_ephemeral(src_port) && is_ephemeral(dest_port)) {
                 result = icmpv6_handle_error(&ppep, pkey->in_port,
                                              ICMPV6_DEST_UNREACHABLE,
