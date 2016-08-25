@@ -589,6 +589,9 @@ ind_ovs_upcall_finish(void)
     int i, j;
     for (i = 0; i < ind_ovs_num_upcall_threads; i++) {
         struct ind_ovs_upcall_thread *thread = ind_ovs_upcall_threads[i];
+        if (upcall_as_ind_ovs_event) {
+            ind_soc_socket_unregister(thread->epfd);
+        }
         close(thread->epfd);
         close(thread->kflow_sock_rd);
         close(thread->kflow_sock_wr);
@@ -644,7 +647,8 @@ ind_ovs_upcall_event_create(void)
     struct ind_ovs_upcall_thread *thread = ind_ovs_upcall_threads[0];
 
     if (thread->epfd) {
-        return;
+        ind_soc_socket_unregister(thread->epfd);
+        close (thread->epfd);
     }
 
     thread->epfd = epoll_create(1);
