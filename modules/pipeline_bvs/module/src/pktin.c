@@ -151,28 +151,45 @@ process_port_pktin(uint8_t *data, unsigned int len,
     } else if (ppe_header_get(&ppep, PPE_HEADER_ARP)) {
         bool check_source = (metadata & OFP_BSN_PKTIN_FLAG_ARP) != 0;
         result = arpa_receive_packet(&ppep, pkey->in_port, check_source);
-    } else if (ppe_header_get(&ppep, PPE_HEADER_IP4) &&
-            (metadata & OFP_BSN_PKTIN_FLAG_L3_MISS)) {
-        result = icmpa_send(&ppep, pkey->in_port, 3, 0);
+    } else if (metadata & OFP_BSN_PKTIN_FLAG_L3_MISS) {
+
+        if (ppe_header_get(&ppep, PPE_HEADER_IP4)) {
+            result = icmpa_send(&ppep, pkey->in_port, 3, 0);
+        } else if (ppe_header_get(&ppep, PPE_HEADER_IP6)) {
+            result = icmpv6_handle_error(&ppep, pkey->in_port,
+                                         ICMPV6_DEST_UNREACHABLE,
+                                         ICMPV6_NO_ROUTE);
+        }
     } else if (ppe_header_get(&ppep, PPE_HEADER_ICMP)) {
         result = icmpa_reply(&ppep, pkey->in_port);
-    } else if (ppe_header_get(&ppep, PPE_HEADER_UDP) &&
-        ppe_header_get(&ppep, PPE_HEADER_IP4)) {
+    } else if (ppe_header_get(&ppep, PPE_HEADER_UDP)) {
 
-        /*
-         * To handle traceroute, we need to check for
-         * a) UDP Packet
-         * b) dest IP is Vrouter IP
-         * c) UDP src and dest ports are ephemeral
-         */
-        uint32_t dest_ip, src_port, dest_port;
-        ppe_field_get(&ppep, PPE_FIELD_IP4_DST_ADDR, &dest_ip);
+        uint32_t src_port, dest_port;
         ppe_field_get(&ppep, PPE_FIELD_UDP_SRC_PORT, &src_port);
         ppe_field_get(&ppep, PPE_FIELD_UDP_DST_PORT, &dest_port);
 
-        if (router_ip_check(dest_ip) && is_ephemeral(src_port) &&
-            is_ephemeral(dest_port)) {
-            result = icmpa_send(&ppep, pkey->in_port, 3, 3);
+        if (ppe_header_get(&ppep, PPE_HEADER_IP4)) {
+
+            /*
+             * To handle traceroute, we need to check for
+             * a) UDP Packet
+             * b) dest IP is Vrouter IP
+             * c) UDP src and dest ports are ephemeral
+             */
+            uint32_t dest_ip;
+            ppe_field_get(&ppep, PPE_FIELD_IP4_DST_ADDR, &dest_ip);
+
+            if (router_ip_check(dest_ip) && is_ephemeral(src_port) &&
+                    is_ephemeral(dest_port)) {
+                result = icmpa_send(&ppep, pkey->in_port, 3, 3);
+            }
+        } else if (ppe_header_get(&ppep, PPE_HEADER_IP6)) {
+
+            if (is_ephemeral(src_port) && is_ephemeral(dest_port)) {
+                result = icmpv6_handle_error(&ppep, pkey->in_port,
+                                             ICMPV6_DEST_UNREACHABLE,
+                                             ICMPV6_PORT_UNREACHABLE);
+            }
         }
     }
 
@@ -194,9 +211,14 @@ process_port_pktin(uint8_t *data, unsigned int len,
      * Packet-in's passed by ICMP agent should later be
      * checked for ttl expired reason
      */
-    if (ppe_header_get(&ppep, PPE_HEADER_IP4) &&
-            (metadata & OFP_BSN_PKTIN_FLAG_TTL_EXPIRED)) {
-        result = icmpa_send(&ppep, pkey->in_port, 11, 0);
+    if (metadata & OFP_BSN_PKTIN_FLAG_TTL_EXPIRED) {
+        if (ppe_header_get(&ppep, PPE_HEADER_IP4)) {
+            result = icmpa_send(&ppep, pkey->in_port, 11, 0);
+        } else if (ppe_header_get(&ppep, PPE_HEADER_IP6)) {
+            result = icmpv6_handle_error(&ppep, pkey->in_port,
+                                         ICMPV6_TIME_EXCEEDED,
+                                         ICMPV6_NO_ROUTE);
+        }
     }
 
     if (result == INDIGO_CORE_LISTENER_RESULT_DROP && !debug_acl_flag) {
