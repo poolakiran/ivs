@@ -115,6 +115,7 @@ static struct ind_ovs_upcall_thread *ind_ovs_upcall_threads[MAX_UPCALL_THREADS];
 static int nobody_uid;
 static int sigfd;
 static int shutdown_pipe[2];
+static bool upcall_as_ind_ovs_event = false;
 
 DEBUG_COUNTER(kflow_request, "ovsdriver.upcall.kflow_request", "Kernel flow requested by upcall process");
 DEBUG_COUNTER(kflow_request_error, "ovsdriver.upcall.kflow_request_error", "Error on kernel flow request socket");
@@ -480,6 +481,13 @@ ind_ovs_upcall_init(void)
     char *s = getenv("INDIGO_THREADS");
     if (s != NULL) {
         ind_ovs_num_upcall_threads = atoi(s);
+
+        if (ind_ovs_num_upcall_threads == 0) {
+            ind_ovs_num_upcall_threads = 1;
+            upcall_as_ind_ovs_event = true;
+            LOG_INFO("upcalls processed as indigo events");
+        }
+
         if (ind_ovs_num_upcall_threads <= 0 ||
             ind_ovs_num_upcall_threads > MAX_UPCALL_THREADS) {
             LOG_ERROR("invalid number of upcall threads");
@@ -487,7 +495,9 @@ ind_ovs_upcall_init(void)
         }
     }
 
-    LOG_INFO("using %d upcall threads", ind_ovs_num_upcall_threads);
+    if (upcall_as_ind_ovs_event == false) {
+        LOG_INFO("using %d upcall threads", ind_ovs_num_upcall_threads);
+    }
 
     int i, j;
     for (i = 0; i < ind_ovs_num_upcall_threads; i++) {
@@ -579,6 +589,9 @@ ind_ovs_upcall_finish(void)
     int i, j;
     for (i = 0; i < ind_ovs_num_upcall_threads; i++) {
         struct ind_ovs_upcall_thread *thread = ind_ovs_upcall_threads[i];
+        if (upcall_as_ind_ovs_event) {
+            ind_soc_socket_unregister(thread->epfd);
+        }
         close(thread->epfd);
         close(thread->kflow_sock_rd);
         close(thread->kflow_sock_wr);
@@ -610,9 +623,66 @@ ind_ovs_upcall_respawn_child(struct ind_ovs_upcall_thread *thread)
     thread->pid = child_pid;
 }
 
+static void
+ind_ovs_upcall_event_handler(int socket_id, void *cookie, int read_ready,
+                             int write_ready, int error_seen)
+{
+    struct ind_ovs_upcall_thread *thread = cookie;
+    struct epoll_event events[128];
+    int n = epoll_wait(thread->epfd, events, AIM_ARRAYSIZE(events), 100);
+    if (n < 0 && errno != EINTR) {
+        LOG_ERROR("epoll_wait failed: %s", strerror(errno));
+        abort();
+    } else if (n > 0) {
+        int j;
+        for (j = 0; j < n; j++) {
+            ind_ovs_handle_port_upcalls(thread, events[j].data.ptr);
+        }
+    }
+}
+
+static void
+ind_ovs_upcall_event_create(void)
+{
+    struct ind_ovs_upcall_thread *thread = ind_ovs_upcall_threads[0];
+
+    if (thread->epfd) {
+        ind_soc_socket_unregister(thread->epfd);
+        close (thread->epfd);
+    }
+
+    thread->epfd = epoll_create(1);
+    if (thread->epfd < 0) {
+        AIM_DIE("failed to create epoll set: %s", strerror(errno));
+    }
+
+    int i;
+    for (i = 0; i < IND_OVS_MAX_PORTS; i++) {
+        struct ind_ovs_port *port = ind_ovs_ports[i];
+        if (port && port->upcall_thread == thread) {
+            AIM_LOG_VERBOSE("Adding port %s to upcall event %d", port->ifname, thread->index);
+            struct epoll_event evt = { EPOLLIN, { .ptr = port } };
+            if (epoll_ctl(port->upcall_thread->epfd, EPOLL_CTL_ADD,
+                        nl_socket_get_fd(port->notify_socket), &evt) < 0) {
+                AIM_DIE("failed to add to epoll set: %s", strerror(errno));
+            }
+        }
+    }
+
+    if (ind_soc_socket_register(thread->epfd,
+                ind_ovs_upcall_event_handler, thread) < 0) {
+        AIM_DIE("Failed registering upcall event handler");
+    }
+}
+
 void
 ind_ovs_upcall_respawn(void)
 {
+    if (upcall_as_ind_ovs_event) {
+        ind_ovs_upcall_event_create();
+        return;
+    }
+
     uint64_t start_time = monotonic_us();
     int i;
 
