@@ -42,7 +42,7 @@ static const of_match_fields_t maximum_mask = {
     .bsn_tcp_flags = 0xffff,
 };
 static const of_match_fields_t minimum_mask = {
-    .eth_type = 0xffff,
+    .eth_type = 0,
 };
 
 static indigo_error_t
@@ -50,9 +50,6 @@ parse_key(of_flow_add_t *obj, struct ingress_acl_key *key,
           struct ingress_acl_key *mask, uint16_t *priority)
 {
     of_match_t match;
-    of_ipv6_t zero_ipv6;
-
-    AIM_ZERO(zero_ipv6);
 
     if (of_flow_add_match_get(obj, &match) < 0) {
         return INDIGO_ERROR_BAD_MATCH;
@@ -64,8 +61,8 @@ parse_key(of_flow_add_t *obj, struct ingress_acl_key *key,
 
     switch (match.fields.eth_type) {
     case ETH_P_IP:
-        if (memcmp(&zero_ipv6, &match.masks.ipv6_src, sizeof(zero_ipv6)) ||
-            memcmp(&zero_ipv6, &match.masks.ipv6_dst, sizeof(zero_ipv6))) {
+        if (memcmp(&of_ipv6_all_zeros, &match.masks.ipv6_src, sizeof(of_ipv6_t)) ||
+            memcmp(&of_ipv6_all_zeros, &match.masks.ipv6_dst, sizeof(of_ipv6_t))) {
             return INDIGO_ERROR_BAD_MATCH;
         }
         break;
@@ -77,7 +74,12 @@ parse_key(of_flow_add_t *obj, struct ingress_acl_key *key,
         break;
 
     default:
-        return INDIGO_ERROR_BAD_MATCH;
+        if (match.masks.ipv4_src || match.masks.ipv4_dst ||
+            memcmp(&of_ipv6_all_zeros, &match.masks.ipv6_src, sizeof(of_ipv6_t)) ||
+            memcmp(&of_ipv6_all_zeros, &match.masks.ipv6_dst, sizeof(of_ipv6_t))) {
+            return INDIGO_ERROR_BAD_MATCH;
+        }
+        break;
     }
 
     if (match.masks.ip_proto) {
@@ -134,7 +136,7 @@ parse_key(of_flow_add_t *obj, struct ingress_acl_key *key,
 
         key->ipv4_dst = match.fields.ipv4_dst;
         mask->ipv4_dst = match.masks.ipv4_dst;
-    } else {
+    } else if (match.fields.eth_type == ETH_P_IPV6) {
         key->ipv6_src = match.fields.ipv6_src;
         mask->ipv6_src = match.masks.ipv6_src;
 
