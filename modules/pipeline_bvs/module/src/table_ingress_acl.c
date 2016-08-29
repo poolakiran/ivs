@@ -59,6 +59,10 @@ parse_key(of_flow_add_t *obj, struct ingress_acl_key *key,
         return INDIGO_ERROR_BAD_MATCH;
     }
 
+    if (match.fields.eth_type && match.masks.eth_type != 0xffff) {
+        return INDIGO_ERROR_BAD_MATCH;
+    }
+
     switch (match.fields.eth_type) {
     case ETH_P_IP:
         if (memcmp(&of_ipv6_all_zeros, &match.masks.ipv6_src, sizeof(of_ipv6_t)) ||
