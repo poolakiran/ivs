@@ -140,9 +140,12 @@ static void
 cleanup_value(struct port_qos_value *value)
 {
     if (value->dscp_profile) {
-        pipeline_bvs_table_priority_to_pcp_profile_release(value->priority_to_pcp_profile);
         pipeline_bvs_table_dscp_to_priority_profile_release(value->dscp_profile);
         value->dscp_profile = NULL;
+    }
+
+    if (value->priority_to_pcp_profile) {
+        pipeline_bvs_table_priority_to_pcp_profile_release(value->priority_to_pcp_profile);
         value->priority_to_pcp_profile = NULL;
     }
 }
