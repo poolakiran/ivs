@@ -81,6 +81,10 @@
 #include "table_port_multicast.h"
 #include "table_vlan_xlate2.h"
 #include "table_port_features.h"
+#include "table_port_features.h"
+#include "table_dscp_to_priority_profile.h"
+#include "table_priority_to_pcp_profile.h"
+#include "table_port_qos.h"
 
 #define AIM_LOG_MODULE_NAME pipeline_bvs
 #include <AIM/aim_log.h>
