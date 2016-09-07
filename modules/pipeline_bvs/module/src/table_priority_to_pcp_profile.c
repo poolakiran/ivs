@@ -120,6 +120,7 @@ parse_value(of_list_bsn_tlv_t *tlvs, struct priority_to_pcp_profile_value *value
 
     of_object_t tlv;
     int rv;
+    int bucket_count = 0;
     OF_LIST_BSN_TLV_ITER(tlvs, &tlv, rv) {
         if (tlv.object_id == OF_BSN_TLV_BUCKET) {
             if (parse_bucket(&tlv, value) < 0) {
@@ -127,6 +128,12 @@ parse_value(of_list_bsn_tlv_t *tlvs, struct priority_to_pcp_profile_value *value
             }
         } else {
             AIM_LOG_ERROR("expected bucket value TLV, instead got %s", of_class_name(&tlv));
+            goto error;
+        }
+
+        if (++bucket_count > NUM_INTERNAL_PRIORITY) {
+            AIM_LOG_ERROR("bucket count %d exceeding internal priority count %d",
+                          bucket_count, NUM_INTERNAL_PRIORITY);
             goto error;
         }
     }
