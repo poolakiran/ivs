@@ -27,3 +27,4 @@ standard
 ^port_qos.EgressPCPRemarkingPriorityTaggedPacket
 ^port_qos.VFPDCBxEntryAddForPriorityTaggedPacket
 ^port_qos.VFPDCBxEntryAddForVlanTaggedPacket
+^dhcpra
