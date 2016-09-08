@@ -84,8 +84,8 @@ static struct ind_ovs_pktin_socket pktin_soc;
 
 static void
 process_pktin(uint8_t *data, unsigned int len,
-              uint8_t reason, uint64_t metadata,
-              struct ind_ovs_parsed_key *pkey)
+              uint8_t reason, uint16_t pkt_vlan,
+              uint64_t metadata, struct ind_ovs_parsed_key *pkey)
 {
     lua_rawgeti(lua, LUA_REGISTRYINDEX, pktin_ref);
     lua_pushlightuserdata(lua, data);
@@ -101,7 +101,7 @@ process_pktin(uint8_t *data, unsigned int len,
     lua_settop(lua, 0);
 
     if (send_to_controller) {
-        ind_ovs_pktin(pkey->in_port, data, len, reason, metadata, pkey);
+        ind_ovs_pktin(pkey->in_port, data, len, reason, pkt_vlan, metadata, pkey);
     }
 }
 

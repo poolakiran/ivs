@@ -57,9 +57,10 @@
 /* Use instead of assert for cases we should eventually handle. */
 #define NYI(x) assert(!(x))
 
-#define IVS_PKTIN_USERDATA(reason, metadata) (reason) | ((uint64_t)(metadata) << 8)
+#define IVS_PKTIN_USERDATA(reason, vlan, metadata) (reason) | (uint64_t)(vlan) << 8 | ((uint64_t)(metadata) << 20)
 #define IVS_PKTIN_REASON(userdata) (userdata) & 0xff
-#define IVS_PKTIN_METADATA(userdata) (userdata) >> 8
+#define IVS_PKTIN_VLAN(userdata) (userdata >> 8) & 0xfff
+#define IVS_PKTIN_METADATA(userdata) (userdata) >> 20
 
 #define IVS_INBAND_PORT 1000
 
@@ -134,8 +135,8 @@ struct ind_ovs_port_counters {
 };
 
 typedef void (*ind_ovs_pktin_cb_f) (uint8_t *data, unsigned int len,
-                                    uint8_t reason, uint64_t metadata,
-                                    struct ind_ovs_parsed_key *pkey);
+                                    uint8_t reason, uint16_t pkt_vlan,
+                                    uint64_t metadata, struct ind_ovs_parsed_key *pkey);
 struct ind_ovs_pktin_socket {
     struct nl_sock *pktin_socket; /* Netlink socket for packet-ins */
     aim_ratelimiter_t pktin_limiter; /* Ratelimiter for packet-ins recv'd on this socket */
@@ -161,8 +162,8 @@ void ind_ovs_pktin_socket_register(struct ind_ovs_pktin_socket *soc,
                                    uint32_t interval, uint32_t burst);
 void ind_ovs_pktin_socket_unregister(struct ind_ovs_pktin_socket *soc);
 indigo_error_t ind_ovs_pktin(of_port_no_t in_port, uint8_t *data,
-                             unsigned int len, uint8_t reason, uint64_t metadata,
-                             struct ind_ovs_parsed_key *pkey);
+                             unsigned int len, uint8_t reason, uint16_t pkt_vlan,
+                             uint64_t metadata, struct ind_ovs_parsed_key *pkey);
 void ind_ovs_handle_multicast(void);
 bool ind_ovs_port_running(of_port_no_t port_no);
 void ind_ovs_port_set_generation_id(uint32_t port, uint64_t switch_generation_id);

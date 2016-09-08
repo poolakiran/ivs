@@ -171,7 +171,7 @@ pipeline_standard_process(struct ind_ovs_parsed_key *key,
         if (tcam_entry == NULL) {
             if (openflow_version < OF_VERSION_1_3) {
                 packet_trace("table miss, sending to controller");
-                uint64_t userdata = IVS_PKTIN_USERDATA(OF_PACKET_IN_REASON_NO_MATCH, 0);
+                uint64_t userdata = IVS_PKTIN_USERDATA(OF_PACKET_IN_REASON_NO_MATCH, 0, 0);
                 uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(&pktin_soc);
                 action_userspace(actx, &userdata, sizeof(uint64_t), netlink_port);
             } else {

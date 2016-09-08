@@ -246,7 +246,7 @@ pipeline_standard_translate_openflow_actions(of_list_action_t *actions, struct x
                 case OF_PORT_DEST_CONTROLLER: {
                     uint8_t reason = table_miss ? OF_PACKET_IN_REASON_NO_MATCH :
                                                   OF_PACKET_IN_REASON_ACTION;
-                    uint64_t userdata = IVS_PKTIN_USERDATA(reason, 0);
+                    uint64_t userdata = IVS_PKTIN_USERDATA(reason, 0, 0);
                     xbuf_append_attr(xbuf, IND_OVS_ACTION_CONTROLLER, &userdata, sizeof(userdata));
                     break;
                 }

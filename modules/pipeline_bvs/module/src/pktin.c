@@ -97,8 +97,8 @@ pipeline_bvs_get_pktin_socket(of_port_no_t port_no, uint64_t userdata)
  */
 static void
 process_port_pktin(uint8_t *data, unsigned int len,
-                   uint8_t reason, uint64_t metadata,
-                   struct ind_ovs_parsed_key *pkey)
+                   uint8_t reason, uint16_t pkt_vlan,
+                   uint64_t metadata, struct ind_ovs_parsed_key *pkey)
 {
     of_octets_t octets = { .data = data, .bytes = len };
     debug_counter_inc(&pktin);
@@ -227,7 +227,7 @@ process_port_pktin(uint8_t *data, unsigned int len,
 
 send_to_controller:
     debug_counter_inc(&ctrl_pktin);
-    ind_ovs_pktin(pkey->in_port, data, len, reason, metadata, pkey);
+    ind_ovs_pktin(pkey->in_port, data, len, reason, pkt_vlan, metadata, pkey);
     return;
 }
 
@@ -237,8 +237,8 @@ send_to_controller:
  */
 static void
 process_sflow_pktin(uint8_t *data, unsigned int len,
-                    uint8_t reason, uint64_t metadata,
-                    struct ind_ovs_parsed_key *pkey)
+                    uint8_t reason, uint16_t pkt_vlan,
+                    uint64_t metadata, struct ind_ovs_parsed_key *pkey)
 {
     debug_counter_inc(&sflow_pktin);
 
