@@ -65,8 +65,8 @@ ind_ovs_pktin(of_port_no_t in_port,
 
     if (pkt_vlan) {
         match.fields.vlan_vid = pkt_vlan | VLAN_CFI_BIT;
+        OF_MATCH_MASK_VLAN_VID_EXACT_SET(&match);
     }
-    OF_MATCH_MASK_VLAN_VID_EXACT_SET(&match);
 
 
     of_octets_t of_octets = { .data = data, .bytes = len };
