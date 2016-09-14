@@ -34,8 +34,8 @@ DEBUG_COUNTER(bad_data, "ovsdriver.pktin.bad_data",
 
 indigo_error_t
 ind_ovs_pktin(of_port_no_t in_port,
-              uint8_t *data, unsigned int len, uint8_t reason, uint64_t metadata,
-              struct ind_ovs_parsed_key *pkey)
+              uint8_t *data, unsigned int len, uint8_t reason, uint16_t pkt_vlan,
+              uint64_t metadata, struct ind_ovs_parsed_key *pkey)
 {
     LOG_TRACE("Sending packet-in");
 
@@ -62,6 +62,12 @@ ind_ovs_pktin(of_port_no_t in_port,
     ind_ovs_key_to_match(pkey, ctrlr_of_version, &match);
     match.fields.metadata = metadata;
     OF_MATCH_MASK_METADATA_EXACT_SET(&match);
+
+    if (pkt_vlan) {
+        match.fields.vlan_vid = pkt_vlan | VLAN_CFI_BIT;
+        OF_MATCH_MASK_VLAN_VID_EXACT_SET(&match);
+    }
+
 
     of_octets_t of_octets = { .data = data, .bytes = len };
 

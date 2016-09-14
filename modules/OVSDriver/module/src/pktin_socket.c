@@ -63,11 +63,13 @@ ind_ovs_pktin_socket_recv(struct nl_msg *msg, void *arg)
     if (soc->callback) {
         soc->callback(nla_data(packet), nla_len(packet),
                       IVS_PKTIN_REASON(userdata),
+                      IVS_PKTIN_VLAN(userdata),
                       IVS_PKTIN_METADATA(userdata), &pkey);
     } else {
         ind_ovs_pktin(pkey.in_port,
                       nla_data(packet), nla_len(packet),
                       IVS_PKTIN_REASON(userdata),
+                      IVS_PKTIN_VLAN(userdata),
                       IVS_PKTIN_METADATA(userdata),
                       &pkey);
     }

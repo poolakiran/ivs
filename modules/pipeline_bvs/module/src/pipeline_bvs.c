@@ -408,7 +408,7 @@ process_l2(struct ctx *ctx)
 
     if (ctx->key->in_port <= SLSHARED_CONFIG_OF_PORT_MAX &&
         port_sampling_rate[ctx->key->in_port]) {
-        uint64_t userdata = IVS_PKTIN_USERDATA(0, OFP_BSN_PKTIN_FLAG_SFLOW);
+        uint64_t userdata = IVS_PKTIN_USERDATA(0, ctx->original_vlan_vid, OFP_BSN_PKTIN_FLAG_SFLOW);
         struct ind_ovs_pktin_socket *pktin_soc = pipeline_bvs_get_pktin_socket(ctx->key->in_port, userdata);
         uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(pktin_soc);
         action_sample_to_userspace(ctx->actx, &userdata, sizeof(uint64_t), netlink_port,
@@ -479,7 +479,7 @@ process_l2(struct ctx *ctx)
         PIPELINE_STAT(PACKET_OF_DEATH);
         if (port_entry->value.packet_of_death) {
             packet_trace("sending packet of death to cpu");
-            uint64_t userdata = IVS_PKTIN_USERDATA(OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH, 0);
+            uint64_t userdata = IVS_PKTIN_USERDATA(OF_PACKET_IN_REASON_BSN_PACKET_OF_DEATH, ctx->original_vlan_vid, 0);
             struct ind_ovs_pktin_socket *pktin_soc = pipeline_bvs_get_pktin_socket(ctx->key->in_port, userdata);
             uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(pktin_soc);
             action_userspace(ctx->actx, &userdata, sizeof(uint64_t), netlink_port);
@@ -1469,7 +1469,7 @@ process_pktin(struct ctx *ctx)
             return;
         }
         uint8_t reason = ctx->pktin_controller ? OF_PACKET_IN_REASON_ACTION : OF_PACKET_IN_REASON_NO_MATCH;
-        uint64_t userdata = IVS_PKTIN_USERDATA(reason, ctx->pktin_metadata);
+        uint64_t userdata = IVS_PKTIN_USERDATA(reason, ctx->original_vlan_vid, ctx->pktin_metadata);
         struct ind_ovs_pktin_socket *pktin_soc = pipeline_bvs_get_pktin_socket(ctx->key->in_port, userdata);
         uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(pktin_soc);
         action_userspace(ctx->actx, &userdata, sizeof(uint64_t), netlink_port);

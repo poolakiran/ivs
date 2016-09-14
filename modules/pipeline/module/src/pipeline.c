@@ -187,8 +187,8 @@ pipeline_inband_queue_priority_set(int priority)
 
 static void
 process_inband_pktin(uint8_t *data, unsigned int len,
-                     uint8_t reason, uint64_t metadata,
-                     struct ind_ovs_parsed_key *pkey)
+                     uint8_t reason, uint16_t pkt_vlan,
+                     uint64_t metadata, struct ind_ovs_parsed_key *pkey)
 {
     inband_receive_packet(data, len, pkey->in_port);
 }

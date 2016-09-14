@@ -228,7 +228,7 @@ make_vfp_key(const struct ind_ovs_parsed_key *key)
 static void
 pktin(struct action_context *actx, uint8_t reason)
 {
-    uint64_t userdata = IVS_PKTIN_USERDATA(reason, 0);
+    uint64_t userdata = IVS_PKTIN_USERDATA(reason, 0, 0);
     uint32_t netlink_port = ind_ovs_pktin_socket_netlink_port(&pktin_soc);
     action_userspace(actx, &userdata, sizeof(uint64_t), netlink_port);
 }
