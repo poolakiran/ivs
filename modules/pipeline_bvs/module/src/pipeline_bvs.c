@@ -98,6 +98,9 @@ gentable_sort_key(uint16_t table_id)
         return -998;
     } else if (table_id == pipeline_bvs_table_multicast_replication_group_id) {
         return -997;
+    } else if (table_id == pipeline_bvs_table_priority_to_pcp_profile_id ||
+               table_id == pipeline_bvs_table_dscp_to_priority_profile_id) {
+        return -996;
     } else if (table_id == pipeline_bvs_table_port_block_id) {
         return 1000;
     } else {
