@@ -10,7 +10,7 @@ standard
 ^l3.PktOutHostRouteTrap
 ^igmpa.ExpectedPimHelloDrop
 ^igmpa.UnexpectedPimHelloToController
-^debug_ipv6
+^mtest.debug_IngressPortGroup
 
 # Physical switch specific
 ^priority_to_queue_table.VlanPriority
@@ -28,3 +28,5 @@ standard
 ^port_qos.VFPDCBxEntryAddForPriorityTaggedPacket
 ^port_qos.VFPDCBxEntryAddForVlanTaggedPacket
 ^dhcpra
+^debug_ipv6.L2MultiportPktinDrop
+^mtest.fabric_span_forwarding
