@@ -36,6 +36,7 @@ static bool check_vlan_membership(struct vlan_entry *vlan_entry, uint32_t in_por
 static void flood_vlan(struct ctx *ctx);
 static bool check_flood(struct ctx *ctx, struct lag_group *lag);
 static void span(struct ctx *ctx, struct span_group *span);
+static struct debug_gen_key make_debug_gen_key(struct ctx *ctx);
 static struct debug_key make_debug_key(struct ctx *ctx);
 static struct vlan_acl_key make_vlan_acl_key(struct ctx *ctx);
 static struct ingress_acl_key make_ingress_acl_key(struct ctx *ctx);
@@ -303,6 +304,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_priority_to_pcp_profile_register();
     pipeline_bvs_table_dscp_to_priority_profile_register();
     pipeline_bvs_table_port_qos_register();
+    pipeline_bvs_table_debug_gen_register();
 }
 
 static void
@@ -356,6 +358,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_priority_to_pcp_profile_unregister();
     pipeline_bvs_table_dscp_to_priority_profile_unregister();
     pipeline_bvs_table_port_qos_unregister();
+    pipeline_bvs_table_debug_gen_unregister();
 }
 
 static indigo_error_t
@@ -1091,30 +1094,55 @@ out:
 static void
 process_debug(struct ctx *ctx)
 {
-    struct debug_key debug_key = make_debug_key(ctx);
-    struct debug_entry *debug_entry =
-        pipeline_bvs_table_debug_lookup(&debug_key);
-    if (!debug_entry) {
-        return;
+    struct stats_handle *stats_handle = NULL;
+    struct span_group *span_gp = NULL;
+    struct lag_group *lag = NULL;
+    bool cpu = false;
+    bool drop = false;
+
+    struct debug_gen_key debug_gen_key = make_debug_gen_key(ctx);
+    struct debug_gen_entry *debug_gen_entry =
+        pipeline_bvs_table_debug_gen_lookup(&debug_gen_key);
+
+    /* Look into debug flow table if no matching entry is found in debug gentable. */
+    if (debug_gen_entry) {
+        stats_handle = &debug_gen_entry->stats_handle;
+        span_gp = debug_gen_entry->value.span;
+        lag = debug_gen_entry->value.lag;
+        drop = debug_gen_entry->value.drop;
+        cpu = debug_gen_entry->value.cpu;
+    } else {
+        struct debug_key debug_key = make_debug_key(ctx);
+        struct debug_entry *debug_entry =
+            pipeline_bvs_table_debug_lookup(&debug_key);
+        if (!debug_entry) {
+            return;
+        }
+
+        stats_handle = &debug_entry->stats_handle;
+        span_gp = debug_entry->value.span;
+        lag = debug_entry->value.lag;
+        drop = debug_entry->value.drop;
+        cpu = debug_entry->value.cpu;
     }
 
-    pipeline_add_stats(ctx->stats, &debug_entry->stats_handle);
+    pipeline_add_stats(ctx->stats, stats_handle);
 
-    if (debug_entry->value.span != NULL) {
+    if (span_gp != NULL) {
         if (ctx->original_vlan_vid != 0) {
             action_set_vlan_vid(ctx->actx, ctx->original_vlan_vid);
         } else {
             action_pop_vlan(ctx->actx);
         }
-        span(ctx, debug_entry->value.span);
+        span(ctx, span_gp);
         action_set_vlan_vid(ctx->actx, ctx->internal_vlan_vid);
     }
 
-    if (debug_entry->value.lag != NULL) {
-        packet_trace("using LAG %s from the debug table", debug_entry->value.lag->key.name);
+    if (lag != NULL) {
+        packet_trace("using LAG %s from the debug table", lag->key.name);
         PIPELINE_STAT(DEBUG_REDIRECT);
 
-        struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(debug_entry->value.lag, ctx->hash);
+        struct lag_bucket *lag_bucket = pipeline_bvs_table_lag_select(lag, ctx->hash);
         if (lag_bucket == NULL) {
             packet_trace("empty LAG");
             PIPELINE_STAT(EMPTY_LAG);
@@ -1128,7 +1156,7 @@ process_debug(struct ctx *ctx)
         mark_drop(ctx);
     }
 
-    if (debug_entry->value.cpu) {
+    if (cpu) {
         if (!(ctx->pktin_metadata & (OFP_BSN_PKTIN_FLAG_ARP|
                                      OFP_BSN_PKTIN_FLAG_DHCP|
                                      OFP_BSN_PKTIN_FLAG_STATION_MOVE))) {
@@ -1136,7 +1164,7 @@ process_debug(struct ctx *ctx)
         }
     }
 
-    if (debug_entry->value.drop) {
+    if (drop) {
         PIPELINE_STAT(DEBUG_DROP);
         mark_drop(ctx);
     }
@@ -1355,6 +1383,48 @@ span(struct ctx *ctx, struct span_group *span)
     if (span->value.vlan_vid != VLAN_INVALID) {
         action_pop_vlan_raw(ctx->actx);
     }
+}
+
+static struct debug_gen_key
+make_debug_gen_key(struct ctx *ctx)
+{
+    struct debug_gen_key key;
+
+    AIM_ZERO(key);
+
+    memcpy(&key.eth_src, ctx->key->ethernet.eth_src, OF_MAC_ADDR_BYTES);
+    memcpy(&key.eth_dst, ctx->key->ethernet.eth_dst, OF_MAC_ADDR_BYTES);
+
+    key.in_port = ctx->key->in_port;
+    key.eth_type = ntohs(ctx->key->ethertype);
+    key.vlan_vid = ctx->internal_vlan_vid;
+    key.vrf = ctx->vrf;
+    key.l3_src_class_id = ctx->l3_src_class_id;
+    key.ingress_port_group_id = ctx->ingress_port_group_id;
+
+    if (key.eth_type == ETH_P_IPV6) {
+        memcpy(&key.ipv6_src, &ctx->key->ipv6.ipv6_src, sizeof(key.ipv6_src));
+        memcpy(&key.ipv6_dst, &ctx->key->ipv6.ipv6_dst, sizeof(key.ipv6_dst));
+        key.ip_proto = ctx->key->ipv6.ipv6_proto;
+        key.dscp = ctx->key->ipv6.ipv6_tclass >> IP_DSCP_SHIFT;
+        key.ecn = ctx->key->ipv6.ipv6_tclass & IP_ECN_MASK;
+    } else if (key.eth_type == ETH_P_IP) {
+        key.ipv4_src = ntohl(ctx->key->ipv4.ipv4_src);
+        key.ipv4_dst = ntohl(ctx->key->ipv4.ipv4_dst);
+        key.ip_proto = ctx->key->ipv4.ipv4_proto;
+        key.dscp = ctx->key->ipv4.ipv4_tos >> IP_DSCP_SHIFT;
+        key.ecn = ctx->key->ipv4.ipv4_tos & IP_ECN_MASK;
+    }
+
+    if (key.ip_proto == IPPROTO_TCP) {
+        key.tcp_src = ntohs(ctx->key->tcp.tcp_src);
+        key.tcp_dst = ntohs(ctx->key->tcp.tcp_dst);
+    } else if (key.ip_proto == IPPROTO_UDP) {
+        key.udp_src = ntohs(ctx->key->udp.udp_src);
+        key.udp_dst = ntohs(ctx->key->udp.udp_dst);
+    }
+
+    return key;
 }
 
 static struct debug_key
