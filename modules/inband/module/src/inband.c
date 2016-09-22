@@ -372,6 +372,12 @@ inband_send_lldp(of_port_no_t port_no)
         inband_lldp_append(&builder, 6, system_desc, strlen(system_desc));
     }
 
+    {
+        /* Set SUBTYPE_SWITCH_TYPE as IVS */
+        uint8_t sw_type = 3;
+        inband_lldp_append_vendor(&builder, LLDP_BSN_OUI, LLDP_BSN_SUBTYPE_SWITCH_TYPE, &sw_type, sizeof(sw_type));
+    }
+
     of_octets_t octets = inband_lldp_finish(&builder);
     indigo_error_t rv = slshared_fwd_packet_out(&octets, OF_PORT_DEST_CONTROLLER,
                                                 port_no,
