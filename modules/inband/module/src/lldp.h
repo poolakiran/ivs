@@ -32,6 +32,7 @@
 #define LLDP_TLV_VENDOR 127
 #define LLDP_BSN_OUI 0x26e1
 #define LLDP_BSN_INBAND_CONTROLLER_ADDR 5
+#define LLDP_BSN_SUBTYPE_SWITCH_TYPE 1
 
 struct lldp_tlv {
     uint8_t type;
@@ -50,6 +51,7 @@ struct lldp_builder {
 
 void inband_lldp_builder_init(struct lldp_builder *builder);
 void inband_lldp_append(struct lldp_builder *builder, uint8_t type, const void *data, int len);
+void inband_lldp_append_vendor(struct lldp_builder *builder, uint32_t oui, uint8_t subtype, const void *data, int len);
 of_octets_t inband_lldp_finish(struct lldp_builder *builder);
 
 #endif

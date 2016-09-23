@@ -108,6 +108,23 @@ inband_lldp_append(struct lldp_builder *builder, uint8_t type, const void *data,
     memcpy(v+2, data, len);
 }
 
+void
+inband_lldp_append_vendor(struct lldp_builder *builder, uint32_t oui,
+                          uint8_t subtype, const void *data, int len)
+{
+    AIM_ASSERT(oui <= 0xffffff);
+    AIM_ASSERT(subtype <= 0xff);
+    AIM_ASSERT(len < 252); /* we don't support the full 511 bytes */
+    uint8_t *v = xbuf_reserve(&builder->xbuf, len + 6);
+    v[0] = LLDP_TLV_VENDOR << 1;
+    v[1] = len + 4;
+    v[2] = (oui >> 16) & 0xff;
+    v[3] = (oui >> 8) & 0xff;
+    v[4] = oui & 0xff;
+    v[5] = subtype;
+    memcpy(v+6, data, len);
+}
+
 of_octets_t
 inband_lldp_finish(struct lldp_builder *builder)
 {
