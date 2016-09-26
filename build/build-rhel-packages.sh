@@ -37,7 +37,7 @@ tar -T <(./build/files.sh) -c -z -f $BUILDDIR/SOURCES/ivs.tar.gz --transform 's,
 docker.io run -e BUILD_ID=$BUILD_ID -e BUILD_OS=$BUILD_OS -v $BUILDDIR:/rpmbuild -v /tmp/ivs.ccache:/.ccache $DOCKER_IMAGE /rpmbuild/build-rhel-packages-inner.sh
 
 # Copy built RPMs to pkg/
-OUTDIR=$(readlink -m "pkg/$BUILD_OS/$BUILD_ID")
+OUTDIR=$(readlink -m "pkg/$BUILD_OS/$GIT_BRANCH/$BUILD_ID")
 rm -rf "$OUTDIR" && mkdir -p "$OUTDIR"
 mv $BUILDDIR/RPMS/x86_64/*.rpm "$OUTDIR"
 git log > "$OUTDIR/gitlog.txt"
