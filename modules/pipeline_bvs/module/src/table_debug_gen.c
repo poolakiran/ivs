@@ -180,50 +180,43 @@ DEBUG_GEN_ATTRS
                 return INDIGO_ERROR_PARAM;
             }
         }
+    } else if (is_ipv4_src_valid(valid_bitmap) || is_ipv4_dst_valid(valid_bitmap) ||
+               is_ipv6_src_valid(valid_bitmap) || is_ipv6_dst_valid(valid_bitmap)) {
+        AIM_LOG_ERROR("src/dest address(es) set but eth type not specified");
+        return INDIGO_ERROR_PARAM;
+    }
 
-        if ((key->eth_type == ETH_P_IP) ||
-            (key->eth_type == ETH_P_IPV6)) {
-            if (is_ip_proto_valid(valid_bitmap)) {
-                if (key->ip_proto == IPPROTO_TCP) {
-                    if (is_udp_src_valid(valid_bitmap) || is_udp_dst_valid(valid_bitmap)) {
-                        AIM_LOG_ERROR("UDP src/dst ports set for "
-                                      "TCP protocol");
-                        return INDIGO_ERROR_PARAM;
-                    }
-                } else if (key->ip_proto == IPPROTO_UDP) {
-                    if (is_tcp_src_valid(valid_bitmap) || is_tcp_dst_valid(valid_bitmap)) {
-                        AIM_LOG_ERROR("TCP src/dst ports set for "
-                                      "UDP protocol");
-                        return INDIGO_ERROR_PARAM;
-                    }
-                } else if (is_tcp_src_valid(valid_bitmap) || is_tcp_dst_valid(valid_bitmap) ||
-                           is_udp_src_valid(valid_bitmap) || is_udp_dst_valid(valid_bitmap)) {
-                    AIM_LOG_ERROR("L4 fields set for unhandled IP proto %u",
-                                  key->ip_proto);
-                    return INDIGO_ERROR_PARAM;
-                }
-            } else if (is_tcp_src_valid(valid_bitmap) || is_tcp_dst_valid(valid_bitmap) ||
-                       is_udp_src_valid(valid_bitmap) || is_udp_dst_valid(valid_bitmap)) {
-                AIM_LOG_ERROR("L4 fields set but IP proto is not set");
+    if (is_ip_proto_valid(valid_bitmap)) {
+        if (key->ip_proto == IPPROTO_TCP) {
+            if (is_udp_src_valid(valid_bitmap) || is_udp_dst_valid(valid_bitmap)) {
+                AIM_LOG_ERROR("UDP src/dst ports set for "
+                              "TCP protocol");
                 return INDIGO_ERROR_PARAM;
             }
-        } else if (is_ipv4_src_valid(valid_bitmap) || is_ipv4_dst_valid(valid_bitmap) ||
-                   is_ipv6_src_valid(valid_bitmap) || is_ipv6_dst_valid(valid_bitmap) ||
-                   is_ip_proto_valid(valid_bitmap) ||
-                   is_dscp_valid(valid_bitmap) || is_ecn_valid(valid_bitmap) ||
-                   is_tcp_src_valid(valid_bitmap) || is_tcp_dst_valid(valid_bitmap) ||
+        } else if (key->ip_proto == IPPROTO_UDP) {
+            if (is_tcp_src_valid(valid_bitmap) || is_tcp_dst_valid(valid_bitmap)) {
+                AIM_LOG_ERROR("TCP src/dst ports set for "
+                              "UDP protocol");
+                return INDIGO_ERROR_PARAM;
+            }
+        } else if (is_tcp_src_valid(valid_bitmap) || is_tcp_dst_valid(valid_bitmap) ||
                    is_udp_src_valid(valid_bitmap) || is_udp_dst_valid(valid_bitmap)) {
-            AIM_LOG_ERROR("L3/L4 fields set but eth type is not IPv4 or IPv6");
+            AIM_LOG_ERROR("L4 fields set for unhandled IP proto %u",
+                          key->ip_proto);
             return INDIGO_ERROR_PARAM;
         }
-    } else if (is_ipv4_src_valid(valid_bitmap) || is_ipv4_dst_valid(valid_bitmap) ||
-               is_ipv6_src_valid(valid_bitmap) || is_ipv6_dst_valid(valid_bitmap) ||
-               is_ip_proto_valid(valid_bitmap) ||
-               is_dscp_valid(valid_bitmap) || is_ecn_valid(valid_bitmap) ||
-               is_tcp_src_valid(valid_bitmap) || is_tcp_dst_valid(valid_bitmap) ||
+    } else if (is_tcp_src_valid(valid_bitmap) || is_tcp_dst_valid(valid_bitmap) ||
                is_udp_src_valid(valid_bitmap) || is_udp_dst_valid(valid_bitmap)) {
-        AIM_LOG_ERROR("L3/L4 fields set but eth type is not set");
+        AIM_LOG_ERROR("L4 fields set but IP proto is not set");
         return INDIGO_ERROR_PARAM;
+    }
+
+    if (is_ip_proto_valid(valid_bitmap) ||
+        is_dscp_valid(valid_bitmap) || is_ecn_valid(valid_bitmap) ||
+        is_tcp_src_valid(valid_bitmap) || is_tcp_dst_valid(valid_bitmap) ||
+        is_udp_src_valid(valid_bitmap) || is_udp_dst_valid(valid_bitmap)) {
+        key->ip_pkt = 1;
+        mask->ip_pkt = 0xff;
     }
 
     return INDIGO_ERROR_NONE;
