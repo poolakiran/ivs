@@ -1408,12 +1408,14 @@ make_debug_gen_key(struct ctx *ctx)
         key.ip_proto = ctx->key->ipv6.ipv6_proto;
         key.dscp = ctx->key->ipv6.ipv6_tclass >> IP_DSCP_SHIFT;
         key.ecn = ctx->key->ipv6.ipv6_tclass & IP_ECN_MASK;
+        key.ip_pkt = 1;
     } else if (key.eth_type == ETH_P_IP) {
         key.ipv4_src = ntohl(ctx->key->ipv4.ipv4_src);
         key.ipv4_dst = ntohl(ctx->key->ipv4.ipv4_dst);
         key.ip_proto = ctx->key->ipv4.ipv4_proto;
         key.dscp = ctx->key->ipv4.ipv4_tos >> IP_DSCP_SHIFT;
         key.ecn = ctx->key->ipv4.ipv4_tos & IP_ECN_MASK;
+        key.ip_pkt = 1;
     }
 
     if (key.ip_proto == IPPROTO_TCP) {

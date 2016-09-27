@@ -41,8 +41,8 @@
     DEBUG_GEN_ATTR(ipv6_dst, 0x800, IPV6_DST,                           \
                    of_ipv6_t, of_ipv6_all_ones)                         \
     DEBUG_GEN_ATTR(ip_proto, 0x1000, IP_PROTO, uint8_t, 0xff)           \
-    DEBUG_GEN_ATTR(dscp, 0x2000, DSCP, uint16_t, 0x3f)                  \
     DEBUG_GEN_ATTR(ecn, 0x4000, ECN, uint8_t, 0x3)                      \
+    DEBUG_GEN_ATTR(dscp, 0x2000, DSCP, uint16_t, 0x3f)                  \
     DEBUG_GEN_ATTR(tcp_src, 0x8000, TCP_SRC, uint16_t, 0xffff)          \
     DEBUG_GEN_ATTR(tcp_dst, 0x10000, TCP_DST, uint16_t, 0xffff)         \
     DEBUG_GEN_ATTR(udp_src, 0x20000, UDP_SRC, uint16_t, 0xffff)         \
@@ -58,7 +58,10 @@ struct debug_gen_key {
     /* end macro */
     DEBUG_GEN_ATTRS
 #undef DEBUG_GEN_ATTR
+    uint8_t ip_pkt; /* IPv4 or IPv6 */
+    uint8_t pad[3];
 };
+AIM_STATIC_ASSERT(DEBUG_GEN_KEY_SIZE, sizeof(struct debug_gen_key) == 88);
 
 struct debug_gen_value {
     struct span_group *span; /* NULL if unused */
