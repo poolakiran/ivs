@@ -161,7 +161,7 @@ process_port_pktin(uint8_t *data, unsigned int len,
     } else if (ppe_header_get(&ppep, PPE_HEADER_ICMP)) {
         result = icmpa_reply(&ppep, pkey->in_port);
     } else if (ppe_header_get(&ppep, PPE_HEADER_ICMPV6)) {
-        result = icmpv6_receive_packet(&ppep, pkey->in_port);
+        result = icmpv6_receive_packet(&ppep, pkey->in_port, metadata);
     } else if (ppe_header_get(&ppep, PPE_HEADER_UDP)) {
 
         uint32_t src_port, dest_port;
