@@ -671,9 +671,13 @@ process_l2(struct ctx *ctx)
         pipeline_bvs_table_port_features_lookup(ctx->key->in_port);
     bool ndp_offload = port_features_entry && port_features_entry->value.ndp_offload;
 
-    if (ctx->key->ethertype == htons(ETH_P_IPV6) && ctx->key->ipv6.ipv6_proto == 58) {
+    /* ICMPv6 type NDP RS, RA, NS and NA packets */
+    if (ctx->key->ethertype == htons(ETH_P_IPV6) &&
+        ctx->key->ipv6.ipv6_proto == 58 &&
+        ctx->key->icmpv6.icmpv6_type >= 133 &&
+        ctx->key->icmpv6.icmpv6_type <= 136) {
         if (ndp_offload) {
-            packet_trace("sending ICMPV6 packet to agent");
+            packet_trace("sending ICMPV6 NDP packet to agent");
             PIPELINE_STAT(ICMPV6_OFFLOAD);
             mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_ICMPV6);
         }
