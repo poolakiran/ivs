@@ -99,6 +99,11 @@
 
 #define INTERNAL_PRIORITY_INVALID UINT32_MAX
 
+#define ICMPV6_TYPE_RS          133
+#define ICMPV6_TYPE_RA          134
+#define ICMPV6_TYPE_NS          135
+#define ICMPV6_TYPE_NA          136
+
 enum table_id {
     TABLE_ID_L2 = 0,
     TABLE_ID_VLAN = 1,

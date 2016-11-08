@@ -674,8 +674,8 @@ process_l2(struct ctx *ctx)
     /* ICMPv6 type NDP RS, RA, NS and NA packets */
     if (ctx->key->ethertype == htons(ETH_P_IPV6) &&
         ctx->key->ipv6.ipv6_proto == 58 &&
-        ctx->key->icmpv6.icmpv6_type >= 133 &&
-        ctx->key->icmpv6.icmpv6_type <= 136) {
+        ctx->key->icmpv6.icmpv6_type >= ICMPV6_TYPE_RS &&
+        ctx->key->icmpv6.icmpv6_type <= ICMPV6_TYPE_NA) {
         if (ndp_offload) {
             packet_trace("sending ICMPV6 NDP packet to agent");
             PIPELINE_STAT(ICMPV6_OFFLOAD);
