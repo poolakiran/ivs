@@ -627,3 +627,15 @@ write_file(const char *filename, const char *str)
     close(fd);
     return INDIGO_ERROR_NONE;
 }
+
+/*
+ * Set MTU on given interface.
+ */
+indigo_error_t
+ind_ovs_set_mtu(const char *ifname, int mtu)
+{
+    struct ifreq req;
+    strncpy(req.ifr_name, ifname, sizeof(req.ifr_name));
+    req.ifr_mtu = mtu;
+    return ind_ovs_interface_ioctl(SIOCSIFMTU, &req);
+}
