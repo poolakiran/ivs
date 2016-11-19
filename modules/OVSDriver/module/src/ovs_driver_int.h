@@ -45,6 +45,8 @@
 
 #define IND_OVS_NUM_TABLES 32
 
+#define IND_OVS_UPLINK_MTU 9220 /* 9K + 4 bytes for VLAN hdr */
+
 /*
  * Special pre-created ports.
  */
@@ -263,6 +265,7 @@ void ind_ovs_get_interface_features(const char *ifname, uint32_t *curr, uint32_t
 indigo_error_t ind_ovs_set_ethtool_flags(const char *ifname, uint32_t flags, uint32_t mask);
 indigo_error_t ind_ovs_set_ethtool_gro(const char *ifname, bool enabled);
 indigo_error_t write_file(const char *filename, const char *str);
+indigo_error_t ind_ovs_set_mtu(const char *ifname, int mtu);
 
 /* Sends msg, frees it, and waits for a reply. */
 int ind_ovs_transact(struct nl_msg *msg);
