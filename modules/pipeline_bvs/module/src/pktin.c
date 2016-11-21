@@ -149,15 +149,15 @@ process_port_pktin(uint8_t *data, unsigned int len,
     } else if (ppe_header_get(&ppep, PPE_HEADER_ARP)) {
         bool check_source = (metadata & OFP_BSN_PKTIN_FLAG_ARP) != 0;
         result = arpa_receive_packet(&ppep, pkey->in_port, check_source);
-    } else if (metadata & OFP_BSN_PKTIN_FLAG_L3_MISS) {
-
-        if (ppe_header_get(&ppep, PPE_HEADER_IP4)) {
-            result = icmpa_send(&ppep, pkey->in_port, 3, 0);
-        } else if (ppe_header_get(&ppep, PPE_HEADER_IP6)) {
-            result = icmpv6_handle_error(&ppep, pkey->in_port,
-                                         ICMPV6_DEST_UNREACHABLE,
-                                         ICMPV6_NO_ROUTE);
-        }
+    } else if ((metadata & OFP_BSN_PKTIN_FLAG_L3_MISS) &&
+               (ppe_header_get(&ppep, PPE_HEADER_IP4))) {
+        result = icmpa_send(&ppep, pkey->in_port, 3, 0);
+    } else if (!ppe_header_get(&ppep, PPE_HEADER_ICMPV6) &&
+               ppe_header_get(&ppep, PPE_HEADER_IP6) &&
+               (metadata & OFP_BSN_PKTIN_FLAG_L3_MISS)) {
+        result = icmpv6_handle_error(&ppep, pkey->in_port,
+                                    ICMPV6_DEST_UNREACHABLE,
+                                    ICMPV6_NO_ROUTE);
     } else if (ppe_header_get(&ppep, PPE_HEADER_ICMP)) {
         result = icmpa_reply(&ppep, pkey->in_port);
     } else if (ppe_header_get(&ppep, PPE_HEADER_ICMPV6)) {
