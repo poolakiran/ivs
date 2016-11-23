@@ -46,7 +46,10 @@ AIM_STATIC_ASSERT(INGRESS_ACL_KEY_SIZE, sizeof(struct ingress_acl_key) == 64);
 
 struct ingress_acl_value {
     struct next_hop next_hop;
-    bool cpu;
+    of_port_no_t cpu_port; /* OF_PORT_DEST_LOCAL, packet-in for agents.
+                            * OF_PORT_DEST_CONTROLLER, packet-in sent to controller
+                            * even if agent drops.
+                            */
     bool drop;
 };
 
