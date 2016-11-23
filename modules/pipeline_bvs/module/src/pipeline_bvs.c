@@ -1674,5 +1674,6 @@ __pipeline_bvs_module_init__(void)
     AIM_LOG_STRUCT_REGISTER();
     pipeline_register("bvs-1.0", &pipeline_bvs_ops);
     pipeline_register("bvs-2.0", &pipeline_bvs_ops);
+    pipeline_register("bvs-1.0-ipv4-only", &pipeline_bvs_ops);
     pipeline_register("experimental", &pipeline_bvs_ops); /* For command-line compatibility */
 }
