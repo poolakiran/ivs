@@ -177,7 +177,7 @@ parse_value(of_flow_add_t *obj, struct ingress_acl_value *value)
     of_object_t inst;
 
     value->next_hop.type = NEXT_HOP_TYPE_NULL;
-    value->cpu = false;
+    value->cpu_port = 0;
     value->drop = false;
 
     of_flow_add_instructions_bind(obj, &insts);
@@ -220,13 +220,17 @@ parse_value(of_flow_add_t *obj, struct ingress_acl_value *value)
                     of_port_no_t port_no;
                     of_action_output_port_get(&act, &port_no);
                     switch (port_no) {
-                        case OF_PORT_DEST_CONTROLLER: {
-                            value->cpu = true;
-                            break;
-                        default:
-                            AIM_LOG_ERROR("Unexpected output port %u in ingress_acl_table", port_no);
+                    case OF_PORT_DEST_CONTROLLER:
+                    case OF_PORT_DEST_LOCAL:
+                        if (value->cpu_port) {
+                            AIM_LOG_ERROR("Multiple output ports in ingress_acl_table", port_no);
                             goto error;
                         }
+                        value->cpu_port = port_no;
+                        break;
+                    default:
+                        AIM_LOG_ERROR("Unexpected output port %u in ingress_acl_table", port_no);
+                        goto error;
                     }
                     break;
                 }
@@ -291,8 +295,8 @@ pipeline_bvs_table_ingress_acl_entry_create(
 
     AIM_LOG_VERBOSE("  tp_src=%u/%#x tp_dst=%u/%#x tcp_flags=%#x/%#x",
                     key.tp_src, mask.tp_src, key.tp_dst, mask.tp_dst, key.tcp_flags, mask.tcp_flags);
-    AIM_LOG_VERBOSE("  next_hop=%{next_hop} cpu=%d drop=%d",
-                    &entry->value.next_hop, entry->value.cpu, entry->value.drop);
+    AIM_LOG_VERBOSE("  next_hop=%{next_hop} cpu_port=%#x drop=%d",
+                    &entry->value.next_hop, entry->value.cpu_port, entry->value.drop);
 
     stats_alloc(&entry->stats_handle);
 
@@ -407,8 +411,8 @@ pipeline_bvs_table_ingress_acl_lookup(const struct ingress_acl_key *key)
         }
         packet_trace("  tp_src=%u/%#x tp_dst=%u/%#x tcp_flags=%#x/%#x",
                      entry_key->tp_src, entry_mask->tp_src, entry_key->tp_dst, entry_mask->tp_dst, entry_key->tcp_flags, entry_mask->tcp_flags);
-        packet_trace("  next_hop=%{next_hop} cpu=%d drop=%d",
-                     &entry->value.next_hop, entry->value.cpu, entry->value.drop);
+        packet_trace("  next_hop=%{next_hop} cpu_port=%#x drop=%d",
+                     &entry->value.next_hop, entry->value.cpu_port, entry->value.drop);
         return entry;
     } else {
         packet_trace("Miss ingress_acl entry in_port=%u eth_type=%#x vlan_vid=%u ip_proto=%u vrf=%u l3_interface_class_id=%u l3_src_class_id=%u",

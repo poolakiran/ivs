@@ -771,9 +771,9 @@ process_l3(struct ctx *ctx)
 {
     struct next_hop *next_hop = NULL;
     bool l3_cpu = false;
-    bool acl_cpu = false;
     bool drop = false;
     bool bad_ttl = false;
+    of_port_no_t acl_cpu_port = 0;
 
     if (ctx->key->ethertype == htons(ETH_P_IPV6)) {
         bad_ttl = ctx->key->ipv6.ipv6_hlimit <= 1;
@@ -827,7 +827,7 @@ process_l3(struct ctx *ctx)
     if (ingress_acl_entry) {
         pipeline_add_stats(ctx->stats, &ingress_acl_entry->stats_handle);
         drop = drop || ingress_acl_entry->value.drop;
-        acl_cpu = ingress_acl_entry->value.cpu;
+        acl_cpu_port = ingress_acl_entry->value.cpu_port;
         if (ingress_acl_entry->value.next_hop.type != NEXT_HOP_TYPE_NULL) {
             next_hop = &ingress_acl_entry->value.next_hop;
         }
@@ -841,12 +841,15 @@ process_l3(struct ctx *ctx)
         mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_L3_CPU);
     }
 
-    if (acl_cpu) {
-        packet_trace("Ingress ACL copy to CPU");
+    if (acl_cpu_port == OF_PORT_DEST_CONTROLLER) {
+        packet_trace("Ingress ACL copy to CPU, Controller");
         mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_INGRESS_ACL);
+    } else if (acl_cpu_port == OF_PORT_DEST_LOCAL) {
+        packet_trace("Ingress ACL copy to CPU");
+        mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_INGRESS_ACL);
     }
 
-    if (l3_cpu || acl_cpu) {
+    if (l3_cpu || acl_cpu_port) {
         if (drop) {
             packet_trace("L3 drop");
             PIPELINE_STAT(L3_DROP);
