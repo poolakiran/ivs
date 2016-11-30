@@ -846,7 +846,7 @@ process_l3(struct ctx *ctx)
         mark_pktin_controller(ctx, OFP_BSN_PKTIN_FLAG_INGRESS_ACL);
     } else if (acl_cpu_port == OF_PORT_DEST_LOCAL) {
         packet_trace("Ingress ACL copy to CPU");
-        mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_INGRESS_ACL);
+        mark_pktin_agent(ctx, OFP_BSN_PKTIN_FLAG_INGRESS_ACL_LOCAL);
     }
 
     if (l3_cpu || acl_cpu_port) {
