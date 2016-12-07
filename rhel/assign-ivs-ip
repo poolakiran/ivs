@@ -6,13 +6,25 @@ if [ $expected_count == 0 ]; then
     exit 0
 fi
 
-actual_count=$(ivs-ctl show | grep "(internal)" | grep -v "inband" | grep -v "ivs" | awk '{print $2}' | wc -l)
-if [ $actual_count -lt $expected_count ]; then
-    echo "wait 1 second for ivs to bring up internal ports"
+MAX_RETRY=10
+
+for ((count = 0; count < $MAX_RETRY; count++ )); do
+    actual_count=$(ivs-ctl show | grep "(internal)" | grep -v "inband" | grep -v "ivs" | awk '{print $2}' | wc -l)
+    if [ $actual_count -eq $expected_count ]; then
+        break
+    fi
+
+    echo "wait for ivs to bring up internal ports"
     sleep 1
+done
+
+if [ $count -eq $MAX_RETRY ]; then
+    echo "ivs internal ports are not created even after $MAX_RETRY seconds"
+    exit -1
 fi
 
 intfs=$(ivs-ctl show | grep "(internal)" | grep -v "inband" | grep -v "ivs" | awk '{print $2}')
 for intf in $intfs; do
     ifup $intf;
+    echo "ifup ivs port $intf"
 done
