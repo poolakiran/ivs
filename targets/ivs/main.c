@@ -81,7 +81,7 @@ ivs_loci_logger(loci_log_level_t level,
 static void
 logger(void *cookie, aim_log_flag_t flag, const char *str);
 
-const char *ivs_version = "4.0.0";
+const char *ivs_version = "4.1.0";
 const char *ivs_build_id = AIM_STRINGIFY(BUILD_ID);
 const char *ivs_build_os = AIM_STRINGIFY(BUILD_OS);
 
