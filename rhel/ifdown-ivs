@@ -38,3 +38,5 @@ case "$TYPE" in
                 ;;
 esac
 
+# Call ifdown-post to teardown routes for the interface
+exec /etc/sysconfig/network-scripts/ifdown-post "$CONFIG"
