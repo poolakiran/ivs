@@ -44,3 +44,5 @@ case "$TYPE" in
                 ;;
 esac
 
+# Call ifup-post to setup routes for the interface
+exec /etc/sysconfig/network-scripts/ifup-post "$CONFIG" "$2"
