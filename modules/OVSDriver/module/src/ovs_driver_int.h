@@ -45,8 +45,6 @@
 
 #define IND_OVS_NUM_TABLES 32
 
-#define IND_OVS_UPLINK_MTU 9220 /* 9K + 4 bytes for VLAN hdr */
-
 /*
  * Special pre-created ports.
  */

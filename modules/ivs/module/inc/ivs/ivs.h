@@ -89,6 +89,10 @@
     field(OVS_TUNNEL_KEY_ATTR_TOS,      tos,      uint8_t) \
     field(OVS_TUNNEL_KEY_ATTR_TTL,      ttl,      uint8_t)
 
+
+#define IVS_MTU_SIZE                    9216
+#define IVS_MTU_SIZE_WITH_VLAN          9220 /* 9K + 4 bytes for VLAN hdr */
+
 /*
  * Efficient representation of the OVS flow key.
  *
