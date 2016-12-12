@@ -41,8 +41,6 @@
 #include "nat_int.h"
 #include "nat_log.h"
 
-#define NAT_INTERFACE_MTU   9220 /* 9K + 4 bytes for VLAN hdr */
-
 struct nat_entry_key {
     char name[128];
 };
@@ -182,9 +180,9 @@ nat_container_setup(struct nat_entry *entry)
     ok = ok && run("ip link set dev lo down");
 
     /* Configure MACs, IPs, and netmasks on the container side of each veth pair */
-    ok = ok && run("ip link set dev ext up mtu %d address %{mac}", NAT_INTERFACE_MTU, &entry->value.external_mac);
+    ok = ok && run("ip link set dev ext up mtu %d address %{mac}", IVS_MTU_SIZE_WITH_VLAN, &entry->value.external_mac);
     ok = ok && run("ip addr add %{ipv4a}/%{ipv4a} dev ext", entry->value.external_ip, entry->value.external_netmask);
-    ok = ok && run("ip link set dev int up mtu %d address %{mac}", NAT_INTERFACE_MTU, &entry->value.internal_mac);
+    ok = ok && run("ip link set dev int up mtu %d address %{mac}", IVS_MTU_SIZE_WITH_VLAN, &entry->value.internal_mac);
     ok = ok && run("ip addr add %s/%s dev int", internal_ip, internal_netmask);
 
     /* Create the default route to external_gateway */
@@ -204,8 +202,8 @@ nat_container_setup(struct nat_entry *entry)
     ok = ok && run("iptables -P FORWARD DROP");
 
     /* Setup MTU on switch side of veth pair */
-    ok = ok && run("ip link set dev %s mtu %d", ext_ifname, NAT_INTERFACE_MTU);
-    ok = ok && run("ip link set dev %s mtu %d", int_ifname, NAT_INTERFACE_MTU);
+    ok = ok && run("ip link set dev %s mtu %d", ext_ifname, IVS_MTU_SIZE_WITH_VLAN);
+    ok = ok && run("ip link set dev %s mtu %d", int_ifname, IVS_MTU_SIZE_WITH_VLAN);
 
     /* Move the switch side of each veth pair into the original namespace */
     ok = ok && move_link(int_ifname, root_netns) == INDIGO_ERROR_NONE;

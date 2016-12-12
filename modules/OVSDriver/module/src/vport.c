@@ -358,7 +358,7 @@ ind_ovs_port_added(uint32_t port_no, const char *ifname,
         /* Enable GRO on uplinks */
         if (port->is_uplink) {
             (void) ind_ovs_set_ethtool_gro(port->ifname, true);
-            (void) ind_ovs_set_mtu(port->ifname, IND_OVS_UPLINK_MTU);
+            (void) ind_ovs_set_mtu(port->ifname, IVS_MTU_SIZE_WITH_VLAN);
         }
     }
 
