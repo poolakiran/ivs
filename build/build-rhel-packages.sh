@@ -34,7 +34,7 @@ cp build/build-rhel-packages-inner.sh $BUILDDIR/build-rhel-packages-inner.sh
 cp rhel/ivs-7.0.spec $BUILDDIR/SOURCES
 tar -T <(./build/files.sh) -c -z -f $BUILDDIR/SOURCES/ivs.tar.gz --transform 's,^,ivs/,'
 
-docker.io run -e BUILD_ID=$BUILD_ID -e BUILD_OS=$BUILD_OS -v $BUILDDIR:/rpmbuild -v /tmp/ivs.ccache:/.ccache $DOCKER_IMAGE /rpmbuild/build-rhel-packages-inner.sh
+docker run -e BUILD_ID=$BUILD_ID -e BUILD_OS=$BUILD_OS -v $BUILDDIR:/rpmbuild -v /tmp/ivs.ccache:/.ccache $DOCKER_IMAGE /rpmbuild/build-rhel-packages-inner.sh
 
 # $GIT_BRANCH is variable set by jenkins
 # possible values = ivs/master, ivs/v3.7.0, ivs/v4.0.0 and so on..
