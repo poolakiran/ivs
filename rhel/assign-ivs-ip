@@ -10,7 +10,7 @@ MAX_RETRY=10
 
 for ((count = 0; count < $MAX_RETRY; count++ )); do
     actual_count=$(ivs-ctl show | grep "(internal)" | grep -v "inband" | grep -v "ivs" | awk '{print $2}' | wc -l)
-    if [ $actual_count -eq $expected_count ]; then
+    if [ $actual_count -ge $expected_count ]; then
         break
     fi
 
