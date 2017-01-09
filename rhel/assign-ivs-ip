@@ -9,7 +9,7 @@ fi
 MAX_RETRY=10
 
 for ((count = 0; count < $MAX_RETRY; count++ )); do
-    actual_count=$(ivs-ctl show | grep "(internal)" | grep -v "inband" | grep -v "ivs" | awk '{print $2}' | wc -l)
+    actual_count=$(ivs-ctl show | awk '/ivs:/,0{if (!/ivs:/)print}' | grep "(internal)" | grep -v "inband" | grep -v "ivs" | awk '{print $2}' | wc -l)
     if [ $actual_count -ge $expected_count ]; then
         break
     fi
@@ -23,7 +23,7 @@ if [ $count -eq $MAX_RETRY ]; then
     exit -1
 fi
 
-intfs=$(ivs-ctl show | grep "(internal)" | grep -v "inband" | grep -v "ivs" | awk '{print $2}')
+intfs=$(ivs-ctl show | awk '/ivs:/,0{if (!/ivs:/)print}' | grep "(internal)" | grep -v "inband" | grep -v "ivs" | awk '{print $2}')
 for intf in $intfs; do
     ifup $intf;
     echo "ifup ivs port $intf"
