@@ -86,6 +86,7 @@
 #include "table_priority_to_pcp_profile.h"
 #include "table_port_qos.h"
 #include "table_debug_gen.h"
+#include "table_stub.h"
 
 #define AIM_LOG_MODULE_NAME pipeline_bvs
 #include <AIM/aim_log.h>
