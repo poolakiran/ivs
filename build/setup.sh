@@ -50,6 +50,12 @@ if ! which pkg-config &> /dev/null; then
     $APT_GET install pkg-config
 fi
 
+PKG_OK=$(dpkg-query -W --showformat='${Status}\n' libcap-dev|grep "install ok installed")
+if [ "" == "$PKG_OK" ]; then
+    echo "Installing libcap-dev"
+    $APT_GET install libcap-dev
+fi
+
 if ! which pcap-config &> /dev/null; then
     echo "Installing libpcap-dev"
     $APT_GET install libpcap-dev
