@@ -148,7 +148,7 @@ process_port_pktin(uint8_t *data, unsigned int len,
         result = igmpa_receive_pkt(&ppep, pkey->in_port);
     } else if (ppe_header_get(&ppep, PPE_HEADER_ARP)) {
         bool check_source = (metadata & OFP_BSN_PKTIN_FLAG_ARP) != 0;
-        result = arpa_receive_packet(&ppep, pkey->in_port, check_source);
+        result = arpa_receive_packet(&ppep, pkey->in_port, check_source, false);
     } else if ((metadata & OFP_BSN_PKTIN_FLAG_L3_MISS) &&
                (ppe_header_get(&ppep, PPE_HEADER_IP4))) {
         result = icmpa_send(&ppep, pkey->in_port, 3, 0);
@@ -161,7 +161,7 @@ process_port_pktin(uint8_t *data, unsigned int len,
     } else if (ppe_header_get(&ppep, PPE_HEADER_ICMP)) {
         result = icmpa_reply(&ppep, pkey->in_port);
     } else if (ppe_header_get(&ppep, PPE_HEADER_ICMPV6)) {
-        result = icmpv6_receive_packet(&ppep, pkey->in_port, metadata);
+        result = icmpv6_receive_packet(&ppep, pkey->in_port, metadata, false);
     } else if (ppe_header_get(&ppep, PPE_HEADER_UDP)) {
 
         uint32_t src_port, dest_port;
