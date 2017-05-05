@@ -19,6 +19,7 @@ standard
 ^pktin.PVST_Flood
 ^pktin.STP
 ^pktin.BSN_link_local_MAC
+^pktin.PVST_VlanXlateMiss
 ^storm_control
 ^macblaster
 ^lag_member_auto_add
