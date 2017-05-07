@@ -22,9 +22,20 @@ ROOTDIR=$(dirname $(readlink -f $0))/..
 cd "$ROOTDIR"
 
 : Build ID: ${BUILD_ID:=devel}
-SUITE=trusty
-ARCH=amd64
-DOCKER_IMAGE=bigswitch/ivs-builder:ubuntu14.04
+: ${SUITE:=trusty}
+: ${ARCH:=amd64}
+case "$SUITE" in
+trusty)
+    DOCKER_IMAGE=bigswitch/ivs-builder:ubuntu14.04
+    ;;
+xenial)
+    DOCKER_IMAGE=bigswitch/ivs-builder:ubuntu16.04
+    ;;
+*)
+    echo "unknown suite $SUITE please define ivs-builder version" >&2
+    exit 1
+esac
+
 BUILD_OS="$SUITE-$ARCH"
 
 BUILDDIR=$(mktemp -d)
