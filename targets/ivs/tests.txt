@@ -4,7 +4,8 @@ standard
 nicira_dec_ttl
 
 # Disable sflow tests until they are fixed
-^sflowa
+^sflowa.SampledPacketInIPv4
+^sflowa.SampledPacketInIPv6
 
 # Indigo respects priority of exact match flows
 ^flow_matches.ExactMatchPrio
