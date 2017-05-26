@@ -3,10 +3,6 @@ standard
 # Extensions we support
 nicira_dec_ttl
 
-# Disable sflow tests until they are fixed
-^sflowa.SampledPacketInIPv4
-^sflowa.SampledPacketInIPv6
-
 # Indigo respects priority of exact match flows
 ^flow_matches.ExactMatchPrio
 

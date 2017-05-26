@@ -11,6 +11,8 @@ standard
 ^igmpa.ExpectedPimHelloDrop
 ^igmpa.UnexpectedPimHelloToController
 ^mtest.debug_IngressPortGroup
+^igmpa.ExpectedGeneralQueryDrop
+^igmpa.ExpectedReportDrop
 
 # Physical switch specific
 ^priority_to_queue_table.VlanPriority
