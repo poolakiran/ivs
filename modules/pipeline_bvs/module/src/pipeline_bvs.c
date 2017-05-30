@@ -305,7 +305,7 @@ pipeline_bvs_init(const char *name)
     pipeline_bvs_table_dscp_to_priority_profile_register();
     pipeline_bvs_table_port_qos_register();
     pipeline_bvs_table_debug_gen_register();
-    pipeline_bvs_table_span_register();
+    pipeline_bvs_table_stub_register();
 }
 
 static void
@@ -360,7 +360,7 @@ pipeline_bvs_finish(void)
     pipeline_bvs_table_dscp_to_priority_profile_unregister();
     pipeline_bvs_table_port_qos_unregister();
     pipeline_bvs_table_debug_gen_unregister();
-    pipeline_bvs_table_debug_gen_unregister();
+    pipeline_bvs_table_stub_unregister();
 }
 
 static indigo_error_t
