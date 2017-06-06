@@ -43,8 +43,8 @@ parse_key(of_flow_add_t *obj, struct my_station_key *key, struct my_station_key 
 
     key->mac = match.fields.eth_dst;
     mask->mac = match.masks.eth_dst;
-    key->vlan_vid = match.fields.vlan_vid;
-    mask->vlan_vid = match.masks.vlan_vid;
+    key->vlan_vid = match.fields.vlan_vid & ~VLAN_CFI_BIT;
+    mask->vlan_vid = match.masks.vlan_vid & ~VLAN_CFI_BIT;
 
     return INDIGO_ERROR_NONE;
 }
