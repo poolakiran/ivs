@@ -78,3 +78,13 @@ else
         $APT_GET install libnl-3-dev libnl-route-3-dev libnl-genl-3-dev
     fi
 fi
+
+if ! pkg-config --exists openssl; then
+    echo "Installing openssl"
+     $APT_GET install libssl-dev
+fi
+
+if  ! [ -e /usr/include/sys/capability.h ]; then
+     echo "Installing libcap-dev"
+     $APT_GET install libcap-dev
+fi
