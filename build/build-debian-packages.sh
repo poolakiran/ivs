@@ -37,8 +37,13 @@ rsync --files-from <(./build/files.sh) . "$BUILDDIR/ivs"
 
 docker run -e BUILD_ID=$BUILD_ID -e BUILD_OS=$BUILD_OS -v $BUILDDIR:/work -v /tmp/ivs.ccache:/.ccache -w /work/ivs $DOCKER_IMAGE ./build/build-debian-packages-inner.sh
 
+# $GIT_BRANCH is variable set by jenkins
+# possible values = ivs/master, ivs/v3.7.0, ivs/v4.0.0 and so on..
+# convert it to master, 3.7.0, 4.0.0, and so on. i.e. remove '/' and 'v'
+BCF_BRANCH=`echo "$GIT_BRANCH" | rev | cut -d'/' -f 1 | cut -d'v' -f 1 | rev`
+
 # Copy built packages to pkg/
-OUTDIR=$(readlink -m "pkg/$BUILD_OS/$BUILD_ID")
+OUTDIR=$(readlink -m "pkg/$BUILD_OS/$BCF_BRANCH/$BUILD_ID")
 rm -rf "$OUTDIR" && mkdir -p "$OUTDIR"
 mv $BUILDDIR/*.deb "$OUTDIR"
 git log > "$OUTDIR/gitlog.txt"
