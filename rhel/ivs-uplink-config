@@ -1,0 +1,82 @@
+#!/usr/bin/env python
+# Copyright 2017, Big Switch Networks, Inc.
+import os
+import sys
+import subprocess
+import logging
+import argparse
+import grp
+import shutil
+import re
+import json
+import socket
+import signal
+import time
+from glob import glob
+
+PCI_IDS_DIR = "/run/pci_ids"
+
+def readfile(path):
+    with open(path) as f:
+        return f.read()
+
+def writefile(path, data):
+    with open(path, "w") as f:
+        f.write(data)
+
+def find_pci_id(uplink):
+    if os.path.exists("/sys/bus/pci/devices/%s" % uplink):
+        return uplink
+
+    stash = PCI_IDS_DIR + "/" + uplink
+    if os.path.exists(stash):
+        return readfile(stash)
+
+    if not os.path.exists("/sys/class/net/%s" % uplink):
+        raise RuntimeError("No such network device %s" % uplink)
+
+    pci_id = os.path.basename(os.readlink("/sys/class/net/%s/device" % uplink))
+
+    if not os.path.exists(PCI_IDS_DIR):
+        os.mkdir(PCI_IDS_DIR)
+
+    writefile(stash, pci_id)
+    return pci_id
+
+def stop_lldp_from_device(args):
+    logging.info("Stopping LLDP Tx from IVS uplink devices as needed")
+    for uplink in args.uplink:
+
+        pci_id = find_pci_id(uplink)
+        logging.info("Uplink %s is PCI device %s", uplink, pci_id)
+
+        # check the card type, if x710, stop lldp from nic
+        vendor = int(readfile("/sys/bus/pci/devices/%s/vendor" % pci_id), 16)
+        device = int(readfile("/sys/bus/pci/devices/%s/device" % pci_id), 16)
+
+        logging.info("pci_id %s vendor %#04x device %#04x", pci_id, vendor, device)
+
+        # check if X710 NIC, if yes, stop lldp
+        if (vendor == 0x8086 and device == 0x1572):
+            # stop lldp
+            if os.path.exists("/sys/bus/pci/devices/%s/driver" % pci_id):
+                driver = os.path.basename(os.readlink("/sys/bus/pci/devices/%s/driver" % pci_id))
+                if driver == "i40e":
+                    writefile("/sys/kernel/debug/%s/%s/command" %(driver, pci_id), "lldp stop")
+                    logging.info("LLDP stopped for Uplink %s pci_id %s vendor %#04x device %#04x", uplink, pci_id, vendor, device)
+            else:
+                logging.info("LLDP not stopped for Uplink %s pci_id %s vendor %#04x device %#04x as driver file doesn't exist", uplink, pci_id, vendor, device)
+
+def main():
+    parser = argparse.ArgumentParser(description='IVS utility')
+
+    parser.add_argument('--uplink', '-u', action='append', default=[], help="Uplink Interface")
+
+    args, _ = parser.parse_known_args()
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s.%(msecs)03d  %(name)-10s: %(levelname)-8s: %(message)s")
+
+    stop_lldp_from_device(args)
+
+if __name__ == "__main__":
+    main()

@@ -66,6 +66,8 @@ install -p -D -m 755 rhel/ifup-ivs \
         $RPM_BUILD_ROOT/etc/sysconfig/network-scripts/ifup-ivs
 install -p -D -m 755 rhel/ifdown-ivs \
         $RPM_BUILD_ROOT/etc/sysconfig/network-scripts/ifdown-ivs
+install -p -D -m 755 rhel/ivs-uplink-config \
+        $RPM_BUILD_ROOT/etc/sysconfig/network-scripts/ivs-uplink-config
 
 gzip $RPM_BUILD_ROOT/usr/share/man/man8/ivs.8
 gzip $RPM_BUILD_ROOT/usr/share/man/man8/ivs-ctl.8
@@ -100,9 +102,10 @@ systemctl start ivs.service
 /etc/sysconfig/network-scripts/assign-ivs-ip
 /etc/sysconfig/network-scripts/ifup-ivs
 /etc/sysconfig/network-scripts/ifdown-ivs
+/etc/sysconfig/network-scripts/ivs-uplink-config
 %doc /usr/share/man/man8/ivs.8.gz
 %doc /usr/share/man/man8/ivs-ctl.8.gz
 
 %changelog
 * Tue Sep 9 2014 Harshmeet Singh <harshmeet.singh@bigswitch.com>
-- First build on Centos 7.0 
+- First build on Centos 7.0
