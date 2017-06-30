@@ -267,7 +267,7 @@ lpm64_trie_insert(struct lpm64_trie *lpm64_trie, uint64_t key,
     AIM_ASSERT(value != NULL, "attempted to insert a entry with NULL value in lpm64 trie");
 
     /*
-     * Max entries per lpm64 trie is 16000.
+     * Max entries per lpm64 trie is LPM64_TRIE_ENTRY_COUNT/2.
      */
     if (lpm64_trie->size == LPM64_TRIE_ENTRY_COUNT/2) {
         AIM_LOG_ERROR("Attempted to insert a entry in a full lpm64 trie");
