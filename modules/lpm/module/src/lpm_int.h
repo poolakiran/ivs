@@ -24,11 +24,11 @@
 #include <slot_allocator/slot_allocator.h>
 
 /*
- * Max entries limit per lpm trie is 16000. And since each entry creation
- * can lead to 2 slots being used, so 32000 slots are a sufficient upper
- * bound of 16000 entries.
+ * Max entries limit per lpm trie is 80000. And since each entry creation
+ * can lead to 2 slots being used, so 160000 slots are a sufficient upper
+ * bound of 80000 entries.
  */
-#define LPM_TRIE_ENTRY_COUNT 32000
+#define LPM_TRIE_ENTRY_COUNT 160000
 
 /*
  * Number of entries to allocate at creation. The trie will grow up to the

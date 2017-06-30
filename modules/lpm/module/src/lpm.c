@@ -265,7 +265,7 @@ lpm_trie_insert(struct lpm_trie *lpm_trie, uint32_t key,
     AIM_ASSERT(value != NULL, "attempted to insert a entry with NULL value in lpm trie");
 
     /*
-     * Max entries per lpm trie is 16000.
+     * Max entries per lpm trie are LPM_TRIE_ENTRY_COUNT/2.
      */
     if (lpm_trie->size == LPM_TRIE_ENTRY_COUNT/2) {
         AIM_LOG_ERROR("Attempted to insert a entry in a full lpm trie");
