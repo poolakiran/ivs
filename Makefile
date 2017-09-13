@@ -27,6 +27,7 @@ all:
 install: all
 	install -D $(IVS_BUILD)/bin/ivs $(DESTDIR)/usr/sbin/ivs
 	install -D $(IVS_CTL_BUILD)/bin/ivs-ctl $(DESTDIR)/usr/sbin/ivs-ctl
+	install -p -D -m 755 debian/ivs-uplink-config $(DESTDIR)/usr/sbin/ivs-uplink-config
 
 clean:
 	${MAKE} -C targets/ivs clean

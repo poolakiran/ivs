@@ -57,6 +57,7 @@ do_start()
 	#   1 if daemon was already running
 	#   2 if daemon could not be started
 	lsmod | grep -q openvswitch || modprobe openvswitch
+    /usr/sbin/ivs-uplink-config
 	start-stop-daemon --start --quiet --exec $DAEMON --test > /dev/null \
 		|| return 1
 	start-stop-daemon --start --quiet -b --exec $DAEMON -- \
