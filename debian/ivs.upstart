@@ -26,6 +26,7 @@ respawn
 script
     DAEMON_ARGS=""
     . /etc/default/ivs
+    /usr/sbin/ivs-uplink-config
     lsmod | grep -q openvswitch || modprobe openvswitch
     exec ivs --syslog $DAEMON_ARGS
 end script

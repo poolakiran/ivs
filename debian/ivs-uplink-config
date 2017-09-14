@@ -1,0 +1,45 @@
+#!/bin/sh
+
+IVS_UPLINK_CONFIG_LOG="/tmp/ivs_uplink_config.log"
+DAEMON_ARGS=""
+UPLINK=""
+IS_UPLINK_OPT=0
+
+stop_lldp_from_uplink()
+{
+    /bin/date >> $IVS_UPLINK_CONFIG_LOG
+	echo "Trying to stop built-in LLDP from $UPLINK" >> $IVS_UPLINK_CONFIG_LOG
+
+	PCI_ID=`/sbin/ethtool -i $UPLINK | awk '/bus-info/ {print $NF}'`
+	DRIVER=`/sbin/ethtool -i $UPLINK | awk '/driver/ {print $NF}'`
+	VENDOR=`cat /sys/bus/pci/devices/$PCI_ID/vendor`
+	DEVICE=`cat /sys/bus/pci/devices/$PCI_ID/device`
+
+	echo "$UPLINK pci_id $PCI_ID vendor $VENDOR device $DEVICE driver $DRIVER" >> $IVS_UPLINK_CONFIG_LOG
+
+	if [ $VENDOR = '0x8086' ] && [ $DEVICE = '0x1572' ] && [ $DRIVER = 'i40e' ]; then
+		if [ -f /sys/kernel/debug/$DRIVER/$PCI_ID/command ]; then
+			echo "Stopping built-in LLDP on $UPLINK" >> $IVS_UPLINK_CONFIG_LOG
+			echo "lldp stop" > /sys/kernel/debug/$DRIVER/$PCI_ID/command
+		fi
+	fi
+}
+
+# Read configuration variable file if it is present
+if [ -r /etc/default/ivs ]; then
+	. /etc/default/ivs
+fi
+
+for ARG in $DAEMON_ARGS
+do
+	if [ $IS_UPLINK_OPT -eq 1 ]; then
+		UPLINK=$ARG
+		stop_lldp_from_uplink
+	fi
+
+	if [ $ARG = '-u' ] || [ $ARG = '--uplink' ]; then
+		IS_UPLINK_OPT=1
+	else
+		IS_UPLINK_OPT=0
+	fi
+done

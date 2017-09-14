@@ -13,6 +13,7 @@ standard
 ^mtest.debug_IngressPortGroup
 ^igmpa.ExpectedGeneralQueryDrop
 ^igmpa.ExpectedReportDrop
+^icmpa.IcmpEchoRequestWithAclDeny
 
 # Physical switch specific
 ^priority_to_queue_table.VlanPriority
@@ -32,3 +33,4 @@ standard
 ^port_qos.VFPDCBxEntryAddForVlanTaggedPacket
 ^debug_ipv6.L2MultiportPktinDrop
 ^mtest.fabric_span_forwarding
+^qos_acl

@@ -36,6 +36,7 @@ clean:
 	(cd indigo; rm -f modules/AIM/AIM.mk modules/BigData/BigList/BigList.mk modules/ELS/ELS.mk modules/FME/FME.mk modules/IOF/IOF.mk modules/IVS/IVS.mk modules/Indigo/OFConnectionManager/OFConnectionManager.mk modules/Indigo/OFStateManager/OFStateManager.mk modules/Indigo/SocketManager/SocketManager.mk modules/Indigo/indigo/indigo.mk modules/NSS/NSS.mk modules/PPE/PPE.mk modules/loci/loci.mk modules/murmur/murmur.mk modules/uCli/uCli.mk)
 
 deb:
+	install -p -D -m 755 debian/ivs-uplink-config $(DESTDIR)/usr/sbin/ivs-uplink-config
 	fakeroot ${MAKE} -f debian/rules binary
 
 rpm:
