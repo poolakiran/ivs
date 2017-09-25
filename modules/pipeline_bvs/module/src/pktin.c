@@ -144,6 +144,14 @@ process_port_pktin(uint8_t *data, unsigned int len,
         result = lacpa_receive_packet (&ppep, pkey->in_port);
     } else if (ppe_header_get(&ppep, PPE_HEADER_DHCP)) {
         result = dhcpra_receive_packet(&ppep, pkey->in_port);
+
+        /* DHCP packets destined to unknown IP address will be sent to
+         * controller for learning that end-point. All other packets will
+         * be dropped. */
+        if ((result == INDIGO_CORE_LISTENER_RESULT_PASS) &&
+                (!(metadata & OFP_BSN_PKTIN_FLAG_L3_CPU))) {
+            result = INDIGO_CORE_LISTENER_RESULT_DROP;
+        }
     } else if (ppe_header_get(&ppep, PPE_HEADER_IGMP)) {
         result = igmpa_receive_pkt(&ppep, pkey->in_port);
     } else if (ppe_header_get(&ppep, PPE_HEADER_ARP)) {
