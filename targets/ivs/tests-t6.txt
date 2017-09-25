@@ -15,6 +15,9 @@ standard
 ^igmpa.ExpectedReportDrop
 ^icmpa.IcmpEchoRequestWithAclDeny
 
+# Pktin reason not matching with pswitch
+^dhcpra.DhcpOfferToUnknownRelayAgent
+
 # Physical switch specific
 ^priority_to_queue_table.VlanPriority
 ^priority_to_queue_table.VlanPriorityOverPortPriority
@@ -34,3 +37,4 @@ standard
 ^debug_ipv6.L2MultiportPktinDrop
 ^mtest.fabric_span_forwarding
 ^qos_acl
+^ospf
