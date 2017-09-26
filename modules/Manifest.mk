@@ -42,3 +42,4 @@ packet_trace_BASEDIR := $(BASEDIR)packet_trace
 version_stats_BASEDIR := $(BASEDIR)version_stats
 mgmt_interface_stats_BASEDIR := $(BASEDIR)mgmt_interface_stats
 lpm64_BASEDIR := $(BASEDIR)lpm64
+lpm128_BASEDIR := $(BASEDIR)lpm128
