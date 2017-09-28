@@ -1,6 +1,6 @@
 /****************************************************************
  *
- *        Copyright 2016, Big Switch Networks, Inc.
+ *        Copyright 2017, Big Switch Networks, Inc.
  *
  * Licensed under the Eclipse Public License, Version 1.0 (the
  * "License"); you may not use this file except in compliance
@@ -26,6 +26,9 @@
 #include "lpm128_log.h"
 #include <inttypes.h>
 
+#define KEY_128_LOG_FORMAT "%"PRIx64"%"PRIx64
+#define KEY_128_LOG_ARGS(key) ((uint64_t *)&key)[1], ((uint64_t *)&key)[0]
+
 static inline struct lpm128_trie_entry *
 lpm128_trie_entry_object(struct lpm128_trie *lpm128_trie, uint32_t slot)
 {
@@ -39,19 +42,19 @@ lpm128_trie_entry_object(struct lpm128_trie *lpm128_trie, uint32_t slot)
  * or not bit 'i' counting from the MSB is set in 'key'.
  */
 static bool
-is_bit_set(uint64_t key, int i)
+is_bit_set(uint128_t key, int i)
 {
-    return key & (1ULL << (63-i));
+    return key & (((uint128_t)1) << (127-i));
 }
 
 /*
- * Compute netmask address given prefix
+ * Compute netmask address for given prefix
  */
-static uint64_t
+static uint128_t
 netmask(int prefix)
 {
     if (prefix) {
-        return(~((1ULL << (64 - prefix)) - 1));
+        return(~((((uint128_t)1) << (128 - prefix)) - 1));
     }
 
     return 0;
@@ -70,11 +73,11 @@ roundup(uint32_t x)
  * Create a lpm128 trie entry node
  */
 static uint32_t
-trie_entry_create(struct lpm128_trie *lpm128_trie, uint64_t key, uint8_t mask_len,
+trie_entry_create(struct lpm128_trie *lpm128_trie, uint128_t key, uint8_t mask_len,
                   uint8_t bit, void *value, uint32_t left, uint32_t right)
 {
-    AIM_LOG_TRACE("Create lpm128 trie entry with ipv6 key=%"PRIx64"/%u, bit=%u",
-                  key, mask_len, bit);
+    AIM_LOG_TRACE("Create lpm128 trie entry with ipv6 key=" KEY_128_LOG_FORMAT "/%u, bit=%u",
+                  KEY_128_LOG_ARGS(key), mask_len, bit);
 
     uint32_t slot = slot_allocator_alloc(lpm128_trie->lpm128_trie_entry_allocator);
     AIM_ASSERT(slot != SLOT_INVALID, "Failed to create slot for lpm128 trie entry");
@@ -260,8 +263,8 @@ lpm128_trie_is_empty(struct lpm128_trie *lpm128_trie)
  * Documented in lpm128.h
  */
 int
-lpm128_trie_insert(struct lpm128_trie *lpm128_trie, uint64_t key,
-                uint8_t key_mask_len, void *value)
+lpm128_trie_insert(struct lpm128_trie *lpm128_trie, uint128_t key,
+                   uint8_t key_mask_len, void *value)
 {
     AIM_ASSERT(lpm128_trie != NULL, "attempted to insert a entry in a NULL lpm128 trie");
     AIM_ASSERT(value != NULL, "attempted to insert a entry with NULL value in lpm128 trie");
@@ -279,7 +282,8 @@ lpm128_trie_insert(struct lpm128_trie *lpm128_trie, uint64_t key,
      */
     AIM_ASSERT(key == (key & netmask(key_mask_len)), "key doesn't matches the mask");
 
-    AIM_LOG_TRACE("Add lpm128 trie entry with ipv6 key=%"PRIx64"/%u", key, key_mask_len);
+    AIM_LOG_TRACE("Add lpm128 trie entry with ipv6 key=" KEY_128_LOG_FORMAT "/%u",
+                  KEY_128_LOG_ARGS(key), key_mask_len);
 
     if (lpm128_trie->root == SLOT_INVALID) {
         /* First entry */
@@ -462,7 +466,7 @@ lpm128_trie_insert(struct lpm128_trie *lpm128_trie, uint64_t key,
  * Documented in lpm128.h
  */
 void *
-lpm128_trie_search(struct lpm128_trie *lpm128_trie, uint64_t key)
+lpm128_trie_search(struct lpm128_trie *lpm128_trie, uint128_t key)
 {
     AIM_ASSERT(lpm128_trie != NULL, "attempted to search for a entry in a NULL lpm128 trie");
 
@@ -472,18 +476,19 @@ lpm128_trie_search(struct lpm128_trie *lpm128_trie, uint64_t key)
 
     int total_index = 0;
 
-    AIM_LOG_TRACE("Search lpm128 trie for key=%"PRIx64, key);
+    AIM_LOG_TRACE("Search lpm128 trie for key=" KEY_128_LOG_FORMAT, KEY_128_LOG_ARGS(key));
 
     while (current_slot != SLOT_INVALID) {
         struct lpm128_trie_entry *current = lpm128_trie_entry_object(lpm128_trie, current_slot);
-        uint64_t mask = netmask(total_index + current->match_bit_count);
+        uint128_t mask = netmask(total_index + current->match_bit_count);
         if ((current->key & mask) != (key & mask)) {
             return result_value;
         }
 
         if (current->value != NULL) {
-            AIM_LOG_TRACE("Found lpm128 trie entry with ipv6=%"PRIx64"/%u for "
-                          "key=%"PRIx64, current->key, current->mask_len, key);
+            AIM_LOG_TRACE("Found lpm128 trie entry with ipv6=" KEY_128_LOG_FORMAT "/%u for "
+                          "key=" KEY_128_LOG_FORMAT, KEY_128_LOG_ARGS(current->key),
+                          current->mask_len, KEY_128_LOG_ARGS(key));
             result_value = current->value;
         }
 
@@ -502,7 +507,7 @@ lpm128_trie_search(struct lpm128_trie *lpm128_trie, uint64_t key)
  * Documented in lpm128.h
  */
 void
-lpm128_trie_remove(struct lpm128_trie *lpm128_trie, uint64_t key, uint8_t key_mask_len)
+lpm128_trie_remove(struct lpm128_trie *lpm128_trie, uint128_t key, uint8_t key_mask_len)
 {
     AIM_ASSERT(lpm128_trie != NULL, "attempted to remove a entry in a NULL lpm128 trie");
 
@@ -511,7 +516,8 @@ lpm128_trie_remove(struct lpm128_trie *lpm128_trie, uint64_t key, uint8_t key_ma
 
     int total_index = 0;
 
-    AIM_LOG_TRACE("Remove lpm128 trie entry with ipv6 key=%"PRIx64"/%u", key, key_mask_len);
+    AIM_LOG_TRACE("Remove lpm128 trie entry with ipv6 key=" KEY_128_LOG_FORMAT "/%u",
+                  KEY_128_LOG_ARGS(key), key_mask_len);
 
     while (current_slot != SLOT_INVALID) {
         struct lpm128_trie_entry *current = lpm128_trie_entry_object(lpm128_trie, current_slot);
@@ -521,12 +527,12 @@ lpm128_trie_remove(struct lpm128_trie *lpm128_trie, uint64_t key, uint8_t key_ma
          * The key requested to be deleted is not present in the trie
          */
         if ((key_mask_len - total_index) < current->match_bit_count) {
-            AIM_LOG_TRACE("No lpm128 trie entry present with ipv4=%"PRIx64"/%u",
-                          key, key_mask_len);
+            AIM_LOG_TRACE("No lpm128 trie entry present with ipv4=" KEY_128_LOG_FORMAT "/%u",
+                          KEY_128_LOG_ARGS(key), key_mask_len);
             return;
         }
 
-        uint64_t mask = netmask(total_index + current->match_bit_count);
+        uint128_t mask = netmask(total_index + current->match_bit_count);
         if ((current->key & mask) != (key & mask)) {
             return;
         }

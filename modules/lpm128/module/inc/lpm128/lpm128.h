@@ -42,6 +42,8 @@
 
 struct lpm128_trie;
 
+typedef unsigned __int128 uint128_t;
+
 /*
  * Create a lpm128 trie.
  */
@@ -69,7 +71,7 @@ void lpm128_trie_destroy(struct lpm128_trie *lpm128_trie);
  * @param value the value to add
  * @return 0 on success and -1 on failure
  */
-int lpm128_trie_insert(struct lpm128_trie *lpm128_trie, uint64_t key,
+int lpm128_trie_insert(struct lpm128_trie *lpm128_trie, uint128_t key,
                        uint8_t key_mask_len, void *value);
 
 /*
@@ -79,7 +81,7 @@ int lpm128_trie_insert(struct lpm128_trie *lpm128_trie, uint64_t key,
  * @param key the key to remove
  * @param key_mask_len the prefix associated with the key
  */
-void lpm128_trie_remove(struct lpm128_trie *lpm128_trie, uint64_t key,
+void lpm128_trie_remove(struct lpm128_trie *lpm128_trie, uint128_t key,
                         uint8_t key_mask_len);
 
 /*
@@ -90,7 +92,7 @@ void lpm128_trie_remove(struct lpm128_trie *lpm128_trie, uint64_t key,
  * @param key the key to search for a longest prefix match
  * @return the value associated with the longest prefix match if found else null
  */
-void *lpm128_trie_search(struct lpm128_trie *lpm128_trie, uint64_t key);
+void *lpm128_trie_search(struct lpm128_trie *lpm128_trie, uint128_t key);
 
 /*
  * Find if an lpm128 trie is empty or not.

@@ -28,9 +28,10 @@
 
 #define htonll(x) ((1==htonl(1)) ? (x) : ((uint64_t)htonl((x) & 0xFFFFFFFF) << 32) | htonl((x) >> 32))
 #define ntohll(x) ((1==ntohl(1)) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
+#define ntoh128(x) ((1==ntohl(1)) ? (x) : ((uint128_t)ntohll((x) & 0xFFFFFFFFFFFFFFFF) << 64) | ntohll((x) >> 64))
 
 struct l3_cidr_route_entry {
-    uint64_t key;
+    uint128_t key;
     uint8_t mask_len;
     uint32_t value;
     struct in6_addr sin6_addr;
@@ -44,12 +45,12 @@ static struct l3_cidr_route_entry route_entries[NUM_ENTRIES];
 
 struct lpm128_trie *lpm128_trie;
 
-static uint64_t
+static uint128_t
 ipv6_to_key(const char *ip_str)
 {
     struct in6_addr sin6_addr;
     inet_pton(AF_INET6, ip_str, &sin6_addr);
-    return(ntohll(*((uint64_t *)&sin6_addr.s6_addr[0])));
+    return(ntoh128(*((uint128_t *)&sin6_addr.s6_addr[0])));
 }
 
 #ifndef DEBUG
@@ -141,6 +142,10 @@ test_basic(void)
     insert("128:0:0:0::", 16, 0x11, &route_entries[7], ++size);
     insert("192:168:3:25f0::", 60, 0x12, &route_entries[8], ++size);
 
+    insert("1122:3344:5566:7788:99aa:bbcc::", 96, 0x13, &route_entries[10], ++size);
+    insert("1122:3344:5566:7788:99aa:bbcc:ddee::", 112, 0x14, &route_entries[11], ++size);
+    insert("1122:3344:5566:7788:99aa:bbcc:ddee:ff00", 128, 0x15, &route_entries[12], ++size);
+
 #ifndef DEBUG
     print_preorder(lpm128_trie->root);
 #endif
@@ -149,6 +154,13 @@ test_basic(void)
     search("192:168:3:20::", &route_entries[2].value);
     search("192:168:3:25f1::", &route_entries[8].value);
     search("10:1:1:1::", &route_entries[4].value);
+
+
+    search("1122:3344:5566:7788:99aa:bbcc:ddee:ff00", &route_entries[12].value);
+    delete("1122:3344:5566:7788:99aa:bbcc:ddee:ff00", 128, --size);
+    search("1122:3344:5566:7788:99aa:bbcc:ddee:ff00", &route_entries[11].value);
+    search("1122:3344:5566:7788:99aa:bbcc:ddee:ff11", &route_entries[11].value);
+    search("1122:3344:5566:7788:99aa:bbcc::ff00", &route_entries[10].value);
 
     /* Miss in the lpm should match default route */
     search("160:90:125:0::", &route_entries[5].value);
@@ -159,6 +171,8 @@ test_basic(void)
     delete("192:168:2:0::", 48, --size);
     delete("10:1:1:0::", 48, --size);
     delete("128:0:0:0::", 16, --size);
+    delete("1122:3344:5566:7788:99aa:bbcc:ddee::", 112, --size);
+    delete("1122:3344:5566:7788:99aa:bbcc::", 96, --size);
 
     search("::", NULL);
     search("192:168:2:0::", &route_entries[0].value);
@@ -200,9 +214,9 @@ static uint64_t
 netmask(int prefix)
 {
     if (prefix == 0)
-        return(~((uint64_t) -1));
+        return(~((uint128_t) -1));
     else
-        return(~((1ULL << (64 - prefix)) - 1));
+        return(~((((uint128_t)1) << (128 - prefix)) - 1));
 }
 
 /*
@@ -232,16 +246,16 @@ make_ip (void)
     return rand() + rand();
 }
 
-static void
+void
 test_random()
 {
-    const int num_masks = 64;
+    const int num_masks = 128;
     const int num_lookups = 10000;
 
     lpm128_trie = lpm128_trie_create();
 
     int i;
-    uint64_t key;
+    uint128_t key;
     uint8_t mask_len;
 
     memset(route_entries, 0, sizeof(route_entries));
@@ -307,16 +321,16 @@ duplicate_key_mask(uint64_t key, uint8_t mask_len)
     return false;
 }
 
-static void
+void
 test_mixed()
 {
-    const int num_masks = 64;
+    const int num_masks = 128;
     const int num_lookups = 1000;
 
     lpm128_trie = lpm128_trie_create();
 
     int i;
-    uint64_t key;
+    uint128_t key;
     uint8_t mask_len;
 
     memset(route_entries, 0, sizeof(route_entries));
@@ -375,17 +389,17 @@ test_mixed()
     lpm128_trie_destroy(lpm128_trie);
 }
 
-static void
+void
 test_churn()
 {
     lpm128_trie = lpm128_trie_create();
 
     for (int i = 0; i < 100; i++) {
-        for (uint64_t j = 0; j < 32; j++) {
-            lpm128_trie_insert(lpm128_trie, j<<16, 48, (void *)1);
+        for (uint128_t j = 0; j < 32; j++) {
+            lpm128_trie_insert(lpm128_trie, j<<64, 96, (void *)1);
         }
-        for (uint64_t j = 0; j < 32; j++) {
-            lpm128_trie_remove(lpm128_trie, j<<16, 48);
+        for (uint128_t j = 0; j < 32; j++) {
+            lpm128_trie_remove(lpm128_trie, j<<64, 96);
         }
     }
 
