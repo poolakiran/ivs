@@ -42,6 +42,9 @@
 
 struct lpm128_trie;
 
+/*
+ * Using GCC provided integer scalar type __int128 to store 128 bit key.
+ */
 typedef unsigned __int128 uint128_t;
 
 /*

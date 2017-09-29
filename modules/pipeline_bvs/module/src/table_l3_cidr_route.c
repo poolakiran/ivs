@@ -246,9 +246,9 @@ static void
 l3_cidr_route_remove(struct l3_cidr_route_entry *entry)
 {
     switch (entry->key.eth_type) {
-        case ETH_P_IP:
-            lpm_trie_remove(lpm_tries[entry->key.vrf], entry->key.ipv4,
-                    entry->key.mask_len);
+    case ETH_P_IP:
+        lpm_trie_remove(lpm_tries[entry->key.vrf], entry->key.ipv4,
+                        entry->key.mask_len);
 
         if (lpm_trie_is_empty(lpm_tries[entry->key.vrf])) {
             lpm_trie_destroy(lpm_tries[entry->key.vrf]);

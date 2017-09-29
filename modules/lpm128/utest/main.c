@@ -29,6 +29,7 @@
 #define htonll(x) ((1==htonl(1)) ? (x) : ((uint64_t)htonl((x) & 0xFFFFFFFF) << 32) | htonl((x) >> 32))
 #define ntohll(x) ((1==ntohl(1)) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
 #define ntoh128(x) ((1==ntohl(1)) ? (x) : ((uint128_t)ntohll((x) & 0xFFFFFFFFFFFFFFFF) << 64) | ntohll((x) >> 64))
+#define hton128(x) ((1==ntohl(1)) ? (x) : ((uint128_t)ntohll((x) & 0xFFFFFFFFFFFFFFFF) << 64) | ntohll((x) >> 64))
 
 struct l3_cidr_route_entry {
     uint128_t key;
@@ -57,11 +58,11 @@ ipv6_to_key(const char *ip_str)
 #define LPM128_TRIE_ENTRY_OBJECT(lpm128_trie, slot) &((lpm128_trie)->lpm128_trie_entries[slot])
 static char ip_str[INET6_ADDRSTRLEN];
 static char *
-key_to_ipv6(uint64_t ip)
+key_to_ipv6(uint128_t ip)
 {
     struct in6_addr sin6_addr;
     ip = htonll(ip);
-    memcpy(&sin6_addr, &ip, sizeof(uint64_t));
+    memcpy(&sin6_addr, &ip, sizeof(uint128_t));
     inet_ntop(AF_INET6, &sin6_addr, ip_str, sizeof(ip_str));
     return ip_str;
 
@@ -210,7 +211,7 @@ test_basic(void)
 /*
  * Compute netmask address given prefix
  */
-static uint64_t
+static uint128_t
 netmask(int prefix)
 {
     if (prefix == 0)
@@ -223,7 +224,7 @@ netmask(int prefix)
  * Perform a linear search to find longest prefix match
  */
 static void *
-linear_search(uint64_t key)
+linear_search(uint128_t key)
 {
     int i;
     int lpm128_mask_len = -1;
@@ -240,13 +241,13 @@ linear_search(uint64_t key)
     return value;
 }
 
-static uint64_t
+static uint128_t
 make_ip (void)
 {
     return rand() + rand();
 }
 
-void
+static void
 test_random()
 {
     const int num_masks = 128;
@@ -309,7 +310,7 @@ test_random()
 }
 
 static bool
-duplicate_key_mask(uint64_t key, uint8_t mask_len)
+duplicate_key_mask(uint128_t key, uint8_t mask_len)
 {
     int i;
     for (i = 0; i < NUM_ENTRIES; i++) {
@@ -321,7 +322,7 @@ duplicate_key_mask(uint64_t key, uint8_t mask_len)
     return false;
 }
 
-void
+static void
 test_mixed()
 {
     const int num_masks = 128;
@@ -389,7 +390,7 @@ test_mixed()
     lpm128_trie_destroy(lpm128_trie);
 }
 
-void
+static void
 test_churn()
 {
     lpm128_trie = lpm128_trie_create();

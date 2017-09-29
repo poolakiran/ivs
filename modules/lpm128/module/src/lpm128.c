@@ -25,9 +25,9 @@
 #include "lpm128_int.h"
 #include "lpm128_log.h"
 #include <inttypes.h>
+#include <arpa/inet.h>
 
-#define KEY_128_LOG_FORMAT "%"PRIx64"%"PRIx64
-#define KEY_128_LOG_ARGS(key) ((uint64_t *)&key)[1], ((uint64_t *)&key)[0]
+#define KEY_128_STR_LEN  100
 
 static inline struct lpm128_trie_entry *
 lpm128_trie_entry_object(struct lpm128_trie *lpm128_trie, uint32_t slot)
@@ -69,6 +69,21 @@ roundup(uint32_t x)
     return 1 << aim_log2_u32(x);
 }
 
+static char*
+key_128_str(uint128_t key, char *str)
+{
+    uint64_t *key64 = (uint64_t *)&key;
+    memset(str, 0, KEY_128_STR_LEN);
+
+    if (htonl(1) == 1) {
+        snprintf(str, KEY_128_STR_LEN, "%"PRIx64"%"PRIx64, key64[0], key64[1]);
+    } else {
+        snprintf(str, KEY_128_STR_LEN, "%"PRIx64"%"PRIx64, key64[1], key64[0]);
+    }
+
+    return str;
+}
+
 /*
  * Create a lpm128 trie entry node
  */
@@ -76,8 +91,10 @@ static uint32_t
 trie_entry_create(struct lpm128_trie *lpm128_trie, uint128_t key, uint8_t mask_len,
                   uint8_t bit, void *value, uint32_t left, uint32_t right)
 {
-    AIM_LOG_TRACE("Create lpm128 trie entry with ipv6 key=" KEY_128_LOG_FORMAT "/%u, bit=%u",
-                  KEY_128_LOG_ARGS(key), mask_len, bit);
+    char keystr[KEY_128_STR_LEN];
+
+    AIM_LOG_TRACE("Create lpm128 trie entry with ipv6 key=%s/%u, bit=%u",
+                  key_128_str(key, keystr), mask_len, bit);
 
     uint32_t slot = slot_allocator_alloc(lpm128_trie->lpm128_trie_entry_allocator);
     AIM_ASSERT(slot != SLOT_INVALID, "Failed to create slot for lpm128 trie entry");
@@ -266,6 +283,8 @@ int
 lpm128_trie_insert(struct lpm128_trie *lpm128_trie, uint128_t key,
                    uint8_t key_mask_len, void *value)
 {
+    char keystr[KEY_128_STR_LEN];
+
     AIM_ASSERT(lpm128_trie != NULL, "attempted to insert a entry in a NULL lpm128 trie");
     AIM_ASSERT(value != NULL, "attempted to insert a entry with NULL value in lpm128 trie");
 
@@ -282,8 +301,8 @@ lpm128_trie_insert(struct lpm128_trie *lpm128_trie, uint128_t key,
      */
     AIM_ASSERT(key == (key & netmask(key_mask_len)), "key doesn't matches the mask");
 
-    AIM_LOG_TRACE("Add lpm128 trie entry with ipv6 key=" KEY_128_LOG_FORMAT "/%u",
-                  KEY_128_LOG_ARGS(key), key_mask_len);
+    AIM_LOG_TRACE("Add lpm128 trie entry with ipv6 key=%s/%u",
+                  key_128_str(key, keystr), key_mask_len);
 
     if (lpm128_trie->root == SLOT_INVALID) {
         /* First entry */
@@ -476,7 +495,9 @@ lpm128_trie_search(struct lpm128_trie *lpm128_trie, uint128_t key)
 
     int total_index = 0;
 
-    AIM_LOG_TRACE("Search lpm128 trie for key=" KEY_128_LOG_FORMAT, KEY_128_LOG_ARGS(key));
+    char keystr[KEY_128_STR_LEN];
+
+    AIM_LOG_TRACE("Search lpm128 trie for key=%s", key_128_str(key, keystr));
 
     while (current_slot != SLOT_INVALID) {
         struct lpm128_trie_entry *current = lpm128_trie_entry_object(lpm128_trie, current_slot);
@@ -486,9 +507,9 @@ lpm128_trie_search(struct lpm128_trie *lpm128_trie, uint128_t key)
         }
 
         if (current->value != NULL) {
-            AIM_LOG_TRACE("Found lpm128 trie entry with ipv6=" KEY_128_LOG_FORMAT "/%u for "
-                          "key=" KEY_128_LOG_FORMAT, KEY_128_LOG_ARGS(current->key),
-                          current->mask_len, KEY_128_LOG_ARGS(key));
+            AIM_LOG_TRACE("Found lpm128 trie entry with ipv6=%s/%u for "
+                          "key=%s", key_128_str(current->key, keystr),
+                          current->mask_len, key_128_str(key, keystr));
             result_value = current->value;
         }
 
@@ -516,8 +537,10 @@ lpm128_trie_remove(struct lpm128_trie *lpm128_trie, uint128_t key, uint8_t key_m
 
     int total_index = 0;
 
-    AIM_LOG_TRACE("Remove lpm128 trie entry with ipv6 key=" KEY_128_LOG_FORMAT "/%u",
-                  KEY_128_LOG_ARGS(key), key_mask_len);
+    char keystr[KEY_128_STR_LEN];
+
+    AIM_LOG_TRACE("Remove lpm128 trie entry with ipv6 key=%s/%u",
+                  key_128_str(key, keystr), key_mask_len);
 
     while (current_slot != SLOT_INVALID) {
         struct lpm128_trie_entry *current = lpm128_trie_entry_object(lpm128_trie, current_slot);
@@ -527,8 +550,8 @@ lpm128_trie_remove(struct lpm128_trie *lpm128_trie, uint128_t key, uint8_t key_m
          * The key requested to be deleted is not present in the trie
          */
         if ((key_mask_len - total_index) < current->match_bit_count) {
-            AIM_LOG_TRACE("No lpm128 trie entry present with ipv4=" KEY_128_LOG_FORMAT "/%u",
-                          KEY_128_LOG_ARGS(key), key_mask_len);
+            AIM_LOG_TRACE("No lpm128 trie entry present with ipv4=%s/%u",
+                          key_128_str(key, keystr), key_mask_len);
             return;
         }
 
