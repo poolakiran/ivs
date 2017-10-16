@@ -152,7 +152,8 @@ process_port_pktin(uint8_t *data, unsigned int len,
                 (!(metadata & OFP_BSN_PKTIN_FLAG_L3_CPU))) {
             result = INDIGO_CORE_LISTENER_RESULT_DROP;
         }
-    } else if (ppe_header_get(&ppep, PPE_HEADER_IGMP)) {
+    } else if (ppe_header_get(&ppep, PPE_HEADER_IGMP) ||
+               ppe_header_get(&ppep, PPE_HEADER_PIM)) {
         result = igmpa_receive_pkt(&ppep, pkey->in_port);
     } else if (ppe_header_get(&ppep, PPE_HEADER_ARP)) {
         bool check_source = (metadata & OFP_BSN_PKTIN_FLAG_ARP) != 0;
