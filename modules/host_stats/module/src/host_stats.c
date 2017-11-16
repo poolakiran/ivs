@@ -300,9 +300,9 @@ populate_host_stats_entries(of_object_t *entries)
         /* Normalized CPU Load */
         double avg1, avg5, avg15;
         if (scanfile("/proc/loadavg", 3, "%lf %lf %lf", &avg1, &avg5, &avg15)) {
-            add_entry(entries, "normalized CPU load (1 minute)", "%f", avg1/num_cpus);
-            add_entry(entries, "normalized CPU load (5 minutes)", "%f", avg5/num_cpus);
-            add_entry(entries, "normalized CPU load (15 minutes)", "%f", avg15/num_cpus);
+            int cpu_utilization = (avg1*10000)/num_cpus;
+            add_entry(entries, "cpu utilization", "%d",
+                      ((cpu_utilization < 10000) ? cpu_utilization : 10000));
         }
     }
 }
