@@ -26,7 +26,7 @@
 #define MAX_VRF 1024
 
 static void cleanup_value(struct l3_cidr_route_value *value);
-static uint128_t ipv6_network_prefix(void *ipv6);
+static uint128_lpm_t ipv6_network_prefix(void *ipv6);
 
 static const of_match_fields_t ipv4_maximum_mask = {
     .bsn_vrf = 0xffffffff,
@@ -91,12 +91,12 @@ parse_key(of_flow_add_t *obj, struct l3_cidr_route_key *key)
 
         if (priority == 0) {
             /* Avoid shifting by the field width */
-            if (*((uint128_t *)&match.masks.ipv6_dst) != 0) {
+            if (*((uint128_lpm_t *)&match.masks.ipv6_dst) != 0) {
                 return INDIGO_ERROR_BAD_MATCH;
             }
         } else {
-            uint128_t ipv6_mask = ipv6_network_prefix(&match.masks.ipv6_dst);
-            if (ipv6_mask != (((uint128_t)-1) << (128 - priority))) {
+            uint128_lpm_t ipv6_mask = ipv6_network_prefix(&match.masks.ipv6_dst);
+            if (ipv6_mask != (((uint128_lpm_t)-1) << (128 - priority))) {
                 return INDIGO_ERROR_BAD_MATCH;
             }
         }
@@ -205,15 +205,15 @@ cleanup_value(struct l3_cidr_route_value *value)
     pipeline_bvs_cleanup_next_hop(&value->next_hop);
 }
 
-static uint128_t
+static uint128_lpm_t
 ipv6_network_prefix(void *ipv6)
 {
     if (ntohl(1) != 1) {
         uint64_t *p = ipv6;
-        return ((uint128_t)be64toh(p[0]) << 64) | be64toh(p[1]);
+        return ((uint128_lpm_t)be64toh(p[0]) << 64) | be64toh(p[1]);
     }
 
-    return *((uint128_t *)ipv6);
+    return *((uint128_lpm_t *)ipv6);
 }
 
 static indigo_error_t

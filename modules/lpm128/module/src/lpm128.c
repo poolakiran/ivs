@@ -42,19 +42,19 @@ lpm128_trie_entry_object(struct lpm128_trie *lpm128_trie, uint32_t slot)
  * or not bit 'i' counting from the MSB is set in 'key'.
  */
 static bool
-is_bit_set(uint128_t key, int i)
+is_bit_set(uint128_lpm_t key, int i)
 {
-    return key & (((uint128_t)1) << (127-i));
+    return key & (((uint128_lpm_t)1) << (127-i));
 }
 
 /*
  * Compute netmask address for given prefix
  */
-static uint128_t
+static uint128_lpm_t
 netmask(int prefix)
 {
     if (prefix) {
-        return(~((((uint128_t)1) << (128 - prefix)) - 1));
+        return(~((((uint128_lpm_t)1) << (128 - prefix)) - 1));
     }
 
     return 0;
@@ -70,7 +70,7 @@ roundup(uint32_t x)
 }
 
 static char*
-key_128_str(uint128_t key, char *str)
+key_128_str(uint128_lpm_t key, char *str)
 {
     uint64_t *key64 = (uint64_t *)&key;
     memset(str, 0, KEY_128_STR_LEN);
@@ -88,7 +88,7 @@ key_128_str(uint128_t key, char *str)
  * Create a lpm128 trie entry node
  */
 static uint32_t
-trie_entry_create(struct lpm128_trie *lpm128_trie, uint128_t key, uint8_t mask_len,
+trie_entry_create(struct lpm128_trie *lpm128_trie, uint128_lpm_t key, uint8_t mask_len,
                   uint8_t bit, void *value, uint32_t left, uint32_t right)
 {
     char keystr[KEY_128_STR_LEN];
@@ -280,7 +280,7 @@ lpm128_trie_is_empty(struct lpm128_trie *lpm128_trie)
  * Documented in lpm128.h
  */
 int
-lpm128_trie_insert(struct lpm128_trie *lpm128_trie, uint128_t key,
+lpm128_trie_insert(struct lpm128_trie *lpm128_trie, uint128_lpm_t key,
                    uint8_t key_mask_len, void *value)
 {
     char keystr[KEY_128_STR_LEN];
@@ -485,7 +485,7 @@ lpm128_trie_insert(struct lpm128_trie *lpm128_trie, uint128_t key,
  * Documented in lpm128.h
  */
 void *
-lpm128_trie_search(struct lpm128_trie *lpm128_trie, uint128_t key)
+lpm128_trie_search(struct lpm128_trie *lpm128_trie, uint128_lpm_t key)
 {
     AIM_ASSERT(lpm128_trie != NULL, "attempted to search for a entry in a NULL lpm128 trie");
 
@@ -501,7 +501,7 @@ lpm128_trie_search(struct lpm128_trie *lpm128_trie, uint128_t key)
 
     while (current_slot != SLOT_INVALID) {
         struct lpm128_trie_entry *current = lpm128_trie_entry_object(lpm128_trie, current_slot);
-        uint128_t mask = netmask(total_index + current->match_bit_count);
+        uint128_lpm_t mask = netmask(total_index + current->match_bit_count);
         if ((current->key & mask) != (key & mask)) {
             return result_value;
         }
@@ -528,7 +528,7 @@ lpm128_trie_search(struct lpm128_trie *lpm128_trie, uint128_t key)
  * Documented in lpm128.h
  */
 void
-lpm128_trie_remove(struct lpm128_trie *lpm128_trie, uint128_t key, uint8_t key_mask_len)
+lpm128_trie_remove(struct lpm128_trie *lpm128_trie, uint128_lpm_t key, uint8_t key_mask_len)
 {
     AIM_ASSERT(lpm128_trie != NULL, "attempted to remove a entry in a NULL lpm128 trie");
 
@@ -555,7 +555,7 @@ lpm128_trie_remove(struct lpm128_trie *lpm128_trie, uint128_t key, uint8_t key_m
             return;
         }
 
-        uint128_t mask = netmask(total_index + current->match_bit_count);
+        uint128_lpm_t mask = netmask(total_index + current->match_bit_count);
         if ((current->key & mask) != (key & mask)) {
             return;
         }
