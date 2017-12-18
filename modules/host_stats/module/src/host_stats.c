@@ -28,14 +28,6 @@
 #include <host_stats/host_stats.h>
 #include "host_stats_log.h"
 
-static indigo_core_listener_result_t message_listener(indigo_cxn_id_t cxn_id, of_object_t *msg);
-
-void
-host_stats_init(void)
-{
-    indigo_core_message_listener_register(message_listener);
-}
-
 void
 __host_stats_module_init__(void)
 {
@@ -307,17 +299,15 @@ populate_host_stats_entries(of_object_t *entries)
     }
 }
 
-static indigo_core_listener_result_t
-handle_host_stats_request(indigo_cxn_id_t cxn_id, of_object_t *msg)
+static void
+handle_host_stats_request(indigo_cxn_id_t cxn_id,
+                          of_bsn_generic_stats_request_t *msg,
+                          void *cookie)
 {
     uint32_t xid;
     of_str64_t stats_name;
     of_bsn_generic_stats_request_xid_get(msg, &xid);
     of_bsn_generic_stats_request_name_get(msg, &stats_name);
-
-    if (strcmp(stats_name, "host")) {
-        return INDIGO_CORE_LISTENER_RESULT_PASS;
-    }
 
     of_object_t *reply = of_bsn_generic_stats_reply_new(msg->version);
     of_bsn_generic_stats_reply_xid_set(reply, xid);
@@ -327,17 +317,48 @@ handle_host_stats_request(indigo_cxn_id_t cxn_id, of_object_t *msg)
     populate_host_stats_entries(&entries);
 
     indigo_cxn_send_controller_message(cxn_id, reply);
-
-    return INDIGO_CORE_LISTENER_RESULT_DROP;
 }
 
-static indigo_core_listener_result_t
-message_listener(indigo_cxn_id_t cxn_id, of_object_t *msg)
+static void
+populate_platform_stats_entries(of_object_t *entries)
 {
-    switch (msg->object_id) {
-    case OF_BSN_GENERIC_STATS_REQUEST:
-        return handle_host_stats_request(cxn_id, msg);
-    default:
-        return INDIGO_CORE_LISTENER_RESULT_PASS;
-    }
+    /* Nothing for IVS */
+}
+
+static void
+handle_platform_stats_request(indigo_cxn_id_t cxn_id,
+                              of_bsn_generic_stats_request_t *msg,
+                              void *cookie)
+{
+    uint32_t xid;
+    of_str64_t stats_name;
+    of_bsn_generic_stats_request_xid_get(msg, &xid);
+    of_bsn_generic_stats_request_name_get(msg, &stats_name);
+
+    of_object_t *reply = of_bsn_generic_stats_reply_new(msg->version);
+    of_bsn_generic_stats_reply_xid_set(reply, xid);
+    of_object_t entries;
+    of_bsn_generic_stats_reply_entries_bind(reply, &entries);
+
+    populate_platform_stats_entries(&entries);
+
+    indigo_cxn_send_controller_message(cxn_id, reply);
+}
+
+void
+host_stats_init(void)
+{
+    indigo_core_generic_stats_register("host",
+                                       handle_host_stats_request,
+                                       NULL);
+    indigo_core_generic_stats_register("platform",
+                                       handle_platform_stats_request,
+                                       NULL);
+}
+
+void
+host_stats_deinit(void)
+{
+    indigo_core_generic_stats_unregister("host");
+    indigo_core_generic_stats_unregister("platform");
 }
