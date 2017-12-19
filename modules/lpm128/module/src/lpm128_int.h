@@ -40,7 +40,7 @@
  * lpm128 trie entry.
  */
 struct lpm128_trie_entry {
-    uint128_t key;                    /* Node key        */
+    uint128_lpm_t key;                /* Node key        */
     uint8_t mask_len;                 /* Cidr of mask    */
     uint8_t match_bit_count;          /* Number of bits to match */
     uint32_t left;                    /* Slot number of left child */

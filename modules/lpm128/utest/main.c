@@ -28,11 +28,11 @@
 
 #define htonll(x) ((1==htonl(1)) ? (x) : ((uint64_t)htonl((x) & 0xFFFFFFFF) << 32) | htonl((x) >> 32))
 #define ntohll(x) ((1==ntohl(1)) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
-#define ntoh128(x) ((1==ntohl(1)) ? (x) : ((uint128_t)ntohll((x) & 0xFFFFFFFFFFFFFFFF) << 64) | ntohll((x) >> 64))
-#define hton128(x) ((1==ntohl(1)) ? (x) : ((uint128_t)ntohll((x) & 0xFFFFFFFFFFFFFFFF) << 64) | ntohll((x) >> 64))
+#define ntoh128(x) ((1==ntohl(1)) ? (x) : ((uint128_lpm_t)ntohll((x) & 0xFFFFFFFFFFFFFFFF) << 64) | ntohll((x) >> 64))
+#define hton128(x) ((1==ntohl(1)) ? (x) : ((uint128_lpm_t)ntohll((x) & 0xFFFFFFFFFFFFFFFF) << 64) | ntohll((x) >> 64))
 
 struct l3_cidr_route_entry {
-    uint128_t key;
+    uint128_lpm_t key;
     uint8_t mask_len;
     uint32_t value;
     struct in6_addr sin6_addr;
@@ -46,23 +46,23 @@ static struct l3_cidr_route_entry route_entries[NUM_ENTRIES];
 
 struct lpm128_trie *lpm128_trie;
 
-static uint128_t
+static uint128_lpm_t
 ipv6_to_key(const char *ip_str)
 {
     struct in6_addr sin6_addr;
     inet_pton(AF_INET6, ip_str, &sin6_addr);
-    return(ntoh128(*((uint128_t *)&sin6_addr.s6_addr[0])));
+    return(ntoh128(*((uint128_lpm_t *)&sin6_addr.s6_addr[0])));
 }
 
 #ifndef DEBUG
 #define LPM128_TRIE_ENTRY_OBJECT(lpm128_trie, slot) &((lpm128_trie)->lpm128_trie_entries[slot])
 static char ip_str[INET6_ADDRSTRLEN];
 static char *
-key_to_ipv6(uint128_t ip)
+key_to_ipv6(uint128_lpm_t ip)
 {
     struct in6_addr sin6_addr;
     ip = htonll(ip);
-    memcpy(&sin6_addr, &ip, sizeof(uint128_t));
+    memcpy(&sin6_addr, &ip, sizeof(uint128_lpm_t));
     inet_ntop(AF_INET6, &sin6_addr, ip_str, sizeof(ip_str));
     return ip_str;
 
@@ -211,20 +211,20 @@ test_basic(void)
 /*
  * Compute netmask address given prefix
  */
-static uint128_t
+static uint128_lpm_t
 netmask(int prefix)
 {
     if (prefix == 0)
-        return(~((uint128_t) -1));
+        return(~((uint128_lpm_t) -1));
     else
-        return(~((((uint128_t)1) << (128 - prefix)) - 1));
+        return(~((((uint128_lpm_t)1) << (128 - prefix)) - 1));
 }
 
 /*
  * Perform a linear search to find longest prefix match
  */
 static void *
-linear_search(uint128_t key)
+linear_search(uint128_lpm_t key)
 {
     int i;
     int lpm128_mask_len = -1;
@@ -241,7 +241,7 @@ linear_search(uint128_t key)
     return value;
 }
 
-static uint128_t
+static uint128_lpm_t
 make_ip (void)
 {
     return rand() + rand();
@@ -256,7 +256,7 @@ test_random()
     lpm128_trie = lpm128_trie_create();
 
     int i;
-    uint128_t key;
+    uint128_lpm_t key;
     uint8_t mask_len;
 
     memset(route_entries, 0, sizeof(route_entries));
@@ -310,7 +310,7 @@ test_random()
 }
 
 static bool
-duplicate_key_mask(uint128_t key, uint8_t mask_len)
+duplicate_key_mask(uint128_lpm_t key, uint8_t mask_len)
 {
     int i;
     for (i = 0; i < NUM_ENTRIES; i++) {
@@ -331,7 +331,7 @@ test_mixed()
     lpm128_trie = lpm128_trie_create();
 
     int i;
-    uint128_t key;
+    uint128_lpm_t key;
     uint8_t mask_len;
 
     memset(route_entries, 0, sizeof(route_entries));
@@ -396,10 +396,10 @@ test_churn()
     lpm128_trie = lpm128_trie_create();
 
     for (int i = 0; i < 100; i++) {
-        for (uint128_t j = 0; j < 32; j++) {
+        for (uint128_lpm_t j = 0; j < 32; j++) {
             lpm128_trie_insert(lpm128_trie, j<<64, 96, (void *)1);
         }
-        for (uint128_t j = 0; j < 32; j++) {
+        for (uint128_lpm_t j = 0; j < 32; j++) {
             lpm128_trie_remove(lpm128_trie, j<<64, 96);
         }
     }
