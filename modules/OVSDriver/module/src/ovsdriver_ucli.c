@@ -18,12 +18,23 @@
  ****************************************************************/
 
 #include <OVSDriver/ovsdriver_config.h>
+#include "ovs_driver_int.h"
 
 #if OVSDRIVER_CONFIG_INCLUDE_UCLI == 1
 
 #include <uCli/ucli.h>
 #include <uCli/ucli_argparse.h>
 #include <uCli/ucli_handler_macros.h>
+
+static ucli_status_t
+ovsdriver_ucli_ucli__upcall_threads__(ucli_context_t* uc)
+{
+    UCLI_COMMAND_INFO(uc, "upcall-threads", 0,
+                      "$summary#Print upcall thread information.");
+
+    ind_ovs_upcall_thread_info_print(uc);
+    return UCLI_STATUS_OK;
+}
 
 /* <auto.ucli.handlers.start> */
 /******************************************************************************
@@ -34,6 +45,7 @@
  *****************************************************************************/
 static ucli_command_handler_f ovsdriver_ucli_ucli_handlers__[] =
 {
+    ovsdriver_ucli_ucli__upcall_threads__,
     NULL
 };
 /******************************************************************************/

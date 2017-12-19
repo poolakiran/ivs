@@ -40,6 +40,9 @@
 #include <stats/stats.h>
 #include <debug_counter/debug_counter.h>
 #include <shared_debug_counter/shared_debug_counter.h>
+#if OVSDRIVER_CONFIG_INCLUDE_UCLI == 1
+#include <uCli/ucli.h>
+#endif
 
 #define IND_OVS_MAX_PORTS 1024
 
@@ -201,6 +204,9 @@ void ind_ovs_upcall_finish(void);
 void ind_ovs_upcall_register(struct ind_ovs_port *port);
 void ind_ovs_upcall_unregister(struct ind_ovs_port *port);
 void ind_ovs_upcall_respawn(void);
+#if OVSDRIVER_CONFIG_INCLUDE_UCLI == 1
+void ind_ovs_upcall_thread_info_print(ucli_context_t *uc);
+#endif
 
 /* Interface of the multicast submodule */
 void ind_ovs_multicast_init(void);

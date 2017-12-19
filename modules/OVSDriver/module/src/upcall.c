@@ -813,3 +813,25 @@ ind_ovs_upcall_thread_init(struct ind_ovs_upcall_thread *thread, int parent_pid)
 
     drop_privileges();
 }
+
+#if OVSDRIVER_CONFIG_INCLUDE_UCLI == 1
+void
+ind_ovs_upcall_thread_info_print(ucli_context_t *uc)
+{
+    int i, j;
+
+    ucli_printf(uc, "Number of upcall threads : %d\n", ind_ovs_num_upcall_threads);
+    for (i = 0; i < ind_ovs_num_upcall_threads; i++) {
+        struct ind_ovs_upcall_thread *thread = ind_ovs_upcall_threads[i];
+        ucli_printf(uc, "Thread %d pid %d\n", thread->index, thread->pid);
+        ucli_printf(uc, "Ports handled :");
+
+        for (j = 0; j < IND_OVS_MAX_PORTS; j++) {
+            if (ind_ovs_ports[j] && ind_ovs_ports[j]->upcall_thread == thread) {
+                ucli_printf(uc, " %s", ind_ovs_ports[j]->ifname);
+            }
+        }
+        ucli_printf(uc, "\n\n");
+    }
+}
+#endif
