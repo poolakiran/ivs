@@ -27,12 +27,29 @@
 #include <uCli/ucli_handler_macros.h>
 
 static ucli_status_t
-ovsdriver_ucli_ucli__upcall_threads__(ucli_context_t* uc)
+ovsdriver_ucli_ucli__upcall__(ucli_context_t* uc)
 {
-    UCLI_COMMAND_INFO(uc, "upcall-threads", 0,
+    UCLI_COMMAND_INFO(uc, "upcall", 0,
                       "$summary#Print upcall thread information.");
 
     ind_ovs_upcall_thread_info_print(uc);
+    return UCLI_STATUS_OK;
+}
+
+static ucli_status_t
+ovsdriver_ucli_ucli__port__(ucli_context_t* uc)
+{
+    UCLI_COMMAND_INFO(uc, "port", -1,
+                      "$summary#Print given/all port details.");
+
+    if (uc->pargs->count == 0) {
+        ind_ovs_port_info_print(uc, OF_PORT_DEST_NONE);
+    } else if (uc->pargs->count == 1) {
+        of_port_no_t of_port;
+
+        UCLI_ARGPARSE_OR_RETURN(uc, "i", &of_port);
+        ind_ovs_port_info_print(uc, of_port);
+    }
     return UCLI_STATUS_OK;
 }
 
@@ -45,7 +62,8 @@ ovsdriver_ucli_ucli__upcall_threads__(ucli_context_t* uc)
  *****************************************************************************/
 static ucli_command_handler_f ovsdriver_ucli_ucli_handlers__[] =
 {
-    ovsdriver_ucli_ucli__upcall_threads__,
+    ovsdriver_ucli_ucli__upcall__,
+    ovsdriver_ucli_ucli__port__,
     NULL
 };
 /******************************************************************************/

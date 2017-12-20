@@ -190,6 +190,9 @@ void ind_ovs_port_added(uint32_t port_no, const char *ifname, enum ovs_vport_typ
 void ind_ovs_port_deleted(uint32_t port_no);
 struct ind_ovs_port *ind_ovs_port_lookup(of_port_no_t port_no);
 struct ind_ovs_port *ind_ovs_port_lookup_by_name(const char *ifname);
+#if OVSDRIVER_CONFIG_INCLUDE_UCLI == 1
+void ind_ovs_port_info_print(ucli_context_t *uc, of_port_no_t port_no);
+#endif
 
 /* Interface of the uplink submodule */
 bool ind_ovs_uplink_check_by_name(const char *name);

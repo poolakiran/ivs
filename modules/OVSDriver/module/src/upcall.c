@@ -818,20 +818,21 @@ ind_ovs_upcall_thread_init(struct ind_ovs_upcall_thread *thread, int parent_pid)
 void
 ind_ovs_upcall_thread_info_print(ucli_context_t *uc)
 {
-    int i, j;
+    int i;
 
     ucli_printf(uc, "Number of upcall threads : %d\n", ind_ovs_num_upcall_threads);
     for (i = 0; i < ind_ovs_num_upcall_threads; i++) {
         struct ind_ovs_upcall_thread *thread = ind_ovs_upcall_threads[i];
         ucli_printf(uc, "Thread %d pid %d\n", thread->index, thread->pid);
-        ucli_printf(uc, "Ports handled :");
+    }
 
-        for (j = 0; j < IND_OVS_MAX_PORTS; j++) {
-            if (ind_ovs_ports[j] && ind_ovs_ports[j]->upcall_thread == thread) {
-                ucli_printf(uc, " %s", ind_ovs_ports[j]->ifname);
-            }
+    for (i = 0; i < IND_OVS_MAX_PORTS; i++) {
+        struct ind_ovs_port *port = ind_ovs_ports[i];
+        if (port && port->upcall_thread) {
+            ucli_printf(uc, "%u %s upcall_idx %d upcall_pid %d\n",
+                        port->dp_port_no, port->ifname,
+                        port->upcall_thread->index, port->upcall_thread->pid);
         }
-        ucli_printf(uc, "\n\n");
     }
 }
 #endif
