@@ -40,6 +40,9 @@
 #include <stats/stats.h>
 #include <debug_counter/debug_counter.h>
 #include <shared_debug_counter/shared_debug_counter.h>
+#if OVSDRIVER_CONFIG_INCLUDE_UCLI == 1
+#include <uCli/ucli.h>
+#endif
 
 #define IND_OVS_MAX_PORTS 1024
 
@@ -179,6 +182,9 @@ void ind_ovs_kflow_invalidate_all(void);
 void ind_ovs_kflow_expire(void);
 void ind_ovs_kflow_flush(void);
 void ind_ovs_kflow_module_init(void);
+#if OVSDRIVER_CONFIG_INCLUDE_UCLI == 1
+void ind_ovs_kflow_print(ucli_context_t *uc, of_port_no_t port_no);
+#endif
 
 /* Management of the port set */
 void ind_ovs_port_init(void);
@@ -187,6 +193,9 @@ void ind_ovs_port_added(uint32_t port_no, const char *ifname, enum ovs_vport_typ
 void ind_ovs_port_deleted(uint32_t port_no);
 struct ind_ovs_port *ind_ovs_port_lookup(of_port_no_t port_no);
 struct ind_ovs_port *ind_ovs_port_lookup_by_name(const char *ifname);
+#if OVSDRIVER_CONFIG_INCLUDE_UCLI == 1
+void ind_ovs_port_info_print(ucli_context_t *uc, of_port_no_t port_no);
+#endif
 
 /* Interface of the uplink submodule */
 bool ind_ovs_uplink_check_by_name(const char *name);
@@ -201,6 +210,9 @@ void ind_ovs_upcall_finish(void);
 void ind_ovs_upcall_register(struct ind_ovs_port *port);
 void ind_ovs_upcall_unregister(struct ind_ovs_port *port);
 void ind_ovs_upcall_respawn(void);
+#if OVSDRIVER_CONFIG_INCLUDE_UCLI == 1
+void ind_ovs_upcall_thread_info_print(ucli_context_t *uc);
+#endif
 
 /* Interface of the multicast submodule */
 void ind_ovs_multicast_init(void);
@@ -236,6 +248,7 @@ void ind_ovs_dump_userspace_attr(const struct nlattr *nla);
 void ind_ovs_dump_sample_attr(const struct nlattr *nla);
 void ind_ovs_dump_action_attr(const struct nlattr *nla);
 void ind_ovs_dump_key(const struct nlattr *key);
+char * ind_ovs_dump_flow_str(struct ind_ovs_kflow *flow, char *flow_str, int flow_str_size);
 
 /* Return the name of the given generic netlink command. */
 const char *ind_ovs_cmd_str(int family, uint8_t cmd);

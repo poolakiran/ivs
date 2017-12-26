@@ -25,12 +25,12 @@ cdefs: &cdefs
     default: OVSDRIVER_CONFIG_PORTING_STDLIB
 - OVSDRIVER_CONFIG_INCLUDE_UCLI:
     doc: "Include generic uCli support."
-    default: 0
+    default: 1
 
 
 definitions:
   cdefs:
-    OVSDRIVER_CONFIG_HEADER: 
+    OVSDRIVER_CONFIG_HEADER:
       defs: *cdefs
       basename: ovsdriver_config
 

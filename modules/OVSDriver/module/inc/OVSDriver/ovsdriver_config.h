@@ -40,7 +40,7 @@
 #include <AIM/aim.h>
 /**
  * OVSDRIVER_CONFIG_INCLUDE_LOGGING
- * 
+ *
  * Include or exclude logging. */
 
 
@@ -50,7 +50,7 @@
 
 /**
  * OVSDRIVER_CONFIG_LOG_OPTIONS_DEFAULT
- * 
+ *
  * Default enabled log options. */
 
 
@@ -60,7 +60,7 @@
 
 /**
  * OVSDRIVER_CONFIG_LOG_BITS_DEFAULT
- * 
+ *
  * Default enabled log options. */
 
 
@@ -70,7 +70,7 @@
 
 /**
  * OVSDRIVER_CONFIG_LOG_CUSTOM_BITS_DEFAULT
- * 
+ *
  * Default enabled custom log options. */
 
 
@@ -80,7 +80,7 @@
 
 /**
  * OVSDRIVER_CONFIG_PORTING_STDLIB
- * 
+ *
  * Default all porting macros to use the C standard libraries. */
 
 
@@ -90,7 +90,7 @@
 
 /**
  * OVSDRIVER_CONFIG_PORTING_INCLUDE_STDLIB_HEADERS
- * 
+ *
  * Include standard library headers for stdlib porting macros. */
 
 
@@ -100,12 +100,12 @@
 
 /**
  * OVSDRIVER_CONFIG_INCLUDE_UCLI
- * 
+ *
  * Include generic uCli support. */
 
 
 #ifndef OVSDRIVER_CONFIG_INCLUDE_UCLI
-#define OVSDRIVER_CONFIG_INCLUDE_UCLI 0
+#define OVSDRIVER_CONFIG_INCLUDE_UCLI 1
 #endif
 
 
@@ -123,17 +123,18 @@ typedef struct ovsdriver_config_settings_s {
 } ovsdriver_config_settings_t;
 
 /** Configuration settings table. */
+/** ovsdriver_config_settings table. */
 extern ovsdriver_config_settings_t ovsdriver_config_settings[];
 
 /**
  * @brief Lookup a configuration setting.
- * @param setting The name of the configuration option to lookup. 
+ * @param setting The name of the configuration option to lookup.
  */
 const char* ovsdriver_config_lookup(const char* setting);
 
 /**
  * @brief Show the compile-time configuration.
- * @param pvs The output stream. 
+ * @param pvs The output stream.
  */
 int ovsdriver_config_show(struct aim_pvs_s* pvs);
 

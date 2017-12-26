@@ -1233,3 +1233,38 @@ indigo_port_queue_desc_get(of_queue_desc_stats_request_t *queue_desc_request,
 
     return INDIGO_ERROR_NONE;
 }
+
+#if OVSDRIVER_CONFIG_INCLUDE_UCLI == 1
+static void
+ind_ovs_print_one_port_info(ucli_context_t *uc, struct ind_ovs_port *port)
+{
+    ucli_printf(uc, "port_no %d  name %s  vport_type %d  num_kflows %u  ifflags 0x%x"
+                "  generation_id %"PRIu64"  link_up_count %"PRIu64"  link_down_count %"PRIu64
+                "%s%s%s%s\n",
+                port->dp_port_no, port->ifname, port->type, port->num_kflows, port->ifflags,
+                port->generation_id, port->link_up_count, port->link_down_count,
+                (port->is_uplink ? "  uplink":""), (port->admin_down? "  AdminDown":""),
+                (port->no_packet_in? "  NoPktin":""), (port->no_flood? "  NoFlood":""));
+}
+
+void
+ind_ovs_port_info_print(ucli_context_t *uc, of_port_no_t port_no)
+{
+    int i;
+    struct ind_ovs_port *port;
+
+    if (port_no != OF_PORT_DEST_NONE) {
+        port = ind_ovs_port_lookup(port_no);
+        if (port) {
+           ind_ovs_print_one_port_info(uc, port);
+        }
+    } else {
+        for (i = 0; i < IND_OVS_MAX_PORTS; i++) {
+            port = ind_ovs_ports[i];
+            if (port) {
+                ind_ovs_print_one_port_info(uc, port);
+            }
+        }
+    }
+}
+#endif

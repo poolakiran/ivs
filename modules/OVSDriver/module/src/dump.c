@@ -462,3 +462,116 @@ ind_ovs_dump_key(const struct nlattr *key)
     ind_ovs_dump_nested(key, ind_ovs_dump_key_attr);
     indent--;
 }
+
+static void
+output_key_str(struct nlattr *attr, char *flow_str, int flow_str_size)
+{
+    struct nlattr *key_attrs[OVS_KEY_ATTR_MAX+1];
+    if (nla_parse_nested(key_attrs, OVS_KEY_ATTR_MAX, attr, NULL) < 0) {
+        aim_snprintf(flow_str, flow_str_size, "Failed to parse the flow");
+        return;
+    }
+
+#define key(attr_type, c_type, fmt, ...) \
+    if (key_attrs[attr_type]) { \
+        int len = strnlen(flow_str, flow_str_size); \
+        c_type __attribute__((unused)) *x = nla_data(key_attrs[attr_type]); \
+        aim_snprintf(&flow_str[len], (flow_str_size - len), fmt " ", ##__VA_ARGS__); \
+    }
+
+    key(OVS_KEY_ATTR_IN_PORT, uint32_t, "port=%u", *x);
+
+    key(OVS_KEY_ATTR_ETHERNET, struct ovs_key_ethernet,
+            "eth src=" FORMAT_MAC " dst=" FORMAT_MAC,
+            VALUE_MAC(x->eth_src), VALUE_MAC(x->eth_dst));
+    key(OVS_KEY_ATTR_VLAN, uint16_t,
+            "vlan=%u pcp=%u",
+            ntohs(*x) & 0xfff, ntohs(*x) >> 13);
+
+    if (key_attrs[OVS_KEY_ATTR_ENCAP]) {
+        output_key_str(key_attrs[OVS_KEY_ATTR_ENCAP], flow_str, flow_str_size);
+    } else {
+        key(OVS_KEY_ATTR_ETHERTYPE, uint16_t, "type=%#.4hx", ntohs(*x));
+    }
+
+    key(OVS_KEY_ATTR_IPV4, struct ovs_key_ipv4,
+            "ipv4 src=" FORMAT_IPV4 " dst=" FORMAT_IPV4 " tos=%hhu ttl=%u proto=%u",
+            VALUE_IPV4((uint8_t *)&x->ipv4_src),
+            VALUE_IPV4((uint8_t *)&x->ipv4_dst),
+            x->ipv4_tos,
+            x->ipv4_ttl,
+            x->ipv4_proto);
+
+    key(OVS_KEY_ATTR_TCP, struct ovs_key_tcp,
+            "tcp src=%hu dst=%hu", ntohs(x->tcp_src), ntohs(x->tcp_dst));
+    key(OVS_KEY_ATTR_TCP_FLAGS, uint16_t,
+            "flags=%#x", ntohs(*x));
+    key(OVS_KEY_ATTR_UDP, struct ovs_key_udp,
+            "udp src=%hu dst=%hu", ntohs(x->udp_src), ntohs(x->udp_dst));
+    key(OVS_KEY_ATTR_SCTP, struct ovs_key_sctp,
+            "sctp src=%hu dst=%hu", ntohs(x->sctp_src), ntohs(x->sctp_dst));
+    key(OVS_KEY_ATTR_ICMP, struct ovs_key_icmp,
+            "icmp type=%hhu code=%hhu", x->icmp_type, x->icmp_code);
+    key(OVS_KEY_ATTR_ICMPV6, struct ovs_key_icmpv6,
+            "icmpv6 type=%hhu code=%hhu", x->icmpv6_type, x->icmpv6_code);
+    key(OVS_KEY_ATTR_ARP, struct ovs_key_arp,
+            "arp op=%hu sip="FORMAT_IPV4" tip="FORMAT_IPV4" sha="FORMAT_MAC" tha="FORMAT_MAC,
+            ntohs(x->arp_op),
+            VALUE_IPV4((uint8_t *)&x->arp_sip),
+            VALUE_IPV4((uint8_t *)&x->arp_tip),
+            VALUE_MAC(x->arp_sha),
+            VALUE_MAC(x->arp_tha));
+
+    key(OVS_KEY_ATTR_PRIORITY, uint32_t, "prio=%u", *x);
+#undef key
+}
+
+static void
+output_actions_str(struct nlattr *parent, char *flow_str, int flow_str_size)
+{
+    struct nlattr *attr;
+    int rem;
+    int len = strnlen(flow_str, flow_str_size);
+
+    aim_snprintf(&flow_str[len], (flow_str_size - len), "-> ");
+
+    nla_for_each_nested(attr, parent, rem) {
+        len = strnlen(flow_str, flow_str_size);
+        switch (nla_type(attr)) {
+        case OVS_ACTION_ATTR_OUTPUT:
+            aim_snprintf(&flow_str[len], (flow_str_size - len),
+                         "output %d ", nla_get_u32(attr));
+            break;
+        case OVS_ACTION_ATTR_USERSPACE:
+            aim_snprintf(&flow_str[len], (flow_str_size - len), "pktin ");
+            break;
+        case OVS_ACTION_ATTR_POP_VLAN:
+            aim_snprintf(&flow_str[len], (flow_str_size - len), "pop-vlan ");
+            break;
+        case OVS_ACTION_ATTR_PUSH_VLAN: {
+            struct ovs_action_push_vlan *x = nla_data(attr);
+            aim_snprintf(&flow_str[len], (flow_str_size - len),
+                         "push-vlan { vid=%u pcp=%d }",
+                         ntohs(x->vlan_tci) & 0xfff, ntohs(x->vlan_tci) >> 13);
+            break;
+        }
+        case OVS_ACTION_ATTR_SET:
+            aim_snprintf(&flow_str[len], (flow_str_size - len), "set { ");
+            output_key_str(attr, flow_str, flow_str_size);
+            aim_snprintf(&flow_str[len], (flow_str_size - len), "} ");
+            break;
+        default:
+            aim_snprintf(&flow_str[len], (flow_str_size - len), "? ");
+            break;
+        }
+    }
+}
+
+char *
+ind_ovs_dump_flow_str(struct ind_ovs_kflow *flow, char *flow_str, int flow_str_size)
+{
+    memset(flow_str, 0, flow_str_size);
+    output_key_str(flow->key, flow_str, flow_str_size);
+    output_actions_str(flow->actions, flow_str, flow_str_size);
+    return flow_str;
+}

@@ -19,11 +19,11 @@
 
 ###############################################################################
 #
-# 
+#
 #
 ###############################################################################
 THIS_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
 OVSDriver_INCLUDES := -I $(THIS_DIR)inc
 OVSDriver_INTERNAL_INCLUDES := -I $(THIS_DIR)src
-OVSDriver_DEPENDMODULE_ENTRIES := init:ovsdriver
+OVSDriver_DEPENDMODULE_ENTRIES := init:ovsdriver ucli:ovsdriver
 
