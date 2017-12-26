@@ -688,3 +688,20 @@ ind_ovs_kflow_module_init(void)
 
     megaflow_tcam = tcam_create(sizeof(struct ind_ovs_parsed_key), ind_ovs_salt);
 }
+
+#if OVSDRIVER_CONFIG_INCLUDE_UCLI == 1
+void
+ind_ovs_kflow_print(ucli_context_t *uc, of_port_no_t port_no)
+{
+    struct list_links *cur, *next;
+    char kflow_str[2048];
+    LIST_FOREACH_SAFE(&ind_ovs_kflows, cur, next) {
+        struct ind_ovs_kflow *kflow = container_of(cur, global_links, struct ind_ovs_kflow);
+
+        if ((port_no != OF_PORT_DEST_NONE) && (port_no != kflow->in_port)) {
+            continue;
+        }
+        ucli_printf(uc, "%s \n", ind_ovs_dump_flow_str(kflow, kflow_str, sizeof(kflow_str)));
+    }
+}
+#endif

@@ -53,6 +53,23 @@ ovsdriver_ucli_ucli__port__(ucli_context_t* uc)
     return UCLI_STATUS_OK;
 }
 
+static ucli_status_t
+ovsdriver_ucli_ucli__kflow__(ucli_context_t* uc)
+{
+    UCLI_COMMAND_INFO(uc, "kflow", -1,
+                      "$summary#Print kflows on given/all ports.");
+
+    if (uc->pargs->count == 0) {
+        ind_ovs_kflow_print(uc, OF_PORT_DEST_NONE);
+    } else if (uc->pargs->count == 1) {
+        of_port_no_t of_port;
+
+        UCLI_ARGPARSE_OR_RETURN(uc, "i", &of_port);
+        ind_ovs_kflow_print(uc, of_port);
+    }
+    return UCLI_STATUS_OK;
+}
+
 /* <auto.ucli.handlers.start> */
 /******************************************************************************
  *
@@ -64,6 +81,7 @@ static ucli_command_handler_f ovsdriver_ucli_ucli_handlers__[] =
 {
     ovsdriver_ucli_ucli__upcall__,
     ovsdriver_ucli_ucli__port__,
+    ovsdriver_ucli_ucli__kflow__,
     NULL
 };
 /******************************************************************************/
