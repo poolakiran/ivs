@@ -22,6 +22,9 @@
 #include <pthread.h>
 #include <SocketManager/socketmanager.h>
 #include <tcam/tcam.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #define IND_OVS_KFLOW_EXPIRATION_MS 2345
 #define NUM_KFLOW_BUCKETS 8192
@@ -32,7 +35,10 @@
 #define NUM_KFLOW_MASK_TESTS 0
 #endif
 
+#define KFLOW_TRACE_LOG_NAME "/var/log/ivs-flowtrace.log"
+
 static void test_kflow_mask(struct ind_ovs_kflow *kflow);
+static void ind_ovs_kflow_trace_log(struct ind_ovs_kflow *kflow, char *reason);
 
 static struct list_head ind_ovs_kflows;
 static struct list_head ind_ovs_kflow_buckets[NUM_KFLOW_BUCKETS];
@@ -42,6 +48,13 @@ static struct nl_sock *kflow_expire_socket;
 static struct tcam *megaflow_tcam;
 
 static bool kflow_expire_task_running;
+static FILE *kflow_trace_fp;
+static of_port_no_t kflow_trace_port_no;
+static bool kflow_trace_enabled;
+static uint32_t kflow_trace_log_max_size = 25*1024*1024;
+static uint32_t kflow_trace_log_count = 2;
+
+
 
 DEBUG_COUNTER(add, "ovsdriver.kflow.add", "Kernel flow added");
 DEBUG_COUNTER(add_invalid_port, "ovsdriver.kflow.add_invalid_port",
@@ -246,6 +259,13 @@ ind_ovs_kflow_add(const struct nlattr *key)
 
     test_kflow_mask(kflow);
 
+    /* Log FLOW_ADDs only when debugging specific port */
+    if (kflow_trace_enabled &&
+        kflow_trace_port_no != OF_PORT_DEST_NONE &&
+        kflow_trace_port_no == kflow->in_port) {
+        ind_ovs_kflow_trace_log(kflow, "FLOW_ADD");
+    }
+
     return INDIGO_ERROR_NONE;
 }
 
@@ -331,6 +351,10 @@ ind_ovs_kflow_delete(struct ind_ovs_kflow *kflow)
     struct nl_msg *msg = ind_ovs_create_nlmsg(ovs_flow_family, OVS_FLOW_CMD_DEL);
     nla_put(msg, OVS_FLOW_ATTR_KEY, nla_len(kflow->key), nla_data(kflow->key));
     (void) ind_ovs_transact(msg);
+
+    if (kflow_trace_enabled) {
+        ind_ovs_kflow_trace_log(kflow, "FLOW_DEL");
+    }
 
     list_remove(&kflow->global_links);
     list_remove(&kflow->bucket_links);
@@ -476,6 +500,13 @@ kflow_expire(struct nl_msg *msg, void *arg)
     if (kflow) {
         /* Might have expired, ask the kernel for the real last_used time. */
         kflow_sync_stats(kflow, attrs[OVS_FLOW_ATTR_STATS], attrs[OVS_FLOW_ATTR_USED]);
+
+        /* Log FLOW_EXPIREs only when debugging specific port */
+        if (kflow_trace_enabled &&
+            kflow_trace_port_no != OF_PORT_DEST_NONE &&
+            kflow_trace_port_no == kflow->in_port) {
+            ind_ovs_kflow_trace_log(kflow, "FLOW_EXPIRE");
+        }
 
         if ((cur_time - kflow->last_used) >= IND_OVS_KFLOW_EXPIRATION_MS) {
             LOG_VERBOSE("expiring kflow");
@@ -689,6 +720,68 @@ ind_ovs_kflow_module_init(void)
     megaflow_tcam = tcam_create(sizeof(struct ind_ovs_parsed_key), ind_ovs_salt);
 }
 
+static void
+ind_ovs_kflow_trace_log_rotate()
+{
+    struct stat fp_log_stat;
+    if (stat(KFLOW_TRACE_LOG_NAME, &fp_log_stat) != -1) {
+        if (fp_log_stat.st_size >= kflow_trace_log_max_size) {
+            int debug_log_name_len = strlen(KFLOW_TRACE_LOG_NAME);
+            char* src = aim_malloc(debug_log_name_len + 16);
+            char* dst = aim_malloc(debug_log_name_len + 16);
+
+            int i;
+
+            /* move older logs first */
+            for (i = kflow_trace_log_count-1; i >= 1; i--) {
+                sprintf(src, "%s.%d", KFLOW_TRACE_LOG_NAME, i);
+                sprintf(dst, "%s.%d", KFLOW_TRACE_LOG_NAME, i+1);
+                rename(src, dst);
+            }
+
+            /* close log, move it to .1, and open a new file */
+            sprintf(dst, "%s.1", KFLOW_TRACE_LOG_NAME);
+            fclose(kflow_trace_fp);
+            rename(KFLOW_TRACE_LOG_NAME, dst);
+            kflow_trace_fp = fopen(KFLOW_TRACE_LOG_NAME, "a");
+
+            aim_free(src);
+            aim_free(dst);
+        }
+    }
+}
+
+static void
+ind_ovs_kflow_trace_log(struct ind_ovs_kflow *kflow, char *reason)
+{
+    struct timeval timeval;
+    struct tm *loctime;
+    char lt[128];
+
+    if(kflow_trace_enabled == false || kflow_trace_fp == NULL) {
+        return;
+    }
+
+    /* If kflow_trace_port_no is programmed then make sure kflow is
+     * for that port */
+    if (kflow_trace_port_no != OF_PORT_DEST_NONE &&
+        kflow_trace_port_no != kflow->in_port) {
+        return;
+    }
+
+    gettimeofday(&timeval, NULL);
+    loctime = localtime(&timeval.tv_sec);
+    strftime(lt, sizeof(lt), "%FT%T", loctime);
+
+    char kflow_str[2048];
+    fprintf(kflow_trace_fp, "{\"time\":\"%s.%.06d\", %s, \"reason\":\"%s\"}\n",
+            lt, (int)timeval.tv_usec,
+            ind_ovs_dump_flow_json(kflow, kflow_str, sizeof(kflow_str)), reason);
+    fflush(kflow_trace_fp);
+
+    ind_ovs_kflow_trace_log_rotate();
+}
+
 #if OVSDRIVER_CONFIG_INCLUDE_UCLI == 1
 void
 ind_ovs_kflow_print(ucli_context_t *uc, of_port_no_t port_no)
@@ -703,5 +796,38 @@ ind_ovs_kflow_print(ucli_context_t *uc, of_port_no_t port_no)
         }
         ucli_printf(uc, "%s \n", ind_ovs_dump_flow_str(kflow, kflow_str, sizeof(kflow_str)));
     }
+}
+
+void
+ind_ovs_kflow_trace(ucli_context_t *uc, int choice, of_port_no_t port_no)
+{
+    if (choice == 0) {
+        fclose(kflow_trace_fp);
+        kflow_trace_fp = NULL;
+        kflow_trace_port_no = OF_PORT_DEST_NONE;
+        kflow_trace_enabled = false;
+    } else if (choice == 1) {
+        kflow_trace_port_no = port_no;
+        kflow_trace_fp = fopen(KFLOW_TRACE_LOG_NAME, "a");
+        kflow_trace_enabled = true;
+    }
+
+    ucli_printf(uc, "kflow trace : %s\n", kflow_trace_enabled ? "on" : "off");
+    if (kflow_trace_port_no != OF_PORT_DEST_NONE) {
+        ucli_printf(uc, "kflow trace port: %u\n", kflow_trace_port_no);
+    }
+}
+
+void
+ind_ovs_kflow_trace_params(ucli_context_t *uc, int choice,
+                           uint32_t file_size, uint32_t file_count)
+{
+    if (choice == 1) {
+        kflow_trace_log_max_size = file_size;
+        kflow_trace_log_count = file_count;
+    }
+
+    ucli_printf(uc, "kflow_trace_log_max_size : %u\n", kflow_trace_log_max_size);
+    ucli_printf(uc, "kflow_trace_log_count : %u\n", kflow_trace_log_count);
 }
 #endif
