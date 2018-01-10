@@ -159,7 +159,7 @@ ind_ovs_kflow_add(const struct nlattr *key)
      * being inserted many more packets matching this kflow could have been
      * enqueued.
      */
-    if (kflow_match(&pkey) != NULL) {
+    if (kflow_lookup((struct nlattr *)key) != NULL || kflow_match(&pkey) != NULL) {
         debug_counter_inc(&add_exists);
         return INDIGO_ERROR_NONE;
     }
