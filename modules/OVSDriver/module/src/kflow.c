@@ -51,7 +51,7 @@ static bool kflow_expire_task_running;
 static FILE *kflow_trace_fp;
 static of_port_no_t kflow_trace_port_no;
 static bool kflow_trace_enabled;
-static uint32_t kflow_trace_log_max_size = 25*1024*1024;
+static uint32_t kflow_trace_log_max_size = 25 * MEGA_BYTE;
 static uint32_t kflow_trace_log_count = 2;
 
 
@@ -158,6 +158,11 @@ ind_ovs_kflow_add(const struct nlattr *key)
      * In the time between the packet being queued to userspace and the kflow
      * being inserted many more packets matching this kflow could have been
      * enqueued.
+     *
+     * Check for existing flows in hash table (kflow_lookup) along with tcam
+     * match (kflow_match). Also in some cases the kflow_match is returning
+     * false when matching an existing flow.
+     * FIXME: kflow_match() has to be investigated further.
      */
     if (kflow_lookup((struct nlattr *)key) != NULL || kflow_match(&pkey) != NULL) {
         debug_counter_inc(&add_exists);
@@ -352,6 +357,7 @@ ind_ovs_kflow_delete(struct ind_ovs_kflow *kflow)
     nla_put(msg, OVS_FLOW_ATTR_KEY, nla_len(kflow->key), nla_data(kflow->key));
     (void) ind_ovs_transact(msg);
 
+    /* Log FLOW_DELs when kflow trace is enabled */
     if (kflow_trace_enabled) {
         ind_ovs_kflow_trace_log(kflow, "FLOW_DEL");
     }
@@ -721,14 +727,15 @@ ind_ovs_kflow_module_init(void)
 }
 
 static void
-ind_ovs_kflow_trace_log_rotate()
+ind_ovs_kflow_trace_log_rotate(void)
 {
     struct stat fp_log_stat;
     if (stat(KFLOW_TRACE_LOG_NAME, &fp_log_stat) != -1) {
         if (fp_log_stat.st_size >= kflow_trace_log_max_size) {
+            const int bkp_log_name_len_xtra = 4;
             int debug_log_name_len = strlen(KFLOW_TRACE_LOG_NAME);
-            char* src = aim_malloc(debug_log_name_len + 16);
-            char* dst = aim_malloc(debug_log_name_len + 16);
+            char* src = aim_zmalloc(debug_log_name_len + bkp_log_name_len_xtra);
+            char* dst = aim_zmalloc(debug_log_name_len + bkp_log_name_len_xtra);
 
             int i;
 
@@ -758,7 +765,7 @@ ind_ovs_kflow_trace_log(struct ind_ovs_kflow *kflow, char *reason)
     struct tm *loctime;
     char lt[128];
 
-    if(kflow_trace_enabled == false || kflow_trace_fp == NULL) {
+    if (kflow_trace_enabled == false || kflow_trace_fp == NULL) {
         return;
     }
 
@@ -819,15 +826,15 @@ ind_ovs_kflow_trace(ucli_context_t *uc, int choice, of_port_no_t port_no)
 }
 
 void
-ind_ovs_kflow_trace_params(ucli_context_t *uc, int choice,
+ind_ovs_kflow_trace_params(ucli_context_t *uc, bool configured,
                            uint32_t file_size, uint32_t file_count)
 {
-    if (choice == 1) {
+    if (configured) {
         kflow_trace_log_max_size = file_size;
         kflow_trace_log_count = file_count;
     }
 
-    ucli_printf(uc, "kflow_trace_log_max_size : %u\n", kflow_trace_log_max_size);
+    ucli_printf(uc, "kflow_trace_log_max_size : %u MB\n", kflow_trace_log_max_size/MEGA_BYTE);
     ucli_printf(uc, "kflow_trace_log_count : %u\n", kflow_trace_log_count);
 }
 #endif

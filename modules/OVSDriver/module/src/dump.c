@@ -594,8 +594,8 @@ ind_ovs_dump_flow_json(struct ind_ovs_kflow *flow, char *flow_str, int flow_str_
     aim_snprintf(&flow_str[len], (flow_str_size - len),
                  "\"eth\":{ \"dst\":\"" FORMAT_MAC "\", \"src\":\"" FORMAT_MAC
                  "\", \"type\":\"0x%04x\"}",
-                 VALUE_MAC(pkey.ethernet.eth_src),
-                 VALUE_MAC(pkey.ethernet.eth_dst), ntohs(pkey.ethertype));
+                 VALUE_MAC(pkey.ethernet.eth_dst),
+                 VALUE_MAC(pkey.ethernet.eth_src), ntohs(pkey.ethertype));
 
     if (pkey.vlan) {
         len = strnlen(flow_str, flow_str_size);

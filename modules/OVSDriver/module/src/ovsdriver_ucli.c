@@ -92,8 +92,7 @@ ovsdriver_ucli_ucli__kflow_trace__(ucli_context_t* uc)
                                 &choice, "option", 3, "off", "on", "status", &of_port);
         ind_ovs_kflow_trace(uc, choice, of_port);
     } else {
-        ucli_printf(uc, " Usage: kflow-trace [on|off|status]\n");
-        ucli_printf(uc, "        kflow-trace on [of_port]\n");
+        ucli_printf(uc, " Usage: kflow-trace [on [of_port]|off|status]\n");
     }
     return UCLI_STATUS_OK;
 }
@@ -105,16 +104,24 @@ ovsdriver_ucli_ucli__kflow_trace_params__(ucli_context_t* uc)
 
     UCLI_COMMAND_INFO(uc, "kflow-trace-params", -1,
                       "$summary#Configure kflow trace log file size and count."
-                      "$args#<size> <count>");
+                      "$args#[<size> <count>]");
 
     if (uc->pargs->count == 0) {
-        ind_ovs_kflow_trace_params(uc, 0, size, count);
+        ind_ovs_kflow_trace_params(uc, false, size, count);
+        return UCLI_STATUS_OK;
     } else if (uc->pargs->count == 2) {
         UCLI_ARGPARSE_OR_RETURN(uc, "ii", &size, &count);
-        ind_ovs_kflow_trace_params(uc, 1, size, count);
-    } else {
-        ucli_printf(uc, " Usage: kflow-trace-params <size> <count>\n");
+
+        if (size >= 5 && size <= 50 &&
+            count >= 1 && count <= 9) {
+            ind_ovs_kflow_trace_params(uc, true, size*MEGA_BYTE, count);
+            return UCLI_STATUS_OK;
+        }
     }
+
+    ucli_printf(uc, " Usage: kflow-trace-params [<size-in-mb> <count>]\n");
+    ucli_printf(uc, "        <size> range 5 MBytes to 50 MBytes\n");
+    ucli_printf(uc, "        <count> range 1 to 9\n");
     return UCLI_STATUS_OK;
 }
 
