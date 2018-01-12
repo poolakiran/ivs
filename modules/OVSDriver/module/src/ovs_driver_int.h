@@ -48,6 +48,8 @@
 
 #define IND_OVS_NUM_TABLES 32
 
+#define MEGA_BYTE (1024 * 1024)
+
 /*
  * Special pre-created ports.
  */
@@ -184,6 +186,9 @@ void ind_ovs_kflow_flush(void);
 void ind_ovs_kflow_module_init(void);
 #if OVSDRIVER_CONFIG_INCLUDE_UCLI == 1
 void ind_ovs_kflow_print(ucli_context_t *uc, of_port_no_t port_no);
+void ind_ovs_kflow_trace(ucli_context_t *uc, int choice, of_port_no_t port_no);
+void ind_ovs_kflow_trace_params(ucli_context_t *uc, bool configured,
+                                uint32_t file_size, uint32_t file_count);
 #endif
 
 /* Management of the port set */
@@ -249,6 +254,7 @@ void ind_ovs_dump_sample_attr(const struct nlattr *nla);
 void ind_ovs_dump_action_attr(const struct nlattr *nla);
 void ind_ovs_dump_key(const struct nlattr *key);
 char * ind_ovs_dump_flow_str(struct ind_ovs_kflow *flow, char *flow_str, int flow_str_size);
+char * ind_ovs_dump_flow_json(struct ind_ovs_kflow *flow, char *flow_str, int flow_str_size);
 
 /* Return the name of the given generic netlink command. */
 const char *ind_ovs_cmd_str(int family, uint8_t cmd);

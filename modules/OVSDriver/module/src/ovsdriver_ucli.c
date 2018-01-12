@@ -70,6 +70,61 @@ ovsdriver_ucli_ucli__kflow__(ucli_context_t* uc)
     return UCLI_STATUS_OK;
 }
 
+static ucli_status_t
+ovsdriver_ucli_ucli__kflow_trace__(ucli_context_t* uc)
+{
+    int choice = 2;
+
+    UCLI_COMMAND_INFO(uc, "kflow-trace", -1,
+                      "$summary#Log kflow traces for given/all ports."
+                      "$args#[on|off|status] [of-port]");
+
+    if (uc->pargs->count == 0) {
+        ind_ovs_kflow_trace(uc, choice, OF_PORT_DEST_NONE);
+    } else if (uc->pargs->count == 1) {
+        UCLI_ARGPARSE_OR_RETURN(uc, "{choice}",
+                                &choice, "option", 3, "off", "on", "status");
+        ind_ovs_kflow_trace(uc, choice, OF_PORT_DEST_NONE);
+    } else if (uc->pargs->count == 2) {
+        of_port_no_t of_port;
+
+        UCLI_ARGPARSE_OR_RETURN(uc, "{choice}i",
+                                &choice, "option", 3, "off", "on", "status", &of_port);
+        ind_ovs_kflow_trace(uc, choice, of_port);
+    } else {
+        ucli_printf(uc, " Usage: kflow-trace [on [of_port]|off|status]\n");
+    }
+    return UCLI_STATUS_OK;
+}
+
+static ucli_status_t
+ovsdriver_ucli_ucli__kflow_trace_params__(ucli_context_t* uc)
+{
+    uint32_t size = 0, count = 0;
+
+    UCLI_COMMAND_INFO(uc, "kflow-trace-params", -1,
+                      "$summary#Configure kflow trace log file size and count."
+                      "$args#[<size> <count>]");
+
+    if (uc->pargs->count == 0) {
+        ind_ovs_kflow_trace_params(uc, false, size, count);
+        return UCLI_STATUS_OK;
+    } else if (uc->pargs->count == 2) {
+        UCLI_ARGPARSE_OR_RETURN(uc, "ii", &size, &count);
+
+        if (size >= 5 && size <= 50 &&
+            count >= 1 && count <= 9) {
+            ind_ovs_kflow_trace_params(uc, true, size*MEGA_BYTE, count);
+            return UCLI_STATUS_OK;
+        }
+    }
+
+    ucli_printf(uc, " Usage: kflow-trace-params [<size-in-mb> <count>]\n");
+    ucli_printf(uc, "        <size> range 5 MBytes to 50 MBytes\n");
+    ucli_printf(uc, "        <count> range 1 to 9\n");
+    return UCLI_STATUS_OK;
+}
+
 /* <auto.ucli.handlers.start> */
 /******************************************************************************
  *
@@ -82,6 +137,8 @@ static ucli_command_handler_f ovsdriver_ucli_ucli_handlers__[] =
     ovsdriver_ucli_ucli__upcall__,
     ovsdriver_ucli_ucli__port__,
     ovsdriver_ucli_ucli__kflow__,
+    ovsdriver_ucli_ucli__kflow_trace__,
+    ovsdriver_ucli_ucli__kflow_trace_params__,
     NULL
 };
 /******************************************************************************/

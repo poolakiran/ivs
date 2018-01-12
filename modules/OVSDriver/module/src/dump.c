@@ -575,3 +575,89 @@ ind_ovs_dump_flow_str(struct ind_ovs_kflow *flow, char *flow_str, int flow_str_s
     output_actions_str(flow->actions, flow_str, flow_str_size);
     return flow_str;
 }
+
+char *
+ind_ovs_dump_flow_json(struct ind_ovs_kflow *flow, char *flow_str, int flow_str_size)
+{
+    int len;
+    struct ind_ovs_parsed_key pkey;
+
+    ind_ovs_parse_key(flow->key, &pkey);
+
+    memset(flow_str, 0, flow_str_size);
+
+    len = strnlen(flow_str, flow_str_size);
+    aim_snprintf(&flow_str[len], (flow_str_size - len),
+                 "\"key\":{ \"in_port\":%u, ", pkey.in_port);
+
+    len = strnlen(flow_str, flow_str_size);
+    aim_snprintf(&flow_str[len], (flow_str_size - len),
+                 "\"eth\":{ \"dst\":\"" FORMAT_MAC "\", \"src\":\"" FORMAT_MAC
+                 "\", \"type\":\"0x%04x\"}",
+                 VALUE_MAC(pkey.ethernet.eth_dst),
+                 VALUE_MAC(pkey.ethernet.eth_src), ntohs(pkey.ethertype));
+
+    if (pkey.vlan) {
+        len = strnlen(flow_str, flow_str_size);
+        aim_snprintf(&flow_str[len], (flow_str_size - len),
+                     ", \"vlan\":{\"id\":%u, \"pcp\":%u}",
+                     VLAN_VID(ntohs(pkey.vlan)), VLAN_PCP(ntohs(pkey.vlan)));
+    }
+
+    if (ATTR_BITMAP_TEST(pkey.populated, OVS_KEY_ATTR_IPV4)) {
+        len = strnlen(flow_str, flow_str_size);
+        aim_snprintf(&flow_str[len], (flow_str_size - len),
+                     ", \"ipv4\":{\"src\":\"" FORMAT_IPV4 "\", \"dst\":\"" FORMAT_IPV4
+                     "\", \"proto\":%u, \"tos\":%u, \"ttl\":%u, \"frag\":%u}",
+                     VALUE_IPV4((uint8_t *)&pkey.ipv4.ipv4_src),
+                     VALUE_IPV4((uint8_t *)&pkey.ipv4.ipv4_dst),
+                     pkey.ipv4.ipv4_proto, pkey.ipv4.ipv4_tos,
+                     pkey.ipv4.ipv4_ttl, pkey.ipv4.ipv4_frag);
+    }
+
+    if (ATTR_BITMAP_TEST(pkey.populated, OVS_KEY_ATTR_TCP)) {
+        len = strnlen(flow_str, flow_str_size);
+        aim_snprintf(&flow_str[len], (flow_str_size - len),
+                     ", \"tcp\":{\"src\":%u, \"dst\":%u}",
+                     ntohs(pkey.tcp.tcp_src), ntohs(pkey.tcp.tcp_dst));
+    }
+
+    if (ATTR_BITMAP_TEST(pkey.populated, OVS_KEY_ATTR_UDP)) {
+        len = strnlen(flow_str, flow_str_size);
+        aim_snprintf(&flow_str[len], (flow_str_size - len),
+                     ", \"udp\":{\"src\":%u, \"dst\":%u}",
+                     ntohs(pkey.udp.udp_src), ntohs(pkey.udp.udp_dst));
+    }
+
+    if (ATTR_BITMAP_TEST(pkey.populated, OVS_KEY_ATTR_ICMP)) {
+        len = strnlen(flow_str, flow_str_size);
+        aim_snprintf(&flow_str[len], (flow_str_size - len),
+                     ", \"icmp\":{\"type\":%u, \"code\":%u}",
+                     pkey.icmp.icmp_type, pkey.icmp.icmp_code);
+    }
+
+    if (ATTR_BITMAP_TEST(pkey.populated, OVS_KEY_ATTR_ICMPV6)) {
+        len = strnlen(flow_str, flow_str_size);
+        aim_snprintf(&flow_str[len], (flow_str_size - len),
+                     ", \"icmpv6\":{\"type\":%u, \"code\":%u}",
+                     pkey.icmpv6.icmpv6_type, pkey.icmpv6.icmpv6_code);
+    }
+
+    if (ATTR_BITMAP_TEST(pkey.populated, OVS_KEY_ATTR_ARP)) {
+        len = strnlen(flow_str, flow_str_size);
+        aim_snprintf(&flow_str[len], (flow_str_size - len),
+                    ", \"arp\":{\"op\":%u, \"spa\":\"" FORMAT_IPV4 "\", \"tpa\":\"" FORMAT_IPV4
+                    "\", \"sha\":\"" FORMAT_MAC "\", \"tha\":\""FORMAT_MAC "\"}",
+                     ntohs(pkey.arp.arp_op),
+                     VALUE_IPV4((uint8_t *)&pkey.arp.arp_sip),
+                     VALUE_IPV4((uint8_t *)&pkey.arp.arp_tip),
+                     VALUE_MAC(pkey.arp.arp_sha), VALUE_MAC(pkey.arp.arp_tha));
+    }
+
+    len = strnlen(flow_str, flow_str_size);
+    aim_snprintf(&flow_str[len], (flow_str_size - len),
+                 "}, \"stats\":{\"pkts\":%" PRIu64 ", \"bytes\":%" PRIu64 "}",
+                 flow->stats.packets, flow->stats.bytes);
+
+    return flow_str;
+}
