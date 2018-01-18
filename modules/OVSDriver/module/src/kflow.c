@@ -86,6 +86,8 @@ DEBUG_COUNTER(missed, "ovsdriver.kflow.missed", "Packet missed in the kernel flo
 DEBUG_COUNTER(lost, "ovsdriver.kflow.lost", "Packet lost due to full upcall socket");
 DEBUG_COUNTER(mask_hit, "ovsdriver.kflow.mask_hit", "Mask used for flow lookup");
 DEBUG_COUNTER(masks, "ovsdriver.kflow.masks", "Number of kernel flow masks");
+DEBUG_COUNTER(del_nonexisting_port, "ovsdriver.kflow.del_nonexisting_port",
+              "Number of kernel flows on non-existing ports or flows not tracked on ports");
 
 static inline uint32_t
 key_hash(const struct nlattr *key)
@@ -343,8 +345,10 @@ static void
 ind_ovs_kflow_delete(struct ind_ovs_kflow *kflow)
 {
     struct ind_ovs_port *port = ind_ovs_ports[kflow->in_port];
-    if (port) {
+    if (port && port->num_kflows) {
         port->num_kflows--;
+    } else {
+        debug_counter_inc(&del_nonexisting_port);
     }
 
     /*
