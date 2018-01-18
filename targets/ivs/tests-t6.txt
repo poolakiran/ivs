@@ -38,7 +38,7 @@ standard
 ^mtest.fabric_span_forwarding
 ^qos_acl
 ^ospf
-^forwarding.QinQEgressUntagPort
-^forwarding.QinQEgressVlanXlate
-^forwarding.QinQIngressVlanXlate
-^forwarding.QinQVlanXlateBroadcast
+^t6-forwarding.QinQEgressUntagPort
+^t6-forwarding.QinQEgressVlanXlate
+^t6-forwarding.QinQIngressVlanXlate
+^t6-forwarding.QinQVlanXlateBroadcast
