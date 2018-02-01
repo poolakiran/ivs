@@ -1,3 +1,9 @@
+ivs (4.7.0) unstable; urgency=low
+
+  * New upstream version
+
+ -- Kiran Poola <kiran@sbs5.hw.bigswitch.com>  Wed, 31 Jan 2018 16:23:34 -0800
+
 ivs (4.6.0) unstable; urgency=low
 
   * New upstream version
