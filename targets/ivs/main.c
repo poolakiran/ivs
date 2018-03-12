@@ -225,6 +225,7 @@ parse_options(int argc, char **argv)
             {"max-flows",   required_argument, 0,  OPT_MAX_FLOWS },
             {"config-file", required_argument, 0,  'f' },
             {"openflow-version", required_argument, 0, 'V' },
+            {"flow-trace", no_argument,       0,  'F' },
             {0,             0,                 0,  0 }
         };
 
@@ -265,6 +266,10 @@ parse_options(int argc, char **argv)
 
         case 'V':
             openflow_version = optarg;
+            break;
+
+        case 'F':
+            ind_ovs_kflow_trace_enabled_set(true);
             break;
 
         case OPT_NAME:
