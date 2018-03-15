@@ -49,7 +49,7 @@ static struct tcam *megaflow_tcam;
 
 static bool kflow_expire_task_running;
 static FILE *kflow_trace_fp;
-static of_port_no_t kflow_trace_port_no;
+static of_port_no_t kflow_trace_port_no = OF_PORT_DEST_NONE;
 static bool kflow_trace_enabled;
 static uint32_t kflow_trace_log_max_size = 25 * MEGA_BYTE;
 static uint32_t kflow_trace_log_count = 2;
@@ -780,13 +780,21 @@ ind_ovs_kflow_trace_log(struct ind_ovs_kflow *kflow, char *reason)
         return;
     }
 
+    char hostname[256];
+    if (getenv("IVS_HOSTNAME") != NULL) {
+        const char *host = getenv("IVS_HOSTNAME");
+        strncpy(hostname, host, sizeof(hostname));
+    } else {
+        gethostname(hostname, sizeof(hostname));
+    }
+
     gettimeofday(&timeval, NULL);
     loctime = localtime(&timeval.tv_sec);
     strftime(lt, sizeof(lt), "%FT%T", loctime);
 
     char kflow_str[2048];
-    fprintf(kflow_trace_fp, "{\"time\":\"%s.%.06d\", %s, \"reason\":\"%s\"}\n",
-            lt, (int)timeval.tv_usec,
+    fprintf(kflow_trace_fp, "{\"time\":\"%s.%.06d\", \"host\":\"%s\", %s, \"reason\":\"%s\"}\n",
+            lt, (int)timeval.tv_usec, hostname,
             ind_ovs_dump_flow_json(kflow, kflow_str, sizeof(kflow_str)), reason);
     fflush(kflow_trace_fp);
 
@@ -810,17 +818,27 @@ ind_ovs_kflow_print(ucli_context_t *uc, of_port_no_t port_no)
 }
 
 void
+ind_ovs_kflow_trace_enabled_set(bool status)
+{
+    if (status) {
+        kflow_trace_fp = fopen(KFLOW_TRACE_LOG_NAME, "a");
+    } else {
+        fclose(kflow_trace_fp);
+        kflow_trace_fp = NULL;
+    }
+
+    kflow_trace_enabled = status;
+}
+
+void
 ind_ovs_kflow_trace(ucli_context_t *uc, int choice, of_port_no_t port_no)
 {
     if (choice == 0) {
-        fclose(kflow_trace_fp);
-        kflow_trace_fp = NULL;
         kflow_trace_port_no = OF_PORT_DEST_NONE;
-        kflow_trace_enabled = false;
+        ind_ovs_kflow_trace_enabled_set(false);
     } else if (choice == 1) {
         kflow_trace_port_no = port_no;
-        kflow_trace_fp = fopen(KFLOW_TRACE_LOG_NAME, "a");
-        kflow_trace_enabled = true;
+        ind_ovs_kflow_trace_enabled_set(true);
     }
 
     ucli_printf(uc, "kflow trace : %s\n", kflow_trace_enabled ? "on" : "off");
