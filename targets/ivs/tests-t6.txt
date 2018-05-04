@@ -42,3 +42,5 @@ standard
 ^t6-forwarding.QinQEgressVlanXlate
 ^t6-forwarding.QinQIngressVlanXlate
 ^t6-forwarding.QinQVlanXlateBroadcast
+^directed_broadcast
+^vxlan
