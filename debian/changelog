@@ -1,9 +1,3 @@
-ivs (5.0.0) unstable; urgency=low
-
-  * New upstream version
-
- -- Kiran Poola <kiran@ubuntu>  Thu, 03 May 2018 19:59:17 -0700
-
 ivs (4.7.0) unstable; urgency=low
 
   * New upstream version
