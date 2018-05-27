@@ -34,6 +34,24 @@
 #include <net/if.h>
 #endif
 
+/* Hash table to lookup port from netlink socket local port (pid) */
+struct port_nl_data {
+    bighash_entry_t hash_entry;
+    uint32_t nl_local_port;
+    struct ind_ovs_port *port;
+    int32_t drops;
+    uint32_t drop_occurances;
+};
+#define TEMPLATE_NAME port_nl_hashtable
+#define TEMPLATE_OBJ_TYPE struct port_nl_data
+#define TEMPLATE_KEY_FIELD nl_local_port
+#define TEMPLATE_ENTRY_FIELD hash_entry
+#include <BigHash/bighash_template.h>
+
+static int port_nl_monitor_interval = 10; /* seconds */
+static int port_nl_drop_tolerance = 3;
+
+static bighash_table_t *port_nl_hashtable;
 struct ind_ovs_port *ind_ovs_ports[IND_OVS_MAX_PORTS];  /**< Table of all ports */
 
 static struct nl_sock *route_cache_sock;
@@ -47,6 +65,11 @@ static void port_desc_set(of_port_desc_t *of_port_desc, of_port_no_t of_port_num
 static void alloc_port_counters(struct ind_ovs_port_counters *pcounters);
 static void free_port_counters(struct ind_ovs_port_counters *pcounters);
 static uint64_t get_packet_stats(struct stats_handle *handle);
+static indigo_error_t port_nl_socket_reset(struct ind_ovs_port *port);
+static void port_nl_data_add(struct ind_ovs_port *port);
+static struct port_nl_data * port_nl_data_lookup(uint32_t nl_local_port);
+static void port_nl_data_del(struct ind_ovs_port *port);
+static void port_nl_socket_monitor(void *cookie);
 
 aim_ratelimiter_t nl_cache_refill_limiter;
 
@@ -65,6 +88,8 @@ DEBUG_COUNTER(modify, "ovsdriver.vport.modify", "Received port modify notificati
 DEBUG_COUNTER(modify_notify_failed, "ovsdriver.vport.modify_notify_failed", "Failed to notify controller of modified port");
 DEBUG_COUNTER(link_change, "ovsdriver.vport.link_change", "Received link change notification");
 DEBUG_COUNTER(resync, "ovsdriver.vport.resync", "Needed to resync netlink cache");
+DEBUG_COUNTER(nl_reset, "ovsdriver.vport.nl_reset", "Port netlink socket reset");
+DEBUG_COUNTER(nl_reset_failed, "ovsdriver.vport.nl_reset_failed", "Error resetting port netlink socket");
 
 /*
  * Truncate the object to its initial length.
@@ -376,6 +401,8 @@ ind_ovs_port_added(uint32_t port_no, const char *ifname,
     if (port->is_uplink) {
         ind_ovs_uplink_reselect();
     }
+
+    port_nl_data_add(port);
     return;
 
 cleanup_port:
@@ -419,6 +446,8 @@ ind_ovs_port_deleted(uint32_t port_no)
     }
 
     bool was_uplink = port->is_uplink;
+
+    port_nl_data_del(port);
 
     debug_counter_inc(&delete);
 
@@ -1154,11 +1183,136 @@ ind_ovs_port_init(void)
     if ((nlerr = rtnl_link_alloc_cache(route_cache_refill_sock, AF_UNSPEC, &link_stats_cache)) < 0) {
         AIM_DIE("rtnl_link_alloc_cache failed: %s", nl_geterror(nlerr));
     }
+
+    port_nl_hashtable = bighash_table_create(1024);
+    ind_soc_timer_event_register(port_nl_socket_monitor, NULL, port_nl_monitor_interval*1000);
+
+}
+
+static indigo_error_t
+port_nl_socket_reset(struct ind_ovs_port *port)
+{
+    AIM_ASSERT(port);
+
+    AIM_LOG_VERBOSE("Resetting netlink socket for %s", port->ifname);
+
+    /* Free the exisitng socket and port_nl_data */
+    if (port->notify_socket) {
+        port_nl_data_del(port);
+        nl_socket_free(port->notify_socket);
+    }
+
+    /* Recreate the socket */
+    port->notify_socket = ind_ovs_create_nlsock();
+    if (port->notify_socket == NULL) {
+        AIM_LOG_ERROR("Error creating nlsocket for %s\n", port->ifname);
+        debug_counter_inc(&nl_reset_failed);
+        return INDIGO_ERROR_UNKNOWN;
+    }
+
+    struct nl_msg *msg = ind_ovs_create_nlmsg(ovs_vport_family, OVS_VPORT_CMD_SET);
+    nla_put_u32(msg, OVS_VPORT_ATTR_PORT_NO, port->dp_port_no);
+    nla_put_u32(msg, OVS_VPORT_ATTR_UPCALL_PID,
+            nl_socket_get_local_port(port->notify_socket));
+    if (ind_ovs_transact(msg) != INDIGO_ERROR_NONE) {
+        AIM_LOG_ERROR("Error configuring %s", port->ifname);
+        debug_counter_inc(&nl_reset_failed);
+        return INDIGO_ERROR_UNKNOWN;
+    }
+
+    port_nl_data_add(port);
+    debug_counter_inc(&nl_reset);
+    port->nl_reset_count++;
+
+    return INDIGO_ERROR_NONE;
+}
+
+static void
+port_nl_data_add(struct ind_ovs_port *port)
+{
+    struct port_nl_data *entry = aim_zmalloc(sizeof(struct port_nl_data));
+
+    entry->nl_local_port = nl_socket_get_local_port(port->notify_socket);
+    entry->port = port;
+
+    port_nl_hashtable_insert(port_nl_hashtable, entry);
+}
+
+static struct port_nl_data *
+port_nl_data_lookup(uint32_t nl_local_port)
+{
+    return port_nl_hashtable_first(port_nl_hashtable, &nl_local_port);
+}
+
+static void
+port_nl_data_del(struct ind_ovs_port *port)
+{
+    struct port_nl_data *entry = port_nl_data_lookup(nl_socket_get_local_port(port->notify_socket));
+
+    if (entry) {
+        bighash_remove(port_nl_hashtable, &entry->hash_entry);
+    }
+}
+
+/* Parse /proc/net/netlink to check if any port netlink socket has drops.
+ * If so reset the netlink socket of that port.
+ */
+static void
+port_nl_socket_monitor(void *cookie)
+{
+    char line[1024];
+    FILE *fp = fopen("/proc/net/netlink", "r");
+
+    if (!fp) {
+        return;
+    }
+
+    /* Skip the header */
+    if (fgets(line, sizeof(line), fp) == NULL) {
+        fclose(fp);
+        return;
+    }
+
+    char *sk;
+    int32_t eth, rmem, wmem,dump, locks, drops;
+    uint32_t local_port, groups;
+    struct port_nl_data *entry;
+    bool upcall_respawn = false;
+
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        if (sscanf(line, "%p %d %u %x %d %d %d %d %d",
+                   &sk, &eth, &local_port, &groups, &rmem,
+                   &wmem, &dump, &locks, &drops) != 9) {
+            break;
+        }
+
+        if (drops && (entry = port_nl_data_lookup(local_port))) {
+            if (entry->drops != drops) {
+                entry->drop_occurances++;
+            } else {
+                entry->drop_occurances = 0;
+            }
+
+            if (entry->drop_occurances >= port_nl_drop_tolerance) {
+                port_nl_socket_reset(entry->port);
+                upcall_respawn = true;
+            }
+        }
+    }
+
+    fclose(fp);
+
+    /* Respawn the upcall workers to use new netlink sockets */
+    if (upcall_respawn) {
+        ind_ovs_upcall_respawn();
+    }
 }
 
 void
 ind_ovs_port_finish(void)
 {
+        ind_soc_timer_event_unregister(port_nl_socket_monitor, NULL);
+        bighash_table_destroy(port_nl_hashtable, NULL);
         ind_soc_socket_unregister(nl_cache_mngr_get_fd(route_cache_mngr));
         nl_cache_mngr_free(route_cache_mngr);
         nl_socket_free(route_cache_sock);
@@ -1247,6 +1401,19 @@ ind_ovs_print_one_port_info(ucli_context_t *uc, struct ind_ovs_port *port)
                 (port->no_packet_in? "  NoPktin":""), (port->no_flood? "  NoFlood":""));
 }
 
+static void
+ind_ovs_print_one_port_nl_info(ucli_context_t *uc, struct ind_ovs_port *port)
+{
+    ucli_printf(uc, "%d  %s reset_count %"PRIu64" notify_socket %p nl_fd %d "
+                "local_port %u peer_port %u peer_groups %u\n",
+                port->dp_port_no, port->ifname, port->nl_reset_count,
+                port->notify_socket, nl_socket_get_fd(port->notify_socket),
+                nl_socket_get_local_port(port->notify_socket),
+                nl_socket_get_peer_port(port->notify_socket),
+                nl_socket_get_peer_groups(port->notify_socket));
+}
+
+
 void
 ind_ovs_port_info_print(ucli_context_t *uc, of_port_no_t port_no)
 {
@@ -1257,6 +1424,7 @@ ind_ovs_port_info_print(ucli_context_t *uc, of_port_no_t port_no)
         port = ind_ovs_port_lookup(port_no);
         if (port) {
            ind_ovs_print_one_port_info(uc, port);
+           ind_ovs_print_one_port_nl_info(uc, port);
         }
     } else {
         for (i = 0; i < IND_OVS_MAX_PORTS; i++) {
@@ -1265,6 +1433,64 @@ ind_ovs_port_info_print(ucli_context_t *uc, of_port_no_t port_no)
                 ind_ovs_print_one_port_info(uc, port);
             }
         }
+
+        ucli_printf(uc, "\n\n");
+
+        for (i = 0; i < IND_OVS_MAX_PORTS; i++) {
+            port = ind_ovs_ports[i];
+            if (port) {
+                ind_ovs_print_one_port_nl_info(uc, port);
+            }
+        }
     }
+}
+
+void
+ind_ovs_port_nl_socket_reset(ucli_context_t *uc, of_port_no_t port_no)
+{
+    int i;
+    struct ind_ovs_port *port;
+
+    if (port_no != OF_PORT_DEST_NONE) {
+        port = ind_ovs_port_lookup(port_no);
+        if (port) {
+            if (port_nl_socket_reset(port) != INDIGO_ERROR_NONE) {
+                ucli_printf(uc, "Error resetting nl socket for %s\n",
+                            port->ifname);
+            }
+        }
+    } else {
+        for (i = 0; i < IND_OVS_MAX_PORTS; i++) {
+            port = ind_ovs_ports[i];
+            if (!port) {
+                continue;
+            }
+
+            if (port_nl_socket_reset(port) != INDIGO_ERROR_NONE) {
+                ucli_printf(uc, "Error resetting nl socket for %s\n",
+                            port->ifname);
+            }
+        }
+    }
+
+    ind_ovs_upcall_respawn();
+}
+
+void
+ind_ovs_port_nl_socket_reset_params(ucli_context_t *uc, int interval, int tolerance)
+{
+    if (interval > 0 && tolerance > 0) {
+        if (interval == 0) {
+            ind_soc_timer_event_unregister(port_nl_socket_monitor, NULL);
+        } else {
+            port_nl_monitor_interval = (interval > 100) ? 100 : interval;
+            ind_soc_timer_event_register(port_nl_socket_monitor, NULL, port_nl_monitor_interval*1000);
+        }
+
+        port_nl_drop_tolerance = (tolerance > 100) ? 100 : tolerance;
+    }
+
+    ucli_printf(uc, "monitor_interval : %d\n", port_nl_monitor_interval);
+    ucli_printf(uc, "drop_tolerance : %d\n", port_nl_drop_tolerance);
 }
 #endif

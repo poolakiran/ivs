@@ -54,6 +54,42 @@ ovsdriver_ucli_ucli__port__(ucli_context_t* uc)
 }
 
 static ucli_status_t
+ovsdriver_ucli_ucli__port_nl_reset__(ucli_context_t* uc)
+{
+    UCLI_COMMAND_INFO(uc, "port_nl_reset", -1,
+                      "$summary# Reinitialize netlink socket for given/all ports.");
+
+    if (uc->pargs->count == 0) {
+        ind_ovs_port_nl_socket_reset(uc, OF_PORT_DEST_NONE);
+    } else if (uc->pargs->count == 1) {
+        of_port_no_t of_port;
+
+        UCLI_ARGPARSE_OR_RETURN(uc, "i", &of_port);
+        ind_ovs_port_nl_socket_reset(uc, of_port);
+    }
+    return UCLI_STATUS_OK;
+}
+
+static ucli_status_t
+ovsdriver_ucli_ucli__port_nl_reset_params__(ucli_context_t* uc)
+{
+    UCLI_COMMAND_INFO(uc, "port_nl_reset_params", -1,
+                      "$summary# Configure monitor_interval and drop_tolerance"
+                      "$args#[monitor_interval] [drop_tolerance]");
+
+    if (uc->pargs->count == 2) {
+        int interval, tolerance;
+        UCLI_ARGPARSE_OR_RETURN(uc, "ii", &interval, &tolerance);
+        ind_ovs_port_nl_socket_reset_params(uc, interval, tolerance);
+    } else {
+        ucli_printf(uc, "Usage: port_nl_reset_params "
+                    "<monitor_interval in secs> <drop_tolerance>\n");
+        ind_ovs_port_nl_socket_reset_params(uc, -1, -1);
+    }
+    return UCLI_STATUS_OK;
+}
+
+static ucli_status_t
 ovsdriver_ucli_ucli__kflow__(ucli_context_t* uc)
 {
     UCLI_COMMAND_INFO(uc, "kflow", -1,
@@ -136,6 +172,8 @@ static ucli_command_handler_f ovsdriver_ucli_ucli_handlers__[] =
 {
     ovsdriver_ucli_ucli__upcall__,
     ovsdriver_ucli_ucli__port__,
+    ovsdriver_ucli_ucli__port_nl_reset__,
+    ovsdriver_ucli_ucli__port_nl_reset_params__,
     ovsdriver_ucli_ucli__kflow__,
     ovsdriver_ucli_ucli__kflow_trace__,
     ovsdriver_ucli_ucli__kflow_trace_params__,
