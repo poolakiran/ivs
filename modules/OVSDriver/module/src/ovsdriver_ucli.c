@@ -60,6 +60,7 @@ ovsdriver_ucli_ucli__port_nl_reset__(ucli_context_t* uc)
                       "$summary# Reinitialize netlink socket for given/all ports.");
 
     if (uc->pargs->count == 0) {
+        /* Reset netlink socket of all ports */
         ind_ovs_port_nl_socket_reset(uc, OF_PORT_DEST_NONE);
     } else if (uc->pargs->count == 1) {
         of_port_no_t of_port;
@@ -83,7 +84,9 @@ ovsdriver_ucli_ucli__port_nl_reset_params__(ucli_context_t* uc)
         ind_ovs_port_nl_socket_reset_params(uc, interval, tolerance);
     } else {
         ucli_printf(uc, "Usage: port_nl_reset_params "
-                    "<monitor_interval in secs> <drop_tolerance>\n");
+                    "<monitor_interval> <drop_tolerance>\n");
+        ucli_printf(uc, "<monitor_interval> Periodic timer(in secs) to check drops\n");
+        ucli_printf(uc, "<drop_tolerance> Number of cosecutive drop iterations to reset nl socket\n");
         ind_ovs_port_nl_socket_reset_params(uc, -1, -1);
     }
     return UCLI_STATUS_OK;

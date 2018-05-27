@@ -40,7 +40,7 @@ struct port_nl_data {
     uint32_t nl_local_port;
     struct ind_ovs_port *port;
     int32_t drops;
-    uint32_t drop_occurances;
+    uint32_t drop_occurences;
 };
 #define TEMPLATE_NAME port_nl_hashtable
 #define TEMPLATE_OBJ_TYPE struct port_nl_data
@@ -1288,12 +1288,13 @@ port_nl_socket_monitor(void *cookie)
 
         if (drops && (entry = port_nl_data_lookup(local_port))) {
             if (entry->drops != drops) {
-                entry->drop_occurances++;
+                entry->drops = drops;
+                entry->drop_occurences++;
             } else {
-                entry->drop_occurances = 0;
+                entry->drop_occurences = 0;
             }
 
-            if (entry->drop_occurances >= port_nl_drop_tolerance) {
+            if (entry->drop_occurences >= port_nl_drop_tolerance) {
                 port_nl_socket_reset(entry->port);
                 upcall_respawn = true;
             }
@@ -1412,7 +1413,6 @@ ind_ovs_print_one_port_nl_info(ucli_context_t *uc, struct ind_ovs_port *port)
                 nl_socket_get_peer_port(port->notify_socket),
                 nl_socket_get_peer_groups(port->notify_socket));
 }
-
 
 void
 ind_ovs_port_info_print(ucli_context_t *uc, of_port_no_t port_no)
