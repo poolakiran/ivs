@@ -127,6 +127,7 @@ struct ind_ovs_port {
     uint64_t generation_id;
     uint64_t link_up_count;
     uint64_t link_down_count;
+    uint64_t nl_reset_count;
 };
 
 /*
@@ -200,6 +201,8 @@ struct ind_ovs_port *ind_ovs_port_lookup(of_port_no_t port_no);
 struct ind_ovs_port *ind_ovs_port_lookup_by_name(const char *ifname);
 #if OVSDRIVER_CONFIG_INCLUDE_UCLI == 1
 void ind_ovs_port_info_print(ucli_context_t *uc, of_port_no_t port_no);
+void ind_ovs_port_nl_socket_reset(ucli_context_t *uc, of_port_no_t port_no);
+void ind_ovs_port_nl_socket_reset_params(ucli_context_t *uc, int interval, int tolerance);
 #endif
 
 /* Interface of the uplink submodule */
