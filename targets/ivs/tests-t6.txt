@@ -1,5 +1,7 @@
 standard
 
+^nat
+
 # Not yet passing
 ^pktin.CDP
 ^mtest.arp_offload
