@@ -37,7 +37,7 @@ parse_key(of_list_bsn_tlv_t *tlvs, struct ipv4_multicast_key *key)
     of_object_t tlv;
     memset(key, 0, sizeof(*key));
 
-    if (of_list_bsn_tlv_first(tlvs, &tlv) < 0) {
+    if (of_list_bsn_tlv_first(tlvs, &tlv) != OF_ERROR_NONE ) {
         AIM_LOG_ERROR("expected multicast_interface_id key TLV, instead got end of list");
         return INDIGO_ERROR_PARAM;
     }
@@ -49,7 +49,7 @@ parse_key(of_list_bsn_tlv_t *tlvs, struct ipv4_multicast_key *key)
         return INDIGO_ERROR_PARAM;
     }
 
-    if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
+    if (of_list_bsn_tlv_next(tlvs, &tlv) != OF_ERROR_NONE) {
         AIM_LOG_ERROR("expected vrf key TLV, instead got end of list");
         return INDIGO_ERROR_PARAM;
     }
@@ -68,12 +68,23 @@ parse_key(of_list_bsn_tlv_t *tlvs, struct ipv4_multicast_key *key)
 
     if (tlv.object_id == OF_BSN_TLV_IPV4) {
         of_bsn_tlv_ipv4_value_get(&tlv, &key->ipv4);
+        if (of_list_bsn_tlv_next(tlvs, &tlv) != OF_ERROR_NONE) {
+            return INDIGO_ERROR_NONE;
+        }
     } else {
         AIM_LOG_ERROR("expected ipv4 key TLV, instead got %s", of_class_name(&tlv));
         return INDIGO_ERROR_PARAM;
     }
 
-    if (of_list_bsn_tlv_next(tlvs, &tlv) == 0) {
+    /* Optional ipv4_src */
+    if (tlv.object_id == OF_BSN_TLV_IPV4_SRC) {
+        of_bsn_tlv_ipv4_value_get(&tlv, &key->ipv4_src);
+    } else {
+        AIM_LOG_ERROR("expected ipv4_src key TLV, instead got %s", of_class_name(&tlv));
+        return INDIGO_ERROR_PARAM;
+    }
+
+    if (of_list_bsn_tlv_next(tlvs, &tlv) == OF_ERROR_NONE) {
         AIM_LOG_ERROR("expected end of key TLV list, instead got %s", of_class_name(&tlv));
         return INDIGO_ERROR_PARAM;
     }
@@ -84,6 +95,7 @@ parse_key(of_list_bsn_tlv_t *tlvs, struct ipv4_multicast_key *key)
 static indigo_error_t
 parse_value(of_list_bsn_tlv_t *tlvs, struct ipv4_multicast_value *value)
 {
+    int rv;
     of_object_t tlv;
     memset(value, 0, sizeof(*value));
 
@@ -92,36 +104,38 @@ parse_value(of_list_bsn_tlv_t *tlvs, struct ipv4_multicast_value *value)
         return INDIGO_ERROR_PARAM;
     }
 
-    if (tlv.object_id == OF_BSN_TLV_REFERENCE) {
-        of_object_t refkey;
-        uint16_t table_id;
-        of_bsn_tlv_reference_table_id_get(&tlv, &table_id);
-        of_bsn_tlv_reference_key_bind(&tlv, &refkey);
-        if (table_id == pipeline_bvs_table_multicast_replication_group_id) {
-            value->multicast_replication_group = pipeline_bvs_table_multicast_replication_group_acquire(&refkey);
-            if (value->multicast_replication_group == NULL) {
-                AIM_LOG_ERROR("Nonexistent multicast_replication_group in multicast_replication multicast_replication table");
-                goto error;
+    OF_LIST_BSN_TLV_ITER(tlvs, &tlv, rv) {
+        switch(tlv.object_id) {
+        case OF_BSN_TLV_REFERENCE: {
+            of_object_t refkey;
+            uint16_t table_id;
+            of_bsn_tlv_reference_table_id_get(&tlv, &table_id);
+            of_bsn_tlv_reference_key_bind(&tlv, &refkey);
+            if (table_id == pipeline_bvs_table_multicast_replication_group_id) {
+                value->multicast_replication_group = pipeline_bvs_table_multicast_replication_group_acquire(&refkey);
+                if (value->multicast_replication_group == NULL) {
+                    AIM_LOG_ERROR("Nonexistent multicast_replication_group in multicast_replication multicast_replication table");
+                    cleanup_value(value);
+                    return INDIGO_ERROR_PARAM;
+                }
+            } else {
+                AIM_LOG_ERROR("unsupported gentable reference in multicast_replication table");
+                cleanup_value(value);
+                return INDIGO_ERROR_PARAM;
             }
-        } else {
-            AIM_LOG_ERROR("unsupported gentable reference in multicast_replication table");
-            goto error;
+            break;
         }
-    } else {
-        AIM_LOG_ERROR("expected reference value TLV, instead got %s", of_class_name(&tlv));
-        goto error;
-    }
 
-    if (of_list_bsn_tlv_next(tlvs, &tlv) == 0) {
-        AIM_LOG_ERROR("expected end of value TLV list, instead got %s", of_class_name(&tlv));
-        goto error;
+        /* ignore below TLVs */
+        case OF_BSN_TLV_MULTICAST_INTERFACE_ID: /* fall-through */
+        case OF_BSN_TLV_PORT: /* fall-through */
+        case OF_BSN_TLV_DROP: /* fall-through */
+        default:
+            break;
+        }
     }
 
     return INDIGO_ERROR_NONE;
-
-error:
-    cleanup_value(value);
-    return INDIGO_ERROR_PARAM;
 }
 
 static void
@@ -217,17 +231,48 @@ pipeline_bvs_table_ipv4_multicast_unregister(void)
 }
 
 struct ipv4_multicast_entry *
-pipeline_bvs_table_ipv4_multicast_lookup(uint16_t multicast_interface_id, uint32_t vrf, uint32_t ipv4)
+pipeline_bvs_table_ipv4_multicast_lookup(uint16_t multicast_interface_id, uint32_t vrf, uint32_t ipv4, uint32_t ipv4_src)
 {
-    struct ipv4_multicast_key key = { .multicast_interface_id = multicast_interface_id, .vrf = vrf, .ipv4 = ipv4 };
-    struct ipv4_multicast_entry *entry =
-        ipv4_multicast_hashtable_first(ipv4_multicast_hashtable, &key);
+    struct ipv4_multicast_key key = { .multicast_interface_id = multicast_interface_id,
+                                      .vrf = vrf, .ipv4 = ipv4, .ipv4_src = ipv4_src};
+    struct ipv4_multicast_entry *entry = NULL;
+
+    /* (S,G) lookup */
+    entry = ipv4_multicast_hashtable_first(ipv4_multicast_hashtable, &key);
     if (entry) {
-        packet_trace("Hit ipv4_multicast entry multicast_interface_id=%u vrf=%u ipv4=%08x",
-                     entry->key.multicast_interface_id, entry->key.vrf, entry->key.ipv4);
-    } else {
-        packet_trace("Miss ipv4_multicast entry multicast_interface_id=%u vrf=%u ipv4=%08x",
-                     multicast_interface_id, vrf, ipv4);
+        packet_trace("Hit (s,g) ipv4_multicast entry multicast_interface_id=%u"
+                     " vrf=%u ipv4=%08x ipv4_src=%08x",
+                     entry->key.multicast_interface_id,
+                     entry->key.vrf, entry->key.ipv4, entry->key.ipv4_src);
+        return entry;
     }
+
+    /* (*,G) lookup */
+    key.ipv4_src = 0;
+    entry = ipv4_multicast_hashtable_first(ipv4_multicast_hashtable, &key);
+    if (entry) {
+        packet_trace("Hit (*,g) ipv4_multicast entry multicast_interface_id=%u"
+                     " vrf=%u ipv4=%08x ipv4_src=%08x",
+                     entry->key.multicast_interface_id,
+                     entry->key.vrf, entry->key.ipv4, entry->key.ipv4_src);
+        return entry;
+    }
+
+    /* default entry lookup */
+    AIM_ZERO(key);
+    entry = ipv4_multicast_hashtable_first(ipv4_multicast_hashtable, &key);
+    if (entry) {
+        packet_trace("Hit default ipv4_multicast entry multicast_interface_id=%u"
+                     " vrf=%u ipv4=%08x ipv4_src=%08x",
+                     entry->key.multicast_interface_id,
+                     entry->key.vrf, entry->key.ipv4, entry->key.ipv4_src);
+        return entry;
+    }
+
+    /* Missed multicast lookup */
+    packet_trace("Miss ipv4_multicast entry multicast_interface_id=%u"
+                 " vrf=%u ipv4=%08x ipv4_src=%08x",
+                 entry->key.multicast_interface_id,
+                 entry->key.vrf, entry->key.ipv4, entry->key.ipv4_src);
     return entry;
 }

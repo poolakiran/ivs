@@ -31,6 +31,7 @@ struct multicast_vlan_value {
     bool igmp_snooping;
     uint32_t multicast_interface_id;
     struct multicast_replication_group_entry *default_replication_group;
+    bool l3_enabled;
 };
 
 struct multicast_vlan_entry {

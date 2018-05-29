@@ -1012,10 +1012,10 @@ process_multicast(struct ctx *ctx)
         packet_trace("No default replication group");
     }
 
-    struct ipv4_multicast_entry *ipv4_multicast_entry =
-        ipv4_multicast_entry = pipeline_bvs_table_ipv4_multicast_lookup(
-            multicast_vlan_entry->value.multicast_interface_id,
-            ctx->vrf, ntohl(ctx->key->ipv4.ipv4_dst));
+    struct ipv4_multicast_entry *ipv4_multicast_entry = NULL;
+    ipv4_multicast_entry = pipeline_bvs_table_ipv4_multicast_lookup(
+        multicast_vlan_entry->value.l3_enabled ? 0 : multicast_vlan_entry->value.multicast_interface_id,
+        ctx->vrf, ntohl(ctx->key->ipv4.ipv4_dst), ntohl(ctx->key->ipv4.ipv4_src));
     if (ipv4_multicast_entry) {
         replication_group = ipv4_multicast_entry->value.multicast_replication_group;
     }

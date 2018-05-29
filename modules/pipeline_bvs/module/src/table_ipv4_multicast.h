@@ -26,8 +26,9 @@ struct ipv4_multicast_key {
     uint32_t multicast_interface_id;
     uint32_t vrf;
     uint32_t ipv4;
+    uint32_t ipv4_src;
 };
-AIM_STATIC_ASSERT(IPV4_MULTICAST_KEY_SIZE, sizeof(struct ipv4_multicast_key) == 12);
+AIM_STATIC_ASSERT(IPV4_MULTICAST_KEY_SIZE, sizeof(struct ipv4_multicast_key) == 16);
 
 struct ipv4_multicast_value {
     struct multicast_replication_group_entry *multicast_replication_group;
@@ -41,6 +42,6 @@ struct ipv4_multicast_entry {
 
 void pipeline_bvs_table_ipv4_multicast_register(void);
 void pipeline_bvs_table_ipv4_multicast_unregister(void);
-struct ipv4_multicast_entry *pipeline_bvs_table_ipv4_multicast_lookup(uint16_t vlan_vid, uint32_t vrf, uint32_t ipv4);
+struct ipv4_multicast_entry *pipeline_bvs_table_ipv4_multicast_lookup(uint16_t vlan_vid, uint32_t vrf, uint32_t ipv4, uint32_t ipv4_src);
 
 #endif
