@@ -68,12 +68,13 @@ parse_key(of_list_bsn_tlv_t *tlvs, struct ipv4_multicast_key *key)
 
     if (tlv.object_id == OF_BSN_TLV_IPV4) {
         of_bsn_tlv_ipv4_value_get(&tlv, &key->ipv4);
-        if (of_list_bsn_tlv_next(tlvs, &tlv) != OF_ERROR_NONE) {
-            return INDIGO_ERROR_NONE;
-        }
     } else {
         AIM_LOG_ERROR("expected ipv4 key TLV, instead got %s", of_class_name(&tlv));
         return INDIGO_ERROR_PARAM;
+    }
+
+    if (of_list_bsn_tlv_next(tlvs, &tlv) != OF_ERROR_NONE) {
+        return INDIGO_ERROR_NONE;
     }
 
     /* Optional ipv4_src */
@@ -129,9 +130,10 @@ parse_value(of_list_bsn_tlv_t *tlvs, struct ipv4_multicast_value *value)
         /* ignore below TLVs */
         case OF_BSN_TLV_MULTICAST_INTERFACE_ID: /* fall-through */
         case OF_BSN_TLV_PORT: /* fall-through */
-        case OF_BSN_TLV_DROP: /* fall-through */
-        default:
+        case OF_BSN_TLV_DROP:
             break;
+        default:
+            return INDIGO_ERROR_PARAM;
         }
     }
 
