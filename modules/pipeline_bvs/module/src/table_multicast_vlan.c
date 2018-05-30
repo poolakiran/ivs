@@ -59,59 +59,47 @@ parse_key(of_list_bsn_tlv_t *tlvs, struct multicast_vlan_key *key)
 static indigo_error_t
 parse_value(of_list_bsn_tlv_t *tlvs, struct multicast_vlan_value *value)
 {
+    int rv;
     of_object_t tlv;
     memset(value, 0, sizeof(*value));
 
-    if (of_list_bsn_tlv_first(tlvs, &tlv) < 0) {
-        goto end;
-    }
-
-    if (tlv.object_id == OF_BSN_TLV_IGMP_SNOOPING) {
-        value->igmp_snooping = true;
-        if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
-            goto end;
-        }
-    }
-
-    if (tlv.object_id == OF_BSN_TLV_MULTICAST_INTERFACE_ID) {
-        of_bsn_tlv_multicast_interface_id_value_get(&tlv, &value->multicast_interface_id);
-        if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
-            goto end;
-        }
-    }
-
-    if (tlv.object_id == OF_BSN_TLV_REFERENCE) {
-        of_object_t refkey;
-        uint16_t table_id;
-        of_bsn_tlv_reference_table_id_get(&tlv, &table_id);
-        of_bsn_tlv_reference_key_bind(&tlv, &refkey);
-        if (table_id == pipeline_bvs_table_multicast_replication_group_id) {
-            value->default_replication_group = pipeline_bvs_table_multicast_replication_group_acquire(&refkey);
-            if (value->default_replication_group == NULL) {
-                AIM_LOG_ERROR("Nonexistent multicast_replication_group in multicast_vlan table");
-                goto error;
+    OF_LIST_BSN_TLV_ITER(tlvs, &tlv, rv) {
+        switch(tlv.object_id) {
+        case OF_BSN_TLV_IGMP_SNOOPING:
+            value->igmp_snooping = true;
+            break;
+        case OF_BSN_TLV_MULTICAST_INTERFACE_ID:
+            of_bsn_tlv_multicast_interface_id_value_get(
+                &tlv, &value->multicast_interface_id);
+            break;
+        case OF_BSN_TLV_REFERENCE: {
+            of_object_t refkey;
+            uint16_t table_id;
+            of_bsn_tlv_reference_table_id_get(&tlv, &table_id);
+            of_bsn_tlv_reference_key_bind(&tlv, &refkey);
+            if (table_id == pipeline_bvs_table_multicast_replication_group_id) {
+                value->default_replication_group = pipeline_bvs_table_multicast_replication_group_acquire(&refkey);
+                if (value->default_replication_group == NULL) {
+                    AIM_LOG_ERROR("Nonexistent multicast_replication_group in multicast_vlan table");
+                    cleanup_value(value);
+                    return INDIGO_ERROR_PARAM;
+                }
+            } else {
+                AIM_LOG_ERROR("unsupported gentable reference in multicast_vlan table");
+                cleanup_value(value);
+                return INDIGO_ERROR_PARAM;
             }
-        } else {
-            AIM_LOG_ERROR("unsupported gentable reference in multicast_vlan table");
-            goto error;
+            break;
         }
-
-        if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
-            goto end;
+        case OF_BSN_TLV_L3:
+           value->l3_enabled = true;
+           break;
+        default:
+           break;
         }
     }
 
-    if (of_list_bsn_tlv_next(tlvs, &tlv) == 0) {
-        AIM_LOG_ERROR("expected end of value TLV list, instead got %s", of_class_name(&tlv));
-        goto error;
-    }
-
-end:
     return INDIGO_ERROR_NONE;
-
-error:
-    cleanup_value(value);
-    return INDIGO_ERROR_PARAM;
 }
 
 static void

@@ -1012,10 +1012,15 @@ process_multicast(struct ctx *ctx)
         packet_trace("No default replication group");
     }
 
-    struct ipv4_multicast_entry *ipv4_multicast_entry =
-        ipv4_multicast_entry = pipeline_bvs_table_ipv4_multicast_lookup(
-            multicast_vlan_entry->value.multicast_interface_id,
-            ctx->vrf, ntohl(ctx->key->ipv4.ipv4_dst));
+    /* IPV4 multicast table lookup
+     *  - L3 VLANs will use VRF, multicast group and src IP
+     *    multicast_interface_id is used only by p-switch to RPF check.
+     *  - L2 VLANs will use multicast_interface_id, multicast group and src IP
+     */
+    struct ipv4_multicast_entry *ipv4_multicast_entry = NULL;
+    ipv4_multicast_entry = pipeline_bvs_table_ipv4_multicast_lookup(
+        multicast_vlan_entry->value.l3_enabled ? 0 : multicast_vlan_entry->value.multicast_interface_id,
+        ctx->vrf, ntohl(ctx->key->ipv4.ipv4_dst), ntohl(ctx->key->ipv4.ipv4_src));
     if (ipv4_multicast_entry) {
         replication_group = ipv4_multicast_entry->value.multicast_replication_group;
     }
