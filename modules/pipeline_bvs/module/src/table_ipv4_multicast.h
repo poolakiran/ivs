@@ -20,6 +20,8 @@
 #ifndef TABLE_IPV4_MULTICAST_H
 #define TABLE_IPV4_MULTICAST_H
 
+#include <timer_wheel/timer_wheel.h>
+
 struct multicast_replication_group;
 
 struct ipv4_multicast_key {
@@ -32,12 +34,16 @@ AIM_STATIC_ASSERT(IPV4_MULTICAST_KEY_SIZE, sizeof(struct ipv4_multicast_key) == 
 
 struct ipv4_multicast_value {
     struct multicast_replication_group_entry *multicast_replication_group;
+    uint32_t idle_timeout;
 };
 
 struct ipv4_multicast_entry {
     bighash_entry_t hash_entry;
+    timer_wheel_entry_t timer_entry;
     struct ipv4_multicast_key key;
     struct ipv4_multicast_value value;
+    struct stats_handle stats_handle;
+    uint64_t last_hit_check_packets;
 };
 
 void pipeline_bvs_table_ipv4_multicast_register(void);
