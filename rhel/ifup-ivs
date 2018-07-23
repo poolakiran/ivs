@@ -33,7 +33,13 @@ case "$TYPE" in
                 if [ -z $intf ]; then
                     ivs-ctl add-internal-port "$DEVICE"
                 fi
-                ifconfig "$DEVICE" "$IPADDR" netmask "$NETMASK"
+                if ! [ -z $IPADDR ]; then
+                   ifconfig "$DEVICE" "$IPADDR" netmask "$NETMASK";
+                elif ! [ -z $IPV6ADDR ]; then
+                   ifconfig "$DEVICE" inet6 add "$IPV6ADDR";
+                else
+                   echo ERROR: Missing IP address for "$DEVICE" interface
+                fi
                 ;;
         *)
                 /sbin/ip link set dev ${DEVICE} up
