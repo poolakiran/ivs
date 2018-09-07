@@ -135,8 +135,15 @@ parse_value(of_list_bsn_tlv_t *tlvs, struct ipv4_multicast_value *value)
             break;
         }
 
+        case OF_BSN_TLV_MULTICAST_INTERFACE_ID:
+            of_bsn_tlv_multicast_interface_id_value_get(&tlv, &value->multicast_interface_id);
+            break;
+
+        case OF_BSN_TLV_IDLE_TIMEOUT:
+            of_bsn_tlv_idle_timeout_value_get(&tlv, &value->idle_timeout);
+            break;
+
         /* ignore below TLVs */
-        case OF_BSN_TLV_MULTICAST_INTERFACE_ID: /* fall-through */
         case OF_BSN_TLV_PORT: /* fall-through */
         case OF_BSN_TLV_DROP:
             break;
@@ -253,6 +260,13 @@ ipv4_multicast_get_stats(void *table_priv, void *entry_priv, of_list_bsn_tlv_t *
         of_list_bsn_tlv_append_bind(stats, &tlv);
         of_bsn_tlv_rx_bytes_value_set(&tlv, stat.bytes);
     }
+    /* tx_packets idle_notifications sent to controller */
+    {
+        of_bsn_tlv_tx_packets_t tlv;
+        of_bsn_tlv_tx_packets_init(&tlv, stats->version, -1, 1);
+        of_list_bsn_tlv_append_bind(stats, &tlv);
+        of_bsn_tlv_tx_packets_value_set(&tlv, entry->idle_notifications_sent);
+    }
 }
 
 static const indigo_core_gentable_ops_t ipv4_multicast_ops = {
@@ -310,6 +324,13 @@ ipv4_multicast_send_idle_notification(struct ipv4_multicast_entry *entry)
         of_list_append(list, tlv);
         of_object_delete(tlv);
     }
+
+    {
+        of_bsn_tlv_multicast_interface_id_t *tlv = of_bsn_tlv_multicast_interface_id_new(version);
+        of_bsn_tlv_multicast_interface_id_value_set(tlv, entry->value.multicast_interface_id);
+        of_list_append(list, tlv);
+        of_object_delete(tlv);
+    }
     AIM_TRUE_OR_DIE(of_bsn_generic_async_tlvs_set(notif, list) == 0,
                     "Cannot set ipv4_multicast_idle notification tlvs");
     of_object_delete(list);
@@ -317,6 +338,7 @@ ipv4_multicast_send_idle_notification(struct ipv4_multicast_entry *entry)
     /* send notification to controller */
     indigo_cxn_send_async_message(notif);
     debug_counter_inc(&idle_notification_counter);
+    entry->idle_notifications_sent++;
 }
 
 static void
@@ -429,7 +451,7 @@ pipeline_bvs_table_ipv4_multicast_lookup(uint16_t multicast_interface_id, uint32
     /* Missed multicast lookup */
     packet_trace("Miss ipv4_multicast entry multicast_interface_id=%u"
                  " vrf=%u ipv4=%08x ipv4_src=%08x",
-                 entry->key.multicast_interface_id,
-                 entry->key.vrf, entry->key.ipv4, entry->key.ipv4_src);
+                 key.multicast_interface_id,
+                 key.vrf, key.ipv4, key.ipv4_src);
     return entry;
 }

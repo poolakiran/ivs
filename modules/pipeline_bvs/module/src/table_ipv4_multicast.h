@@ -34,6 +34,7 @@ AIM_STATIC_ASSERT(IPV4_MULTICAST_KEY_SIZE, sizeof(struct ipv4_multicast_key) == 
 
 struct ipv4_multicast_value {
     struct multicast_replication_group_entry *multicast_replication_group;
+    uint32_t multicast_interface_id;
     uint32_t idle_timeout;
 };
 
@@ -44,6 +45,7 @@ struct ipv4_multicast_entry {
     struct ipv4_multicast_value value;
     struct stats_handle stats_handle;
     uint64_t last_hit_check_packets;
+    uint64_t idle_notifications_sent;
 };
 
 void pipeline_bvs_table_ipv4_multicast_register(void);
