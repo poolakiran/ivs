@@ -74,6 +74,8 @@ parse_value(of_list_bsn_tlv_t *tlvs, struct lag_value *value)
                 xbuf_reserve(&buckets_xbuf, sizeof(*bucket));
             of_bsn_tlv_port_value_get(&tlv, &bucket->port_no);
             value->num_buckets++;
+        } else if (tlv.object_id == OF_BSN_TLV_VXLAN_EGRESS_LAG) {
+            /* Ignore */
         } else {
             AIM_LOG_ERROR("expected port value TLV, instead got %s", of_class_name(&tlv));
             goto error;
