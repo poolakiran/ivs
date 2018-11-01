@@ -903,6 +903,9 @@ process_l3(struct ctx *ctx)
                      next_hop->new_vlan_vid, lag_name(next_hop->lag));
     } else if (next_hop->type == NEXT_HOP_TYPE_LAG_NOREWRITE) {
         packet_trace("next-hop: lag=%s", lag_name(next_hop->lag));
+    } else if (next_hop->type == NEXT_HOP_TYPE_LAG_DMAC) {
+        packet_trace("next-hop: lag=%s eth_dst=%{mac}",
+                     lag_name(next_hop->lag), next_hop->new_eth_dst.addr);
     } else {
         AIM_DIE("Unexpected next hop type %d", next_hop->type);
     }
@@ -919,6 +922,9 @@ process_l3(struct ctx *ctx)
             action_set_ipv4_ttl(ctx->actx, ctx->key->ipv4.ipv4_ttl - 1);
             ctx->key->ipv4.ipv4_ttl--;
         }
+        memcpy(ctx->key->ethernet.eth_dst, &next_hop->new_eth_dst.addr, OF_MAC_ADDR_BYTES);
+    } else if(next_hop->type == NEXT_HOP_TYPE_LAG_DMAC) {
+        action_set_eth_dst(ctx->actx, next_hop->new_eth_dst);
         memcpy(ctx->key->ethernet.eth_dst, &next_hop->new_eth_dst.addr, OF_MAC_ADDR_BYTES);
     }
 

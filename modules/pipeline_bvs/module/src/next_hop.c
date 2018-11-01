@@ -138,14 +138,20 @@ pipeline_bvs_parse_next_hop(of_list_action_t *actions, struct next_hop *next_hop
 
     if (lag) {
         if (seen_new_eth_dst) {
-            if (version == V1_0) {
-                /* The TTL decrement is implicit for bvs-1.0 */
-                seen_dec_ttl = true;
-            }
-            next_hop->type = NEXT_HOP_TYPE_LAG;
-            if (!seen_new_vlan_vid || !seen_new_eth_src || !seen_new_eth_dst || !seen_dec_ttl) {
-                AIM_LOG_WARN("Missing required next-hop action");
-                goto error;
+            if (!seen_new_vlan_vid && !seen_new_eth_src && !seen_dec_ttl) {
+                next_hop->type = NEXT_HOP_TYPE_LAG_DMAC;
+            } else {
+                if (version == V1_0) {
+                    /* The TTL decrement is implicit for bvs-1.0 */
+                    seen_dec_ttl = true;
+                }
+
+                next_hop->type = NEXT_HOP_TYPE_LAG;
+
+                if (!seen_new_vlan_vid || !seen_new_eth_src || !seen_dec_ttl) {
+                    AIM_LOG_WARN("Missing required next-hop action");
+                    goto error;
+                }
             }
         } else {
             next_hop->type = NEXT_HOP_TYPE_LAG_NOREWRITE;
@@ -258,10 +264,14 @@ pipeline_bvs_parse_gentable_next_hop(of_list_bsn_tlv_t *tlvs, struct next_hop *n
 
     if (lag) {
         if (seen_new_eth_dst) {
-            next_hop->type = NEXT_HOP_TYPE_LAG;
-            if (!seen_new_vlan_vid || !seen_new_eth_src || !seen_new_eth_dst) {
-                AIM_LOG_WARN("Missing required next-hop action");
-                goto error;
+            if (!seen_new_vlan_vid && !seen_new_eth_src) {
+                next_hop->type = NEXT_HOP_TYPE_LAG_DMAC;
+            } else {
+                next_hop->type = NEXT_HOP_TYPE_LAG;
+                if (!seen_new_vlan_vid || !seen_new_eth_src) {
+                    AIM_LOG_WARN("Missing required next-hop action");
+                    goto error;
+                }
             }
         } else {
             next_hop->type = NEXT_HOP_TYPE_LAG_NOREWRITE;
@@ -304,6 +314,7 @@ pipeline_bvs_cleanup_next_hop(struct next_hop *next_hop)
     switch (next_hop->type) {
     case NEXT_HOP_TYPE_LAG:
     case NEXT_HOP_TYPE_LAG_NOREWRITE:
+    case NEXT_HOP_TYPE_LAG_DMAC:
         if (next_hop->lag != NULL) {
             pipeline_bvs_table_lag_release(next_hop->lag);
             next_hop->lag = NULL;
@@ -343,6 +354,10 @@ format_next_hop(aim_datatype_context_t* dtc, aim_va_list_t* vargs,
         break;
     case NEXT_HOP_TYPE_ECMP:
         aim_printf(pvs, "{ ecmp=%u }", next_hop->ecmp->id);
+        break;
+    case NEXT_HOP_TYPE_LAG_DMAC:
+        aim_printf(pvs, "{ lag=%s eth_dst=%{mac}}",
+                   lag_name(next_hop->lag), &next_hop->new_eth_dst);
         break;
     default:
         aim_printf(pvs, "unknown");
