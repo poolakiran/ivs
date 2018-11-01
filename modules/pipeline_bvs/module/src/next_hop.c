@@ -138,7 +138,7 @@ pipeline_bvs_parse_next_hop(of_list_action_t *actions, struct next_hop *next_hop
 
     if (lag) {
         if (seen_new_eth_dst) {
-            if (!seen_new_vlan_vid && !seen_new_eth_src && !seen_new_eth_dst && !seen_dec_ttl) {
+            if (!seen_new_vlan_vid && !seen_new_eth_src && !seen_dec_ttl) {
                 next_hop->type = NEXT_HOP_TYPE_LAG_DMAC;
             } else {
                 if (version == V1_0) {
@@ -148,7 +148,7 @@ pipeline_bvs_parse_next_hop(of_list_action_t *actions, struct next_hop *next_hop
 
                 next_hop->type = NEXT_HOP_TYPE_LAG;
 
-                if (!seen_new_vlan_vid || !seen_new_eth_src || !seen_new_eth_dst || !seen_dec_ttl) {
+                if (!seen_new_vlan_vid || !seen_new_eth_src || !seen_dec_ttl) {
                     AIM_LOG_WARN("Missing required next-hop action");
                     goto error;
                 }
@@ -264,11 +264,11 @@ pipeline_bvs_parse_gentable_next_hop(of_list_bsn_tlv_t *tlvs, struct next_hop *n
 
     if (lag) {
         if (seen_new_eth_dst) {
-            if (!seen_new_vlan_vid && !seen_new_eth_src && !seen_new_eth_dst) {
+            if (!seen_new_vlan_vid && !seen_new_eth_src) {
                 next_hop->type = NEXT_HOP_TYPE_LAG_DMAC;
             } else {
                 next_hop->type = NEXT_HOP_TYPE_LAG;
-                if (!seen_new_vlan_vid || !seen_new_eth_src || !seen_new_eth_dst) {
+                if (!seen_new_vlan_vid || !seen_new_eth_src) {
                     AIM_LOG_WARN("Missing required next-hop action");
                     goto error;
                 }
