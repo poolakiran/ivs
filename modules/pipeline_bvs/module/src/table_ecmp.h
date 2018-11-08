@@ -20,10 +20,12 @@
 #ifndef TABLE_ECMP_H
 #define TABLE_ECMP_H
 
+#define ECMP_NAME_LEN 128
+
 /* These datastructures are shared with the legacy ECMP group */
 
 struct ecmp_key {
-    char name[64];
+    char name[ECMP_NAME_LEN];
 };
 
 struct ecmp_value {
