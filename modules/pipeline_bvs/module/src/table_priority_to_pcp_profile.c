@@ -66,6 +66,8 @@ parse_bucket(of_bsn_tlv_bucket_t *bucket, struct priority_to_pcp_profile_value *
     uint8_t vlan_pcp;
     uint32_t qos_priority;
     of_object_t tlvs, tlv;
+    uint16_t dscp;
+
     of_bsn_tlv_bucket_value_bind(bucket, &tlvs);
 
     if (of_list_bsn_tlv_first(&tlvs, &tlv) < 0) {
@@ -101,11 +103,21 @@ parse_bucket(of_bsn_tlv_bucket_t *bucket, struct priority_to_pcp_profile_value *
     }
 
     if (of_list_bsn_tlv_next(&tlvs, &tlv) == 0) {
-        AIM_LOG_ERROR("expected end of TLV list, instead got %s", of_class_name(&tlv));
-        return INDIGO_ERROR_PARAM;
+        if (tlv.object_id == OF_BSN_TLV_DSCP) {
+            of_bsn_tlv_dscp_value_get(&tlv, &dscp);
+
+            if (of_list_bsn_tlv_next(&tlvs, &tlv) == 0) {
+                AIM_LOG_ERROR("expected end of TLV list, instead got %s", of_class_name(&tlv));
+                return INDIGO_ERROR_PARAM;
+            }
+        } else {
+            AIM_LOG_ERROR("expected end of TLV list, instead got %s", of_class_name(&tlv));
+            return INDIGO_ERROR_PARAM;
+        }
     }
 
     value->buckets[qos_priority].vlan_pcp = vlan_pcp;
+    value->buckets[qos_priority].dscp = dscp;
 
     return INDIGO_ERROR_NONE;
 }
@@ -116,6 +128,7 @@ parse_value(of_list_bsn_tlv_t *tlvs, struct priority_to_pcp_profile_value *value
     int i;
     for (i = 0; i < NUM_INTERNAL_PRIORITY; i++) {
         value->buckets[i].vlan_pcp = 0;
+        value->buckets[i].dscp = QOS_MAP_DSCP_UNSET;
     }
 
     of_object_t tlv;
