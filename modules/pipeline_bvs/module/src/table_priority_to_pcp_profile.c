@@ -66,7 +66,7 @@ parse_bucket(of_bsn_tlv_bucket_t *bucket, struct priority_to_pcp_profile_value *
     uint8_t vlan_pcp;
     uint32_t qos_priority;
     of_object_t tlvs, tlv;
-    uint16_t dscp;
+    uint16_t dscp = QOS_MAP_DSCP_UNSET;
 
     of_bsn_tlv_bucket_value_bind(bucket, &tlvs);
 
