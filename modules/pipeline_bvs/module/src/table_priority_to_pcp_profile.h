@@ -21,6 +21,7 @@
 #define TABLE_PRIORITY_TO_PCP_PROFILE_H
 
 #define NUM_INTERNAL_PRIORITY 10
+#define QOS_MAP_DSCP_UNSET 0xFFFF
 
 struct priority_to_pcp_profile_key {
     char name[64];
@@ -28,6 +29,7 @@ struct priority_to_pcp_profile_key {
 
 struct priority_to_pcp_profile_bucket {
     uint8_t vlan_pcp;
+    uint16_t dscp;
 };
 
 struct priority_to_pcp_profile_value {

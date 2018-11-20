@@ -1296,6 +1296,14 @@ process_egress(struct ctx *ctx, uint32_t out_port, bool l3)
                 if (tag != 0) {
                     if (port_qos && port_qos->value.priority_to_pcp_profile) {
                         action_set_vlan_pcp(ctx->actx, port_qos->value.priority_to_pcp_profile->value.buckets[ctx->internal_priority].vlan_pcp);
+                        if(port_qos->value.priority_to_pcp_profile->value.buckets[ctx->internal_priority].dscp != QOS_MAP_DSCP_UNSET) {
+                            uint8_t dscp = (0x3f & port_qos->value.priority_to_pcp_profile->value.buckets[ctx->internal_priority].dscp) << 2;
+                            if (ctx->key->ethertype == htons(ETH_P_IPV6)) {
+                                action_set_ipv6_dscp(ctx->actx, dscp);
+                            } else {
+                                action_set_ipv4_dscp(ctx->actx, dscp);
+                            }
+                        }
                     } else {
                         action_set_vlan_pcp(ctx->actx, ctx->internal_priority);
                     }
