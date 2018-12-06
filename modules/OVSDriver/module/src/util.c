@@ -48,6 +48,96 @@ DEBUG_COUNTER(netlink_send_failed, "ovsdriver.util.netlink_send_failed", "Netlin
 DEBUG_COUNTER(netlink_recv_failed, "ovsdriver.util.netlink_recv_failed", "Netlink recv failed");
 DEBUG_COUNTER(netlink_bad_error_number, "ovsdriver.util.netlink_bad_error_number", "Netlink error is out of range (kernel bug)");
 DEBUG_COUNTER(netlink_error, "ovsdriver.util.netlink_error", "Received an error reply for a Netlink transaction");
+DEBUG_COUNTER(ovs_dp_cmd_new, "ovsdriver.util.ovs_dp_cmd_new", "Ovs datapath error for new cmd");
+DEBUG_COUNTER(ovs_dp_cmd_del, "ovsdriver.util.ovs_dp_cmd_del", "Ovs datapath error for del cmd");
+DEBUG_COUNTER(ovs_dp_cmd_get, "ovsdriver.util.ovs_dp_cmd_get", "Ovs datapath error for get cmd");
+DEBUG_COUNTER(ovs_dp_cmd_set, "ovsdriver.util.ovs_dp_cmd_set", "Ovs datapath error for set cmd");
+DEBUG_COUNTER(ovs_packet_cmd_miss, "ovsdriver.util.ovs_packet_cmd_miss", "Ovs packet error for miss cmd");
+DEBUG_COUNTER(ovs_packet_cmd_action, "ovsdriver.util.ovs_packet_cmd_action", "Ovs packet error for action cmd");
+DEBUG_COUNTER(ovs_packet_cmd_execute, "ovsdriver.util.ovs_packet_cmd_execute", "Ovs packet error for execute cmd");
+DEBUG_COUNTER(ovs_vport_cmd_new, "ovsdriver.util.ovs_vport_cmd_new", "Ovs vport error for new cmd");
+DEBUG_COUNTER(ovs_vport_cmd_del, "ovsdriver.util.ovs_vport_cmd_del", "Ovs vport error for del cmd");
+DEBUG_COUNTER(ovs_vport_cmd_get, "ovsdriver.util.ovs_vport_cmd_get", "Ovs vport error for get cmd");
+DEBUG_COUNTER(ovs_vport_cmd_set, "ovsdriver.util.ovs_vport_cmd_set", "Ovs vport error for set cmd");
+DEBUG_COUNTER(ovs_flow_cmd_new, "ovsdriver.util.ovs_flow_cmd_new", "Ovs flow error for new cmd");
+DEBUG_COUNTER(ovs_flow_cmd_del, "ovsdriver.util.ovs_flow_cmd_del", "Ovs flow error for del cmd");
+DEBUG_COUNTER(ovs_flow_cmd_get, "ovsdriver.util.ovs_flow_cmd_set", "Ovs flow error for get cmd");
+DEBUG_COUNTER(ovs_flow_cmd_set, "ovsdriver.util.ovs_flow_cmd_get", "Ovs flow error for set cmd");
+
+static void
+ovs_debug_counter_inc(uint16_t family, uint8_t cmd) {
+
+    if (family == ovs_datapath_family) {
+         switch (cmd) {
+             case OVS_DP_CMD_NEW:
+                 debug_counter_inc(&ovs_dp_cmd_new);
+                 break;
+             case OVS_DP_CMD_DEL:
+                 debug_counter_inc(&ovs_dp_cmd_del);
+                 break;
+             case OVS_DP_CMD_GET:
+                 debug_counter_inc(&ovs_dp_cmd_get);
+                 break;
+             case OVS_DP_CMD_SET:
+                 debug_counter_inc(&ovs_dp_cmd_set);
+                 break;
+             default:
+                 break;
+         }
+    }
+    if (family ==  ovs_packet_family) {
+         switch (cmd) {
+             case OVS_PACKET_CMD_MISS:
+                 debug_counter_inc(&ovs_packet_cmd_miss);
+                 break;
+             case OVS_PACKET_CMD_ACTION:
+                 debug_counter_inc(&ovs_packet_cmd_action);
+                 break;
+             case OVS_PACKET_CMD_EXECUTE:
+                 debug_counter_inc(&ovs_packet_cmd_execute);
+                 break;
+             default:
+                 break;
+         }
+     }
+     if (family == ovs_vport_family) {
+         switch (cmd) {
+             case OVS_VPORT_CMD_NEW:
+                 debug_counter_inc(&ovs_vport_cmd_new);
+                 break;
+             case OVS_VPORT_CMD_DEL:
+                 debug_counter_inc(&ovs_vport_cmd_del);
+                 break;
+             case OVS_VPORT_CMD_GET:
+                 debug_counter_inc(&ovs_vport_cmd_get);
+                 break;
+             case OVS_VPORT_CMD_SET:
+                 debug_counter_inc(&ovs_vport_cmd_set);
+                 break;
+             default:
+                 break;
+         }
+     }
+     if (family == ovs_flow_family) {
+         switch (cmd) {
+             case OVS_FLOW_CMD_NEW:
+                 debug_counter_inc(&ovs_flow_cmd_new);
+                 break;
+             case OVS_FLOW_CMD_DEL:
+                 debug_counter_inc(&ovs_flow_cmd_del);
+                 break;
+             case OVS_FLOW_CMD_GET:
+                 debug_counter_inc(&ovs_flow_cmd_get);
+                 break;
+             case OVS_FLOW_CMD_SET:
+                 debug_counter_inc(&ovs_flow_cmd_set);
+                 break;
+             default:
+                 break;
+         }
+    }
+    return;
+}
 
 uint32_t
 get_entropy(void)
@@ -147,8 +237,9 @@ ind_ovs_transact_nofree(struct nl_msg *msg)
     if (err < 0) {
         debug_counter_inc(&netlink_error);
         if (!aim_ratelimiter_limit(&ratelimiter, monotonic_us())) {
-            AIM_LOG_WARN("Transaction failed (%s): %s",
+            AIM_LOG_TRACE("Transaction failed (%s): %s",
                          ind_ovs_cmd_str(family, cmd), strerror(-err));
+            ovs_debug_counter_inc(family, cmd);
             ind_ovs_dump_msg_force(nlh);
 
             if (ratelimited) {
@@ -204,8 +295,9 @@ ind_ovs_transact_reply(struct nl_msg *msg, struct nlmsghdr **reply)
         err = ((struct nlmsgerr *)nlmsg_data(*reply))->error;
         free(*reply);
         *reply = NULL;
-        LOG_WARN("Transaction failed (%s): %s",
+        LOG_TRACE("Transaction failed (%s): %s",
                  ind_ovs_cmd_str(family, cmd), strerror(-err));
+        ovs_debug_counter_inc(family, cmd);
         debug_counter_inc(&netlink_error);
         return sys2indigoerr(-err);
     }
