@@ -64,7 +64,7 @@ DEBUG_COUNTER(ovs_flow_cmd_del, "ovsdriver.util.ovs_flow_cmd_del", "Ovs flow err
 DEBUG_COUNTER(ovs_flow_cmd_get, "ovsdriver.util.ovs_flow_cmd_set", "Ovs flow error for get cmd");
 DEBUG_COUNTER(ovs_flow_cmd_set, "ovsdriver.util.ovs_flow_cmd_get", "Ovs flow error for set cmd");
 
-void
+static void
 ovs_debug_counter_inc(uint16_t family, uint8_t cmd) {
 
     if (family == ovs_datapath_family) {
