@@ -615,6 +615,19 @@ ind_ovs_dump_flow_json(struct ind_ovs_kflow *flow, char *flow_str, int flow_str_
                      pkey.ipv4.ipv4_ttl, pkey.ipv4.ipv4_frag);
     }
 
+    if (ATTR_BITMAP_TEST(pkey.populated, OVS_KEY_ATTR_IPV6)) {
+        len = strnlen(flow_str, flow_str_size);
+        char src[INET6_ADDRSTRLEN], dst[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, &pkey.ipv6.ipv6_src, src, INET6_ADDRSTRLEN);
+        inet_ntop(AF_INET6, &pkey.ipv6.ipv6_dst, dst, INET6_ADDRSTRLEN);
+        aim_snprintf(&flow_str[len], (flow_str_size - len),
+                     ", \"ipv6\":{\"src\":\"%s\", \"dst\":\"%s\", \"label\":%u,"
+                     " \"proto\":%u, \"tclass\":%u, \"hlimit\":%u, \"frag\":%u}",
+                     src, dst, pkey.ipv6.ipv6_label,
+                     pkey.ipv6.ipv6_proto, pkey.ipv6.ipv6_tclass,
+                     pkey.ipv6.ipv6_hlimit, pkey.ipv6.ipv6_frag);
+    }
+
     if (ATTR_BITMAP_TEST(pkey.populated, OVS_KEY_ATTR_TCP)) {
         len = strnlen(flow_str, flow_str_size);
         aim_snprintf(&flow_str[len], (flow_str_size - len),
