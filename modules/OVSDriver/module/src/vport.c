@@ -970,6 +970,53 @@ port_status_notify(uint32_t port_no, unsigned reason)
     return (result);
 }
 
+static indigo_error_t
+port_desc_bsn_caps_append(of_object_t *port_desc_props,
+                          port_bsn_capabilities_t *bsn_caps)
+{
+    indigo_error_t rv;
+    of_object_t prop;
+
+    /* Append bsn_speed capabilities */
+    of_port_desc_prop_bsn_speed_capabilities_init(
+            &prop, port_desc_props->version, -1, 1);
+
+    rv = of_list_port_desc_prop_append_bind(port_desc_props, &prop);
+    if (rv != INDIGO_ERROR_NONE) {
+        return rv;
+    }
+
+    of_port_desc_prop_bsn_speed_capabilities_current_set(
+            &prop, bsn_caps->current);
+    of_port_desc_prop_bsn_speed_capabilities_available_set(
+            &prop, bsn_caps->available);
+    of_port_desc_prop_bsn_speed_capabilities_supported_set(
+            &prop, bsn_caps->supported);
+
+    /* Append miscellaneous capabilities */
+    if (bsn_caps->misc_cap_current ||
+        bsn_caps->misc_cap_available ||
+        bsn_caps->misc_cap_supported) {
+
+        of_port_desc_prop_bsn_misc_capabilities_init(
+                &prop, port_desc_props->version, -1, 1);
+
+        rv = of_list_port_desc_prop_append_bind(port_desc_props, &prop);
+        if (rv != INDIGO_ERROR_NONE) {
+            return rv;
+        }
+
+        of_port_desc_prop_bsn_misc_capabilities_current_set(
+                &prop, bsn_caps->misc_cap_current);
+        of_port_desc_prop_bsn_misc_capabilities_available_set(
+                &prop, bsn_caps->misc_cap_available);
+        of_port_desc_prop_bsn_misc_capabilities_supported_set(
+                &prop, bsn_caps->misc_cap_supported);
+    }
+
+    return INDIGO_ERROR_NONE;
+}
+
 static void
 port_desc_set(of_port_desc_t *of_port_desc, uint32_t port_no)
 {
@@ -1003,11 +1050,14 @@ port_desc_set(of_port_desc_t *of_port_desc, uint32_t port_no)
     }
     of_port_desc_state_set(of_port_desc, state);
 
-    uint32_t curr, advertised, supported, peer;
+    uint32_t curr, advertised, supported, peer, speed_mb;
+    port_bsn_capabilities_t bsn_caps;
 
     if (port->type == OVS_VPORT_TYPE_NETDEV) {
         ind_ovs_get_interface_features(port->ifname, &curr, &advertised,
-            &supported, &peer, of_port_desc->version);
+                                       &supported, &peer, of_port_desc->version);
+        ind_ovs_get_interface_bsn_caps(port->ifname, of_port_desc->version,
+                                       &bsn_caps, &speed_mb);
     } else {
         /* Internal ports do not support ethtool */
         curr = OF_PORT_FEATURE_FLAG_10GB_FD |
@@ -1034,7 +1084,13 @@ port_desc_set(of_port_desc_t *of_port_desc, uint32_t port_no)
         of_port_desc_prop_ethernet_advertised_set(&prop, advertised);
         of_port_desc_prop_ethernet_supported_set(&prop, supported);
         of_port_desc_prop_ethernet_peer_set(&prop, peer);
-        /* TODO curr_speed, max_speed */
+
+        if (port->type == OVS_VPORT_TYPE_NETDEV) {
+            of_port_desc_prop_ethernet_curr_speed_set(&prop, speed_mb*1000);
+            if (port_desc_bsn_caps_append(&props,  &bsn_caps) != INDIGO_ERROR_NONE) {
+                AIM_DIE("unexpected error appending bsn_caps to port_desc");
+            }
+        }
 
         if (port->is_uplink) {
             of_port_desc_prop_bsn_uplink_init(&prop, props.version, -1, 1);
