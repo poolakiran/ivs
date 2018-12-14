@@ -166,6 +166,16 @@ struct ind_ovs_group {
     struct ind_ovs_group_bucket *buckets;
 };
 
+typedef struct port_bsn_capabilities_s {
+    uint64_t current;           /* OFP_BSN_SPEED_CAP_X bitmap */
+    uint64_t available;         /* OFP_BSN_SPEED_CAP_X bitmap */
+    uint64_t supported;         /* OFP_BSN_SPEED_CAP_X bitmap */
+
+    uint64_t misc_cap_current;   /* OFP_BSN_MISC_CAP_X bitmap */
+    uint64_t misc_cap_available; /* OFP_BSN_MISC_CAP_X bitmap */
+    uint64_t misc_cap_supported; /* OFP_BSN_MISC_CAP_X bitmap */
+} port_bsn_capabilities_t;
+
 /* Internal functions */
 
 /* Translate an OVS key into a flat struct */
@@ -282,6 +292,9 @@ void ind_ovs_nlmsg_freelist_free(struct nl_msg *msg);
 indigo_error_t ind_ovs_get_interface_flags(const char *ifname, int *flags);
 indigo_error_t ind_ovs_set_interface_flags(const char *ifname, int flags);
 void ind_ovs_get_interface_features(const char *ifname, uint32_t *curr, uint32_t *advertised, uint32_t *supported, uint32_t *peer, int version);
+void ind_ovs_get_interface_bsn_caps(const char *ifname, int version,
+                                    port_bsn_capabilities_t *caps,
+                                    uint32_t *speed_mb);
 indigo_error_t ind_ovs_set_ethtool_flags(const char *ifname, uint32_t flags, uint32_t mask);
 indigo_error_t ind_ovs_set_ethtool_gro(const char *ifname, bool enabled);
 indigo_error_t write_file(const char *filename, const char *str);

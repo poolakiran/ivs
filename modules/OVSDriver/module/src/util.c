@@ -655,6 +655,57 @@ ind_ovs_get_interface_features(const char *ifname,
     /* TODO advertised, supported, peer */
 }
 
+/*
+ * Get bsn capabilities for the given interface.
+ */
+void
+ind_ovs_get_interface_bsn_caps(const char *ifname, int version,
+                               port_bsn_capabilities_t *caps,
+                               uint32_t *speed_mb)
+{
+    struct ethtool_cmd ecmd = { 0 };
+
+    AIM_ZERO(*caps);
+    *speed_mb = 0;
+
+    ecmd.cmd = ETHTOOL_GSET;
+    indigo_error_t err = ind_ovs_ethtool_ioctl(ifname, &ecmd);
+    if (err == INDIGO_ERROR_NOT_FOUND) {
+        /* Virtual ports (gre, etc) don't support ethtool,
+         * no need to specify bsn capabilities */
+        return;
+    } else if (err != INDIGO_ERROR_NONE) {
+        AIM_LOG_ERROR("ethtool failed on interface %s: %s",
+                      ifname, strerror(errno));
+        return;
+    }
+
+    uint32_t speed = ethtool_cmd_speed(&ecmd);
+    switch (speed) {
+    case SPEED_10:
+        caps->current = OFP_BSN_SPEED_CAP_10M_BY_VERSION(version);
+        *speed_mb = 10;
+        break;
+    case SPEED_100:
+        caps->current = OFP_BSN_SPEED_CAP_100M_BY_VERSION(version);
+        *speed_mb = 100;
+        break;
+    case SPEED_1000:
+        caps->current = OFP_BSN_SPEED_CAP_1GB_BY_VERSION(version);
+        *speed_mb = 1000;
+        break;
+    case SPEED_10000:
+        caps->current = OFP_BSN_SPEED_CAP_10GB_BY_VERSION(version);
+        *speed_mb = 10000;
+        break;
+    default:
+        break;
+    }
+
+    caps->available = caps->supported = caps->current;
+}
+
+
 indigo_error_t
 ind_ovs_set_ethtool_flags(const char *ifname, uint32_t flags, uint32_t mask)
 {
