@@ -1086,7 +1086,9 @@ port_desc_set(of_port_desc_t *of_port_desc, uint32_t port_no)
         of_port_desc_prop_ethernet_peer_set(&prop, peer);
 
         if (port->type == OVS_VPORT_TYPE_NETDEV) {
+            /* curr_speed and max_speed are in kbps */
             of_port_desc_prop_ethernet_curr_speed_set(&prop, speed_mb*1000);
+            of_port_desc_prop_ethernet_max_speed_set(&prop, speed_mb*1000);
             if (port_desc_bsn_caps_append(&props,  &bsn_caps) != INDIGO_ERROR_NONE) {
                 AIM_DIE("unexpected error appending bsn_caps to port_desc");
             }
