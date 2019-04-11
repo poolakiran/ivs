@@ -20,8 +20,9 @@
 #include "pipeline_bvs_int.h"
 
 /* List of stubbed gentables */
-#define GEN_TABLES                  \
-    gen_table(rtag7_hash_algorithms)
+#define GEN_TABLES                      \
+    gen_table(rtag7_hash_algorithms)    \
+    gen_table(lag_member_auto_add)
 
 #define gen_table(name) static indigo_core_gentable_t* name##_table;
 GEN_TABLES
