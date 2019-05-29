@@ -74,7 +74,14 @@ parse_value(of_list_bsn_tlv_t *tlvs)
         return INDIGO_ERROR_PARAM;
     }
 
-    if (of_list_bsn_tlv_next(tlvs, &tlv) == 0) {
+    if (of_list_bsn_tlv_next(tlvs, &tlv) != OF_ERROR_NONE) {
+        return INDIGO_ERROR_NONE;
+    }
+
+    if (tlv.object_id == OF_BSN_TLV_LOSSLESS) {
+        /* Ignore Lossless TLV */
+    }
+    else {
         AIM_LOG_ERROR("expected end of value TLV list, instead got %s", of_object_id_str[tlv.object_id]);
         return INDIGO_ERROR_PARAM;
     }
