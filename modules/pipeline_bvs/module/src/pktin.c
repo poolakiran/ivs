@@ -258,7 +258,7 @@ process_sflow_pktin(uint8_t *data, unsigned int len,
         return;
     }
 
-    sflowa_receive_packet(&ppep, pkey->in_port);
+    sflowa_receive_packet(&ppep, pkey->in_port, 0);
 }
 
 void
