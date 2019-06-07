@@ -75,6 +75,18 @@ parse_value(of_list_bsn_tlv_t *tlvs, struct port_qos_value *value)
     }
 
     if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
+        AIM_LOG_ERROR("expected vlan_pcp TLV, instead got end of list");
+        goto error;
+    }
+
+    if (tlv.object_id == OF_BSN_TLV_VLAN_PCP) {
+        /* ignore */
+    } else {
+        AIM_LOG_ERROR("expected vlan_pcp value TLV, instead got %s", of_class_name(&tlv));
+        goto error;
+    }
+
+    if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
         AIM_LOG_ERROR("expected reference TLV, instead got end of list");
         goto error;
     }
