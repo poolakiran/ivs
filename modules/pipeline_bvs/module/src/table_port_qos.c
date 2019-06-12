@@ -61,84 +61,40 @@ parse_value(of_list_bsn_tlv_t *tlvs, struct port_qos_value *value)
 {
     value->dscp_profile = NULL;
     of_object_t tlv;
+    of_object_t key;
+    uint16_t table_id;
+    int rv;
 
-    if (of_list_bsn_tlv_first(tlvs, &tlv) < 0) {
-        AIM_LOG_ERROR("expected gentable value TLV, instead got end of list");
-        goto error;
-    }
-
-    if (tlv.object_id == OF_BSN_TLV_VFP_CLASS_ID) {
-        /* ignore */
-    } else {
-        AIM_LOG_ERROR("expected vfp_class_id value TLV, instead got %s", of_class_name(&tlv));
-        goto error;
-    }
-
-    if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
-        AIM_LOG_ERROR("expected vlan_pcp TLV, instead got end of list");
-        goto error;
-    }
-
-    if (tlv.object_id == OF_BSN_TLV_VLAN_PCP) {
-        /* ignore */
-    } else {
-        AIM_LOG_ERROR("expected vlan_pcp value TLV, instead got %s", of_class_name(&tlv));
-        goto error;
-    }
-
-    if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
-        AIM_LOG_ERROR("expected reference TLV, instead got end of list");
-        goto error;
-    }
-
-    if (tlv.object_id == OF_BSN_TLV_REFERENCE) {
-        of_object_t key;
-        uint16_t table_id;
-        of_bsn_tlv_reference_table_id_get(&tlv, &table_id);
-        of_bsn_tlv_reference_key_bind(&tlv, &key);
-        if (table_id == pipeline_bvs_table_priority_to_pcp_profile_id) {
-            value->priority_to_pcp_profile = pipeline_bvs_table_priority_to_pcp_profile_acquire(&key);
-            if (value->priority_to_pcp_profile == NULL) {
-                AIM_LOG_ERROR("Nonexistent priority_to_pcp_profile in port_qos");
+    OF_LIST_BSN_TLV_ITER(tlvs, &tlv, rv) {
+        switch (tlv.object_id) {
+        case OF_BSN_TLV_VFP_CLASS_ID:
+        case OF_BSN_TLV_VLAN_PCP:
+            /* ignore */
+            break;
+        case OF_BSN_TLV_REFERENCE:
+            of_bsn_tlv_reference_table_id_get(&tlv, &table_id);
+            of_bsn_tlv_reference_key_bind(&tlv, &key);
+            if (table_id == pipeline_bvs_table_priority_to_pcp_profile_id) {
+                value->priority_to_pcp_profile = pipeline_bvs_table_priority_to_pcp_profile_acquire(&key);
+                if (value->priority_to_pcp_profile == NULL) {
+                    AIM_LOG_ERROR("Nonexistent priority_to_pcp_profile in port_qos");
+                    goto error;
+                }
+            } else if (table_id == pipeline_bvs_table_dscp_to_priority_profile_id) {
+                value->dscp_profile = pipeline_bvs_table_dscp_to_priority_profile_acquire(&key);
+                if (value->dscp_profile == NULL) {
+                    AIM_LOG_ERROR("Nonexistent dscp_profile in port_qos");
+                    goto error;
+                }
+            } else {
+                AIM_LOG_ERROR("Unsupported gentable reference in port_qos gentable");
                 goto error;
             }
-        } else {
-            AIM_LOG_ERROR("unsupported gentable reference in port_qos");
+            break;
+        default:
+            AIM_LOG_ERROR("port_qos value has unknown TLV %s", of_class_name(&tlv));
             goto error;
         }
-    } else {
-        AIM_LOG_ERROR("expected reference value TLV, instead got %s", of_class_name(&tlv));
-        goto error;
-    }
-
-    if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
-        /* DSCP reference is optional */
-        return INDIGO_ERROR_NONE;
-    }
-
-    if (tlv.object_id == OF_BSN_TLV_REFERENCE) {
-        of_object_t key;
-        uint16_t table_id;
-        of_bsn_tlv_reference_table_id_get(&tlv, &table_id);
-        of_bsn_tlv_reference_key_bind(&tlv, &key);
-        if (table_id == pipeline_bvs_table_dscp_to_priority_profile_id) {
-            value->dscp_profile = pipeline_bvs_table_dscp_to_priority_profile_acquire(&key);
-            if (value->dscp_profile == NULL) {
-                AIM_LOG_ERROR("Nonexistent dscp_profile in port_qos");
-                goto error;
-            }
-        } else {
-            AIM_LOG_ERROR("unsupported gentable reference in port_qos");
-            goto error;
-        }
-    } else {
-        AIM_LOG_ERROR("expected reference value TLV, instead got %s", of_class_name(&tlv));
-        goto error;
-    }
-
-    if (of_list_bsn_tlv_next(tlvs, &tlv) == 0) {
-        AIM_LOG_ERROR("expected end of value TLV list, instead got %s", of_class_name(&tlv));
-        goto error;
     }
 
     return INDIGO_ERROR_NONE;
