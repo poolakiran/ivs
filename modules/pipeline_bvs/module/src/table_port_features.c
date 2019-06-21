@@ -30,6 +30,7 @@ static const indigo_core_gentable_ops_t port_features_ops;
 static bighash_table_t *port_features_hashtable;
 
 static void cleanup_value(struct port_features_value *value);
+static const char * src_mac_cml_str(uint16_t cml);
 
 static indigo_error_t
 parse_key(of_list_bsn_tlv_t *tlvs, struct port_features_key *key)
@@ -60,25 +61,27 @@ static indigo_error_t
 parse_value(of_list_bsn_tlv_t *tlvs, struct port_features_value *value)
 {
     of_object_t tlv;
+    int rv;
     memset(value, 0, sizeof(*value));
 
-    if (of_list_bsn_tlv_first(tlvs, &tlv) < 0) {
-        goto end;
-    }
-
-    if (tlv.object_id == OF_BSN_TLV_NDP_OFFLOAD) {
-        value->ndp_offload = true;
-        if (of_list_bsn_tlv_next(tlvs, &tlv) < 0) {
-            goto end;
+    OF_LIST_BSN_TLV_ITER(tlvs, &tlv, rv) {
+        switch (tlv.object_id) {
+        case OF_BSN_TLV_NDP_OFFLOAD:
+            value->ndp_offload = true;
+            break;
+        case OF_BSN_TLV_SRC_MAC_CML:
+            of_bsn_tlv_src_mac_cml_value_get(&tlv, &value->src_mac_cml);
+            if ((value->src_mac_cml != OFP_BSN_CML_FORWARD) &&
+                (value->src_mac_cml != OFP_BSN_CML_CPU_DROP)) {
+                AIM_LOG_ERROR("invalid src_mac_cml value %s", src_mac_cml_str(value->src_mac_cml));
+            }
+            break;
+        default:
+            AIM_LOG_ERROR("port_features value has unknown TLV %s", of_class_name(&tlv));
+            goto error;
         }
     }
 
-    if (of_list_bsn_tlv_next(tlvs, &tlv) == 0) {
-        AIM_LOG_ERROR("expected end of value TLV list, instead got %s", of_class_name(&tlv));
-        goto error;
-    }
-
-end:
     return INDIGO_ERROR_NONE;
 
 error:
@@ -89,6 +92,25 @@ error:
 static void
 cleanup_value(struct port_features_value *value)
 {
+}
+
+static const char *
+src_mac_cml_str(uint16_t cml)
+{
+    switch (cml) {
+    case OFP_BSN_CML_NONE:
+        return "";
+    case OFP_BSN_CML_CPU_DROP:
+        return " src_mac_cml_cpu_drop";
+    case OFP_BSN_CML_FORWARD:
+        return " src_mac_cml_forward";
+    case OFP_BSN_CML_CPU_FORWARD:
+        return " src_mac_cml_cpu_forward";
+    default:
+        return " src_mac_cml_invalid";
+    }
+
+    return NULL;
 }
 
 static indigo_error_t
@@ -181,8 +203,9 @@ pipeline_bvs_table_port_features_lookup(uint32_t port_no)
     struct port_features_entry *entry =
         port_features_hashtable_first(port_features_hashtable, &key);
     if (entry) {
-        packet_trace("Hit port_features entry port_no=%u -> ndp_offload=%u",
-                     entry->key.port_no, entry->value.ndp_offload);
+        packet_trace("Hit port_features entry port_no=%u -> ndp_offload=%u %s",
+                     entry->key.port_no, entry->value.ndp_offload,
+                     src_mac_cml_str(entry->value.src_mac_cml));
     } else {
         packet_trace("Miss port_features entry port_no=%u", port_no);
     }

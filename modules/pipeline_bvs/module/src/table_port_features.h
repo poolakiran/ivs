@@ -27,6 +27,7 @@ AIM_STATIC_ASSERT(PORT_FEATURES_KEY_SIZE, sizeof(struct port_features_key) == 4)
 
 struct port_features_value {
     bool ndp_offload;
+    uint16_t src_mac_cml;
 };
 
 struct port_features_entry {

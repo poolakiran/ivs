@@ -609,9 +609,19 @@ process_l2(struct ctx *ctx)
     struct l2_entry *src_l2_entry =
         pipeline_bvs_table_l2_lookup(vlan_vid, ctx->key->ethernet.eth_src, false);
 
-    bool disable_src_mac_check =
-        port_entry->value.disable_src_mac_check &&
+    struct port_features_entry *port_features_entry =
+        pipeline_bvs_table_port_features_lookup(ctx->key->in_port);
+
+    bool disable_src_mac_check;
+    if (port_features_entry && port_features_entry->value.src_mac_cml) {
+        disable_src_mac_check =
+            (port_features_entry->value.src_mac_cml == OFP_BSN_CML_FORWARD) &&
             !pipeline_bvs_table_source_miss_override_lookup(vlan_vid, ctx->key->in_port);
+    } else {
+        disable_src_mac_check =
+            port_entry->value.disable_src_mac_check &&
+            !pipeline_bvs_table_source_miss_override_lookup(vlan_vid, ctx->key->in_port);
+    }
 
     if (src_l2_entry) {
         pipeline_add_stats(ctx->stats, &src_l2_entry->stats_handle);
@@ -669,8 +679,6 @@ process_l2(struct ctx *ctx)
     }
 
     /* ICMPv6 offload */
-    struct port_features_entry *port_features_entry =
-        pipeline_bvs_table_port_features_lookup(ctx->key->in_port);
     bool ndp_offload = port_features_entry && port_features_entry->value.ndp_offload;
 
     /* ICMPv6 type NDP RS, RA, NS and NA packets */
