@@ -76,6 +76,9 @@ parse_value(of_list_bsn_tlv_t *tlvs, struct port_features_value *value)
                 AIM_LOG_ERROR("invalid src_mac_cml value %s", src_mac_cml_str(value->src_mac_cml));
             }
             break;
+        case OF_BSN_TLV_PIM_HELLO_FLOOD:
+            /* Ignore this TLV */
+            break;
         default:
             AIM_LOG_ERROR("port_features value has unknown TLV %s", of_class_name(&tlv));
             goto error;
