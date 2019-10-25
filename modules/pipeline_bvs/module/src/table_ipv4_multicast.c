@@ -87,7 +87,7 @@ parse_key(of_list_bsn_tlv_t *tlvs, struct ipv4_multicast_key *key)
 
     /* Optional ipv4_src */
     if (tlv.object_id == OF_BSN_TLV_IPV4_SRC) {
-        of_bsn_tlv_ipv4_value_get(&tlv, &key->ipv4_src);
+        of_bsn_tlv_ipv4_src_value_get(&tlv, &key->ipv4_src);
     } else {
         AIM_LOG_ERROR("expected ipv4_src key TLV, instead got %s", of_class_name(&tlv));
         return INDIGO_ERROR_PARAM;
