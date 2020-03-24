@@ -147,6 +147,7 @@ bundle_comparator(of_object_t *a, of_object_t *b)
  */
 static indigo_error_t
 port_sampling_rate_set(of_port_no_t port_no, uint32_t sampling_rate,
+                       uint32_t egress_sampling_rate,
                        indigo_cxn_id_t cxn_id)
 {
     AIM_ASSERT(port_no <= SLSHARED_CONFIG_OF_PORT_MAX,
