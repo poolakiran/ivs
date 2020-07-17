@@ -57,7 +57,7 @@ endif
 DEPENDMODULES += pipeline_bvs lpm inband lldpa lacpa arpa common_tables router_ip_table \
 		 icmpa dhcpra2 nat slshared host_sflow sflowa host_stats cdpa \
 		 pipeline_bigtap version_stats igmpa mgmt_interface_stats lpm128 \
-		 icmpv6
+		 icmpv6 pdua
 
 #
 # Resolve module dependencies

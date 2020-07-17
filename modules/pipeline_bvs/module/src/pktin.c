@@ -30,6 +30,7 @@
 #include <indigo/port_manager.h>
 #include <igmpa/igmpa.h>
 #include <icmpv6/icmpv6.h>
+#include <pdua/pdua.h>
 
 DEBUG_COUNTER(pktin, "pipeline_bvs.pktin",
               "Received packet-in message from the kernel");
@@ -138,8 +139,14 @@ process_port_pktin(uint8_t *data, unsigned int len,
     indigo_core_listener_result_t result = INDIGO_CORE_LISTENER_RESULT_PASS;
     if (!memcmp(data, cdp_mac.addr, OF_MAC_ADDR_BYTES)) {
         result = cdpa_receive_packet(&octets, pkey->in_port);
+        if (result == INDIGO_CORE_LISTENER_RESULT_PASS) {
+            result = pdua_receive_packet(&octets, pkey->in_port);
+        }
     } else if (ppe_header_get(&ppep, PPE_HEADER_LLDP)) {
         result = lldpa_receive_packet(&octets, pkey->in_port);
+        if (result == INDIGO_CORE_LISTENER_RESULT_PASS) {
+            result = pdua_receive_packet(&octets, pkey->in_port);
+        }
     } else if (ppe_header_get(&ppep, PPE_HEADER_LACP)) {
         result = lacpa_receive_packet (&ppep, pkey->in_port);
     } else if (ppe_header_get(&ppep, PPE_HEADER_DHCP)) {

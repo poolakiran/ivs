@@ -16,6 +16,7 @@
 #include <mgmt_interface_stats/mgmt_interface_stats.h>
 #include <icmpv6/icmpv6.h>
 #include <common_tables/common_tables.h>
+#include <pdua/pdua.h>
 
 static void
 lldp_timer(void *cookie)
@@ -35,6 +36,10 @@ ivs_agent_init(void)
 
     if (lacpa_init() < 0) {
         AIM_DIE("Failed to initialize LACP Agent module");
+    }
+
+    if (pdua_system_init() < 0) {
+        AIM_DIE("Failed to initialize PDU Agent module");
     }
 
     if (lldpa_system_init() < 0) {
